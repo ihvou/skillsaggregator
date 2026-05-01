@@ -1,0 +1,8 @@
+appId: com.skillsaggregator.mobile
+---
+- launchApp
+- tapOn: "Forehand smash"
+- tapOn: "intermediate"
+- longPressOn: "Badminton forehand smash tutorials"
+- tapOn: "Saved"
+- assertVisible: "Badminton forehand smash tutorials"

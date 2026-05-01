@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  app:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm install
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run test
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e:web
+        env:
+          NEXT_PUBLIC_BASE_URL: http://127.0.0.1:3000
+          REVALIDATE_SECRET: ci-secret
+
+  database:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+      - run: supabase db start
+      - run: supabase db reset
+      - run: supabase test db

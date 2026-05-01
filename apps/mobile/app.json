@@ -1,0 +1,22 @@
+{
+  "expo": {
+    "name": "Skills Aggregator",
+    "slug": "skills-aggregator",
+    "scheme": "skillsaggregator",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.skillsaggregator.mobile"
+    },
+    "android": {
+      "package": "com.skillsaggregator.mobile"
+    },
+    "plugins": ["expo-router"],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

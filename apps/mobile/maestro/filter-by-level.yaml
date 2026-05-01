@@ -1,0 +1,6 @@
+appId: com.skillsaggregator.mobile
+---
+- launchApp
+- tapOn: "Forehand smash"
+- tapOn: "beginner"
+- assertVisible: "No approved resources match this filter yet."
