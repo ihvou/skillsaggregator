@@ -76,11 +76,14 @@ export function buildDedupeKey(
     case "LINK_DETACH_SKILL":
       return ["LINK_DETACH_SKILL", requireValue("link_id"), requireValue("target_skill_id"), "detach"].join(":");
     case "LINK_UPVOTE_SKILL":
+      if (!authorInternalUserId) {
+        throw new Error("LINK_UPVOTE_SKILL requires a resolved author");
+      }
       return [
         "LINK_UPVOTE_SKILL",
         requireValue("link_id"),
         requireValue("target_skill_id"),
-        authorInternalUserId ?? "unknown-author",
+        authorInternalUserId,
         "upvote",
       ].join(":");
     case "SKILL_CREATE":

@@ -4,7 +4,7 @@ import { useEffect, useState, useTransition } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { Check, X } from "lucide-react";
-import { createClient } from "@supabase/supabase-js";
+import { createBrowserClient } from "@supabase/ssr";
 import type { AdminSuggestion } from "@/lib/data";
 import { approveSuggestion, declineSuggestion } from "@/app/admin/actions";
 
@@ -43,7 +43,7 @@ export function ModerationQueue({ initialSuggestions }: ModerationQueueProps) {
     const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
     if (!url || !anonKey) return;
 
-    const supabase = createClient(url, anonKey);
+    const supabase = createBrowserClient(url, anonKey);
     const channel = supabase
       .channel("moderation_queue")
       .on(

@@ -29,24 +29,35 @@ export async function generateMetadata({
   const description = makeSkillMetaDescription(data.skill);
   const image = data.resources.find((resource) => resource.link.thumbnail_url)?.link.thumbnail_url;
   const canonical = makeCanonical(getBaseUrl(), data.category.slug, data.skill.slug);
+  const title = `${data.skill.name} — ${data.category.name} | Skills Aggregator`;
 
   return {
-    title: `${data.skill.name} - ${data.category.name}`,
+    title,
     description,
     alternates: { canonical },
     openGraph: {
-      title: `${data.skill.name} - ${data.category.name}`,
+      title,
       description,
       url: canonical,
       images: image ? [{ url: image, alt: data.skill.name }] : undefined,
     },
     twitter: {
       card: image ? "summary_large_image" : "summary",
-      title: `${data.skill.name} - ${data.category.name}`,
+      title,
       description,
       images: image ? [image] : undefined,
     },
   };
+}
+
+function schemaEducationalLevel(level: SkillResource["skill_level"]) {
+  if (!level) return undefined;
+  const label = {
+    beginner: "Beginner",
+    intermediate: "Intermediate",
+    advanced: "Advanced",
+  }[level];
+  return `https://schema.org/${label}`;
 }
 
 function learningResourceJsonLd(resources: SkillResource[], pageUrl: string) {
@@ -58,7 +69,7 @@ function learningResourceJsonLd(resources: SkillResource[], pageUrl: string) {
       url: resource.link.url,
       description: resource.public_note ?? resource.link.description,
       learningResourceType: resource.link.content_type ?? "resource",
-      educationalLevel: resource.skill_level ?? undefined,
+      educationalLevel: schemaEducationalLevel(resource.skill_level),
       isPartOf: pageUrl,
     })),
   };

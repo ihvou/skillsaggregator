@@ -5,6 +5,12 @@ import { submitSuggestionSchema, suggestionPayloadByType } from "../_shared/sche
 import { chooseInternalAuthor } from "../_shared/database.ts";
 import { callFunction, getServiceClient } from "../_shared/supabase.ts";
 
+function isInternalRequest(request: Request) {
+  const expected = Deno.env.get("INTERNAL_FUNCTION_TOKEN");
+  const actual = request.headers.get("x-internal-token");
+  return Boolean(expected && actual && actual === expected);
+}
+
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (request.method !== "POST") return jsonResponse({ error: "Method not allowed" }, 405);
@@ -12,6 +18,10 @@ Deno.serve(async (request) => {
   try {
     const supabase = getServiceClient();
     const input = submitSuggestionSchema.parse(await readJson(request));
+    const internalRequest = isInternalRequest(request);
+    const requestedStatus = input.requested_status ?? input.status;
+    const finalStatus =
+      internalRequest && requestedStatus === "auto_approved" ? "auto_approved" : "pending";
     const payload = suggestionPayloadByType[input.type].parse(input.payload_json) as Record<string, unknown>;
 
     if (input.type === "LINK_ADD") {
@@ -33,7 +43,12 @@ Deno.serve(async (request) => {
 
     const authorInternalUserId =
       input.author_internal_user_id ?? (await chooseInternalAuthor(supabase, categoryId));
-    const dedupeKey = buildDedupeKey(input.type, payload, authorInternalUserId);
+    let dedupeKey: string;
+    try {
+      dedupeKey = buildDedupeKey(input.type, payload, authorInternalUserId);
+    } catch (error) {
+      return errorResponse(error, 400);
+    }
 
     const { data: existing, error: existingError } = await supabase
       .from("suggestions")
@@ -54,7 +69,7 @@ Deno.serve(async (request) => {
       .from("suggestions")
       .insert({
         type: input.type,
-        status: input.status,
+        status: finalStatus,
         origin_type: input.origin_type,
         origin_name: input.origin_name ?? null,
         author_internal_user_id: authorInternalUserId,
@@ -72,7 +87,7 @@ Deno.serve(async (request) => {
 
     if (insertError) throw insertError;
 
-    if (input.status === "auto_approved") {
+    if (finalStatus === "auto_approved") {
       const applied = await callFunction("apply-suggestion", {
         suggestion_id: inserted.id,
         moderator_user_id: null,
@@ -84,7 +99,12 @@ Deno.serve(async (request) => {
       });
     }
 
-    return jsonResponse({ suggestion_id: inserted.id, status: inserted.status });
+    return jsonResponse({
+      suggestion_id: inserted.id,
+      status: inserted.status,
+      requested_status: requestedStatus,
+      internal: internalRequest,
+    });
   } catch (error) {
     return errorResponse(error);
   }

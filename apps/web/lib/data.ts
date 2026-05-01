@@ -32,17 +32,13 @@ export async function getCatalog(): Promise<CatalogData> {
     .order("name");
 
   const skillIds = (skills ?? []).map((skill) => skill.id);
-  const { data: relations } = skillIds.length
-    ? await supabase
-        .from("link_skill_relations")
-        .select("skill_id")
-        .in("skill_id", skillIds)
-        .eq("is_active", true)
+  const { data: resourceCounts } = skillIds.length
+    ? await supabase.rpc("get_skill_resource_counts", { p_skill_ids: skillIds })
     : { data: [] };
 
   const counts = new Map<string, number>();
-  for (const relation of relations ?? []) {
-    counts.set(relation.skill_id, (counts.get(relation.skill_id) ?? 0) + 1);
+  for (const count of resourceCounts ?? []) {
+    counts.set(count.skill_id, Number(count.resource_count));
   }
 
   return {
@@ -59,11 +55,14 @@ export async function getSkillPage(categorySlug: string, skillSlug: string) {
   const supabase = getPublicSupabase();
   if (!supabase) {
     const skill = badmintonSkills.find((item) => item.slug === skillSlug) ?? null;
+    const isFallbackCategory = categorySlug === badmintonCategory.slug;
     return {
-      category: categorySlug === "badminton" ? badmintonCategory : null,
-      skill,
-      resources: fallbackResources[skillSlug] ?? [],
-      relatedSkills: badmintonSkills.filter((item) => item.slug !== skillSlug).slice(0, 4),
+      category: isFallbackCategory ? badmintonCategory : null,
+      skill: isFallbackCategory ? skill : null,
+      resources: isFallbackCategory ? fallbackResources[skillSlug] ?? [] : [],
+      relatedSkills: isFallbackCategory
+        ? badmintonSkills.filter((item) => item.slug !== skillSlug).slice(0, 4)
+        : [],
     };
   }
 
@@ -218,5 +217,27 @@ export async function getAgentRuns() {
     .limit(50);
 
   if (error) throw error;
-  return data ?? [];
+  const runs = data ?? [];
+  const runIds = runs.map((run) => run.id);
+  const { data: events, error: eventsError } = runIds.length
+    ? await supabase
+        .from("agent_run_events")
+        .select("run_id, level, event_type, message, created_at")
+        .in("run_id", runIds)
+        .order("created_at", { ascending: false })
+    : { data: [], error: null };
+  if (eventsError) throw eventsError;
+
+  const latestEventByRun = new Map<
+    string,
+    { run_id: string; level: string; event_type: string; message: string; created_at: string }
+  >();
+  for (const event of events ?? []) {
+    if (!latestEventByRun.has(event.run_id)) latestEventByRun.set(event.run_id, event);
+  }
+
+  return runs.map((run) => ({
+    ...run,
+    latest_event: latestEventByRun.get(run.id) ?? null,
+  }));
 }

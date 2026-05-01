@@ -16,6 +16,7 @@ export function getServiceClient() {
 export async function callFunction<TResponse>(
   name: string,
   body: unknown,
+  options: { headers?: Record<string, string> } = {},
 ): Promise<TResponse> {
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
@@ -28,6 +29,7 @@ export async function callFunction<TResponse>(
     headers: {
       Authorization: `Bearer ${serviceRoleKey}`,
       "Content-Type": "application/json",
+      ...options.headers,
     },
     body: JSON.stringify(body),
   });
@@ -37,4 +39,9 @@ export async function callFunction<TResponse>(
     throw new Error(payload.error ?? `Function ${name} failed with ${response.status}`);
   }
   return payload as TResponse;
+}
+
+export function internalFunctionHeaders() {
+  const token = Deno.env.get("INTERNAL_FUNCTION_TOKEN");
+  return token ? { "x-internal-token": token } : {};
 }

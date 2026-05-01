@@ -20,7 +20,7 @@ export const suggestionStatusSchema = z.enum([
 
 export const originTypeSchema = z.enum(["agent", "admin", "human", "import"]);
 
-const uuidish = z.string().min(1);
+const uuidish = z.string().uuid();
 
 export const linkAddPayloadSchema = z.object({
   url: z.string().url(),
@@ -77,6 +77,7 @@ export const suggestionPayloadByType = {
 
 export const submitSuggestionSchema = z.object({
   type: suggestionTypeSchema,
+  requested_status: suggestionStatusSchema.optional(),
   status: suggestionStatusSchema.default("pending"),
   origin_type: originTypeSchema.default("agent"),
   origin_name: z.string().max(120).nullable().optional(),

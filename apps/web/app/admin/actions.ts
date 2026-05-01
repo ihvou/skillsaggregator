@@ -28,16 +28,19 @@ async function callEdgeFunction(functionName: string, body: unknown) {
 }
 
 export async function approveSuggestion(formData: FormData) {
-  await requireModerator();
+  const moderator = await requireModerator();
   const suggestionId = String(formData.get("suggestion_id") ?? "");
   if (!suggestionId) throw new Error("suggestion_id is required");
-  await callEdgeFunction("apply-suggestion", { suggestion_id: suggestionId });
+  await callEdgeFunction("apply-suggestion", {
+    suggestion_id: suggestionId,
+    moderator_user_id: moderator.userId,
+  });
   revalidatePath("/admin");
   revalidatePath("/badminton");
 }
 
 export async function declineSuggestion(formData: FormData) {
-  await requireModerator();
+  const moderator = await requireModerator();
   const suggestionId = String(formData.get("suggestion_id") ?? "");
   if (!suggestionId) throw new Error("suggestion_id is required");
 
@@ -45,7 +48,11 @@ export async function declineSuggestion(formData: FormData) {
   if (supabase) {
     const { error } = await supabase
       .from("suggestions")
-      .update({ status: "declined", decided_at: new Date().toISOString() })
+      .update({
+        status: "declined",
+        decided_at: new Date().toISOString(),
+        moderator_user_id: moderator.userId,
+      })
       .eq("id", suggestionId);
     if (error) throw error;
   }
@@ -57,9 +64,10 @@ export async function runLinkSearcher(formData: FormData) {
   await requireModerator();
   const skillId = String(formData.get("skill_id") ?? "");
   if (!skillId) throw new Error("skill_id is required");
-  await callEdgeFunction("link-searcher", { skill_id: skillId });
+  const result = await callEdgeFunction("link-searcher", { skill_id: skillId });
   revalidatePath("/admin");
   revalidatePath("/admin/runs");
+  return result as { run_id?: string; status?: string; demo?: boolean };
 }
 
 export async function demoRevalidate() {

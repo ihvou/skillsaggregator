@@ -15,8 +15,8 @@ begin
   join public.categories c on c.id = s.category_id
   where s.id = coalesce(new.skill_id, old.skill_id);
 
-  v_url := current_setting('app.revalidate_url', true);
-  v_secret := current_setting('app.revalidate_secret', true);
+  v_url := public.get_vault_secret('revalidate_url');
+  v_secret := public.get_vault_secret('revalidate_secret');
 
   if v_url is not null and v_url <> '' and v_secret is not null and v_secret <> '' then
     perform net.http_post(
@@ -45,25 +45,31 @@ security definer
 set search_path = public
 as $$
 declare
-  v_function_url text := current_setting('app.supabase_functions_url', true);
-  v_service_role_key text := current_setting('app.service_role_key', true);
+  v_function_url text := public.get_vault_secret('supabase_functions_url');
+  v_service_role_key text := public.get_vault_secret('service_role_key');
   v_skill record;
-  v_delay_seconds integer := 0;
+  v_day integer := extract(dow from now())::integer;
 begin
   if v_function_url is null or v_function_url = '' or v_service_role_key is null or v_service_role_key = '' then
     return;
   end if;
 
-  for v_skill in select id from public.skills where is_active order by created_at loop
+  for v_skill in
+    select id
+    from public.skills
+    where is_active
+      and mod(abs(hashtext(id::text)), 7) = v_day
+    order by created_at
+    limit 3
+  loop
     perform net.http_post(
       url := v_function_url || '/link-searcher',
       headers := jsonb_build_object(
         'Content-Type', 'application/json',
         'Authorization', 'Bearer ' || v_service_role_key
       ),
-      body := jsonb_build_object('skill_id', v_skill.id, 'delay_seconds', v_delay_seconds)
+      body := jsonb_build_object('skill_id', v_skill.id)
     );
-    v_delay_seconds := v_delay_seconds + 60;
   end loop;
 end;
 $$;
@@ -75,8 +81,8 @@ security definer
 set search_path = public
 as $$
 declare
-  v_function_url text := current_setting('app.supabase_functions_url', true);
-  v_service_role_key text := current_setting('app.service_role_key', true);
+  v_function_url text := public.get_vault_secret('supabase_functions_url');
+  v_service_role_key text := public.get_vault_secret('service_role_key');
   v_relation record;
 begin
   if v_function_url is null or v_function_url = '' or v_service_role_key is null or v_service_role_key = '' then

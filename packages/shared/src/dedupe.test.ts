@@ -13,9 +13,18 @@ describe("dedupe helpers", () => {
       buildDedupeKey("LINK_ADD", {
         url: "https://example.com/watch",
         canonical_url: "https://example.com/watch?utm_medium=social",
-        target_skill_id: "skill-1",
+        target_skill_id: "00000000-0000-4000-8000-000000000101",
       }),
-    ).toBe("LINK_ADD:https://example.com/watch:skill-1");
+    ).toBe("LINK_ADD:https://example.com/watch:00000000-0000-4000-8000-000000000101");
+  });
+
+  it("requires a resolved author for LINK_UPVOTE_SKILL keys", () => {
+    expect(() =>
+      buildDedupeKey("LINK_UPVOTE_SKILL", {
+        link_id: "00000000-0000-4000-8000-000000000301",
+        target_skill_id: "00000000-0000-4000-8000-000000000101",
+      }),
+    ).toThrow("resolved author");
   });
 
   it("slugifies skill names", () => {

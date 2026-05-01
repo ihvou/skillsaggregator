@@ -5,7 +5,7 @@ async function cacheThumbnailIfNeeded(suggestionId: string) {
   const supabase = getServiceClient();
   const { data: suggestion, error } = await supabase
     .from("suggestions")
-    .select("id, type, payload_json")
+    .select("id, type, link_id, payload_json")
     .eq("id", suggestionId)
     .single();
   if (error) throw error;
@@ -43,6 +43,16 @@ async function cacheThumbnailIfNeeded(suggestionId: string) {
         },
       })
       .eq("id", suggestionId);
+    if (suggestion.link_id) {
+      await supabase
+        .from("links")
+        .update({
+          thumbnail_url: data.publicUrl,
+          preview_status: "fetched",
+          fetched_at: new Date().toISOString(),
+        })
+        .eq("id", suggestion.link_id);
+    }
   } catch (_error) {
     return;
   }
@@ -56,14 +66,14 @@ Deno.serve(async (request) => {
     const body = await readJson<{ suggestion_id: string; moderator_user_id?: string | null }>(request);
     if (!body.suggestion_id) return jsonResponse({ error: "suggestion_id is required" }, 400);
 
-    await cacheThumbnailIfNeeded(body.suggestion_id);
-
     const supabase = getServiceClient();
     const { data, error } = await supabase.rpc("apply_suggestion_transaction", {
       p_suggestion_id: body.suggestion_id,
       p_moderator_user_id: body.moderator_user_id ?? null,
     });
     if (error) throw error;
+
+    await cacheThumbnailIfNeeded(body.suggestion_id);
 
     return jsonResponse(data);
   } catch (error) {

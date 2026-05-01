@@ -1,14 +1,59 @@
 import { suggestionPayloadByType } from "./schemas.ts";
-import { normalizeCanonicalUrl, normalizeSkillName } from "./normalization.ts";
+import type { SuggestionType } from "./types.ts";
+
+export function normalizeCanonicalUrl(input: string): string {
+  const parsed = new URL(input);
+  parsed.hash = "";
+  parsed.hostname = parsed.hostname.toLowerCase();
+
+  if (parsed.hostname === "youtu.be") {
+    const videoId = parsed.pathname.replace("/", "");
+    parsed.hostname = "www.youtube.com";
+    parsed.pathname = "/watch";
+    parsed.search = videoId ? `?v=${videoId}` : "";
+  }
+
+  for (const key of [...parsed.searchParams.keys()]) {
+    if (
+      key.startsWith("utm_") ||
+      ["fbclid", "gclid", "si", "feature", "ab_channel"].includes(key)
+    ) {
+      parsed.searchParams.delete(key);
+    }
+  }
+
+  const ordered = [...parsed.searchParams.entries()].sort(([a], [b]) => a.localeCompare(b));
+  parsed.search = "";
+  for (const [key, value] of ordered) {
+    parsed.searchParams.append(key, value);
+  }
+
+  if (parsed.pathname.length > 1) {
+    parsed.pathname = parsed.pathname.replace(/\/+$/, "");
+  }
+
+  return parsed.toString();
+}
+
+export function getDomain(input: string): string {
+  return new URL(input).hostname.replace(/^www\./, "");
+}
+
+export function normalizeSkillName(name: string): string {
+  return name.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+export function slugify(input: string): string {
+  return input
+    .trim()
+    .toLowerCase()
+    .replace(/&/g, " and ")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
 
 export function buildDedupeKey(
-  type:
-    | "LINK_ADD"
-    | "LINK_ATTACH_SKILL"
-    | "LINK_DETACH_SKILL"
-    | "LINK_UPVOTE_SKILL"
-    | "SKILL_CREATE"
-    | "SKILL_DELETE",
+  type: SuggestionType,
   payload: unknown,
   authorInternalUserId?: string | null,
 ): string {
@@ -31,11 +76,14 @@ export function buildDedupeKey(
     case "LINK_DETACH_SKILL":
       return ["LINK_DETACH_SKILL", requireValue("link_id"), requireValue("target_skill_id"), "detach"].join(":");
     case "LINK_UPVOTE_SKILL":
+      if (!authorInternalUserId) {
+        throw new Error("LINK_UPVOTE_SKILL requires a resolved author");
+      }
       return [
         "LINK_UPVOTE_SKILL",
         requireValue("link_id"),
         requireValue("target_skill_id"),
-        authorInternalUserId ?? "unknown-author",
+        authorInternalUserId,
         "upvote",
       ].join(":");
     case "SKILL_CREATE":

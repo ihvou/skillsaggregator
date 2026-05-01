@@ -13,9 +13,15 @@
     "lint": "npm run lint --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
+    "check:edge-shared": "node scripts/check-edge-shared-sync.mjs",
+    "sync:edge-shared": "node scripts/check-edge-shared-sync.mjs --write",
+    "h1": "node scripts/h1_youtube_density.mjs",
+    "h2": "node scripts/h2_transcript_availability.mjs",
+    "h3": "node scripts/h3_score_fixtures.mjs",
+    "h4": "node scripts/h4_triangulation_agreement.mjs",
     "test:e2e:web": "npm --workspace apps/web run test:e2e",
     "test:db": "supabase test db",
-    "ci": "npm run lint && npm run typecheck && npm run test"
+    "ci": "npm run check:edge-shared && npm run lint && npm run typecheck && npm run test"
   },
   "engines": {
     "node": ">=20.11.0",

@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { renderTranscriptScorePrompt } from "./prompts";
+import { promptToText, renderTranscriptScorePrompt } from "./prompts";
 
 describe("prompt rendering", () => {
   it("keeps the P2 transcript prompt stable", () => {
     expect(
-      renderTranscriptScorePrompt(
+      promptToText(renderTranscriptScorePrompt(
         { name: "Forehand smash", description: "Steep attacking overhead shot." },
         { title: "Smash tutorial", channel: "Badminton Insight" },
         "Contact the shuttle in front of the body and rotate through the hit.",
-      ),
+      )),
     ).toMatchInlineSnapshot(`
       "SYSTEM: You evaluate a candidate learning resource against a sub-skill.
 
