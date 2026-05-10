@@ -15,6 +15,7 @@
     "test": "npm run test --workspaces --if-present",
     "check:edge-shared": "node scripts/check-edge-shared-sync.mjs",
     "sync:edge-shared": "node scripts/check-edge-shared-sync.mjs --write",
+    "collect:articles": "node scripts/run-article-collection.mjs",
     "h1": "node scripts/h1_youtube_density.mjs",
     "h2": "node scripts/h2_transcript_availability.mjs",
     "h3": "node scripts/h3_score_fixtures.mjs",
@@ -26,5 +27,8 @@
   "engines": {
     "node": ">=20.11.0",
     "npm": ">=10.0.0"
+  },
+  "dependencies": {
+    "cheerio": "1.0.0"
   }
 }

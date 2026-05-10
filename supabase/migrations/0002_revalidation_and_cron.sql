@@ -1,3 +1,6 @@
+-- Direct revalidation path: this trigger calls the Vercel /api/revalidate
+-- endpoint stored in Vault. There is intentionally no revalidate-web Edge
+-- Function hop.
 create or replace function public.notify_revalidation()
 returns trigger
 language plpgsql

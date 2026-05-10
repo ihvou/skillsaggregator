@@ -1,27 +1,20 @@
 import { buildDedupeKey } from "../_shared/dedupe.ts";
 import { getDomain, normalizeCanonicalUrl } from "../_shared/normalization.ts";
-import { corsHeaders, errorResponse, jsonResponse, readJson } from "../_shared/responses.ts";
+import { corsForbiddenResponse, errorResponse, isAllowedCorsOrigin, jsonResponse, optionsResponse, readJson } from "../_shared/responses.ts";
 import { submitSuggestionSchema, suggestionPayloadByType } from "../_shared/schemas.ts";
 import { chooseInternalAuthor } from "../_shared/database.ts";
-import { callFunction, getServiceClient } from "../_shared/supabase.ts";
-
-function isInternalRequest(request: Request) {
-  const expected = Deno.env.get("INTERNAL_FUNCTION_TOKEN");
-  const actual = request.headers.get("x-internal-token");
-  return Boolean(expected && actual && actual === expected);
-}
+import { getServiceClient } from "../_shared/supabase.ts";
 
 Deno.serve(async (request) => {
-  if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
-  if (request.method !== "POST") return jsonResponse({ error: "Method not allowed" }, 405);
+  if (request.method === "OPTIONS") return optionsResponse(request);
+  if (!isAllowedCorsOrigin(request)) return corsForbiddenResponse(request);
+  if (request.method !== "POST") return jsonResponse({ error: "Method not allowed" }, 405, request);
 
   try {
     const supabase = getServiceClient();
     const input = submitSuggestionSchema.parse(await readJson(request));
-    const internalRequest = isInternalRequest(request);
     const requestedStatus = input.requested_status ?? input.status;
-    const finalStatus =
-      internalRequest && requestedStatus === "auto_approved" ? "auto_approved" : "pending";
+    const finalStatus = "pending";
     const payload = suggestionPayloadByType[input.type].parse(input.payload_json) as Record<string, unknown>;
 
     if (input.type === "LINK_ADD") {
@@ -47,7 +40,7 @@ Deno.serve(async (request) => {
     try {
       dedupeKey = buildDedupeKey(input.type, payload, authorInternalUserId);
     } catch (error) {
-      return errorResponse(error, 400);
+      return errorResponse(error, 400, request);
     }
 
     const { data: existing, error: existingError } = await supabase
@@ -62,7 +55,7 @@ Deno.serve(async (request) => {
         suggestion_id: existing.id,
         status: existing.status,
         duplicate: true,
-      });
+      }, 200, request);
     }
 
     const { data: inserted, error: insertError } = await supabase
@@ -87,25 +80,12 @@ Deno.serve(async (request) => {
 
     if (insertError) throw insertError;
 
-    if (finalStatus === "auto_approved") {
-      const applied = await callFunction("apply-suggestion", {
-        suggestion_id: inserted.id,
-        moderator_user_id: null,
-      });
-      return jsonResponse({
-        suggestion_id: inserted.id,
-        status: "auto_approved",
-        applied,
-      });
-    }
-
     return jsonResponse({
       suggestion_id: inserted.id,
       status: inserted.status,
       requested_status: requestedStatus,
-      internal: internalRequest,
-    });
+    }, 200, request);
   } catch (error) {
-    return errorResponse(error);
+    return errorResponse(error, 500, request);
   }
 });

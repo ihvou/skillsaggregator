@@ -1,9 +1,13 @@
+// Dormant for local-collection MVP.
+// The free-tier collection path runs through scripts/run-collection.mjs and
+// scripts/run-article-collection.mjs; keep this cloud Edge Function for a future
+// deployed-agent mode.
 import { loadSkill, loadTrustedYouTubeChannels } from "../_shared/database.ts";
 import { generateSearchQueries, scoreTranscript } from "../_shared/llm.ts";
 import { createRunLogger } from "../_shared/logger.ts";
 import { getDomain } from "../_shared/normalization.ts";
-import { corsHeaders, errorResponse, jsonResponse, readJson } from "../_shared/responses.ts";
-import { callFunction, getServiceClient, internalFunctionHeaders } from "../_shared/supabase.ts";
+import { corsForbiddenResponse, errorResponse, isAllowedCorsOrigin, jsonResponse, optionsResponse, readJson } from "../_shared/responses.ts";
+import { callFunction, getServiceClient } from "../_shared/supabase.ts";
 import {
   fetchTranscript,
   searchYouTube,
@@ -40,6 +44,7 @@ function thresholds() {
     approveCount: Number(Deno.env.get("TRIANGULATION_APPROVE_COUNT") ?? 2),
     maxCandidates: Number(Deno.env.get("LINK_SEARCHER_MAX_CANDIDATES_PER_RUN") ?? 30),
     costCapUsd: Number(Deno.env.get("RUN_COST_CAP_USD") ?? 0.5),
+    maxSingleCandidateCostUsd: Number(Deno.env.get("MAX_SINGLE_CANDIDATE_COST_USD") ?? 0.06),
   };
 }
 
@@ -61,7 +66,6 @@ async function processRun(runId: string, skillId: string) {
     await logger.info("run_started", "Link searcher background work started", {
       skill_id: skillId,
       config,
-      internal_token_configured: Boolean(Deno.env.get("INTERNAL_FUNCTION_TOKEN")),
     });
 
     const skill = await loadSkill(supabase, skillId);
@@ -121,10 +125,11 @@ async function processRun(runId: string, skillId: string) {
     });
 
     for (const candidate of candidates) {
-      if (actualCostUsd >= config.costCapUsd) {
-        await logger.warn("cost_cap_reached", "Stopping run because the configured cost cap was reached", {
+      if (actualCostUsd + config.maxSingleCandidateCostUsd > config.costCapUsd) {
+        await logger.warn("cost_cap_guard_reached", "Stopping run because another model pass could exceed the configured cost cap", {
           cost_usd: actualCostUsd,
           cap_usd: config.costCapUsd,
+          max_single_candidate_cost_usd: config.maxSingleCandidateCostUsd,
         });
         break;
       }
@@ -201,6 +206,16 @@ async function processRun(runId: string, skillId: string) {
         continue;
       }
 
+      if (actualCostUsd + config.maxSingleCandidateCostUsd > config.costCapUsd) {
+        await logger.warn("triangulation_skipped_cost_guard", "Skipping triangulation because another model pass could exceed the configured cost cap", {
+          canonical_url: candidate.canonical_url,
+          cost_usd: actualCostUsd,
+          cap_usd: config.costCapUsd,
+          max_single_candidate_cost_usd: config.maxSingleCandidateCostUsd,
+        });
+        break;
+      }
+
       const triangulation = await callFunction<TriangulationResponse>("triangulate", {
         candidate: {
           title: candidate.title,
@@ -223,8 +238,7 @@ async function processRun(runId: string, skillId: string) {
         cost_usd: triangulation.cost_usd,
       });
 
-      const requestedStatus =
-        triangulation.approve_count >= config.approveCount ? "auto_approved" : "pending";
+      const requestedStatus = "pending";
 
       const submitted = await callFunction<{ suggestion_id: string; duplicate?: boolean; status: string }>(
         "submit-suggestion",
@@ -260,7 +274,6 @@ async function processRun(runId: string, skillId: string) {
           triangulation_json: triangulation,
           confidence: Math.min(score.relevance, score.teaching_quality),
         },
-        { headers: internalFunctionHeaders() },
       );
 
       if (!submitted.duplicate) suggestionsCreated += 1;
@@ -310,12 +323,13 @@ async function processRun(runId: string, skillId: string) {
 }
 
 Deno.serve(async (request) => {
-  if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
-  if (request.method !== "POST") return jsonResponse({ error: "Method not allowed" }, 405);
+  if (request.method === "OPTIONS") return optionsResponse(request);
+  if (!isAllowedCorsOrigin(request)) return corsForbiddenResponse(request);
+  if (request.method !== "POST") return jsonResponse({ error: "Method not allowed" }, 405, request);
 
   try {
     const body = await readJson<LinkSearcherRequest>(request);
-    if (!body.skill_id) return jsonResponse({ error: "skill_id is required" }, 400);
+    if (!body.skill_id) return jsonResponse({ error: "skill_id is required" }, 400, request);
 
     const supabase = getServiceClient();
     const { data: run, error: runError } = await supabase
@@ -330,8 +344,8 @@ Deno.serve(async (request) => {
     if (runError) throw runError;
 
     runInBackground(processRun(run.id, body.skill_id));
-    return jsonResponse({ run_id: run.id, status: "started" }, 202);
+    return jsonResponse({ run_id: run.id, status: "started" }, 202, request);
   } catch (error) {
-    return errorResponse(error);
+    return errorResponse(error, 500, request);
   }
 });

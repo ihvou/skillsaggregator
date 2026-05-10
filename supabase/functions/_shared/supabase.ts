@@ -40,8 +40,3 @@ export async function callFunction<TResponse>(
   }
   return payload as TResponse;
 }
-
-export function internalFunctionHeaders() {
-  const token = Deno.env.get("INTERNAL_FUNCTION_TOKEN");
-  return token ? { "x-internal-token": token } : {};
-}

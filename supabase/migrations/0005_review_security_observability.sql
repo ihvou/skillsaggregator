@@ -28,6 +28,9 @@ as $$
   limit 1;
 $$;
 
+revoke execute on function public.get_vault_secret(text) from public, anon, authenticated;
+grant execute on function public.get_vault_secret(text) to service_role;
+
 with ranked as (
   select
     id,

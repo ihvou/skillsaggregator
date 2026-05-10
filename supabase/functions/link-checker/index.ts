@@ -1,7 +1,11 @@
+// Dormant for local-collection MVP.
+// The free-tier collection path runs through scripts/run-collection.mjs and
+// scripts/run-article-collection.mjs; keep this cloud Edge Function for a future
+// deployed-agent mode.
 import { scoreTranscript } from "../_shared/llm.ts";
 import { createRunLogger } from "../_shared/logger.ts";
 import { normalizeCanonicalUrl } from "../_shared/normalization.ts";
-import { corsHeaders, errorResponse, jsonResponse, readJson } from "../_shared/responses.ts";
+import { corsForbiddenResponse, errorResponse, isAllowedCorsOrigin, jsonResponse, optionsResponse, readJson } from "../_shared/responses.ts";
 import { callFunction, getServiceClient } from "../_shared/supabase.ts";
 import { fetchTranscript, TranscriptFetchError, TranscriptUnavailableError } from "../_shared/youtube.ts";
 
@@ -24,15 +28,16 @@ function youtubeVideoId(url: string | null | undefined) {
 }
 
 Deno.serve(async (request) => {
-  if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
-  if (request.method !== "POST") return jsonResponse({ error: "Method not allowed" }, 405);
+  if (request.method === "OPTIONS") return optionsResponse(request);
+  if (!isAllowedCorsOrigin(request)) return corsForbiddenResponse(request);
+  if (request.method !== "POST") return jsonResponse({ error: "Method not allowed" }, 405, request);
 
   const supabase = getServiceClient();
   let runId: string | null = null;
 
   try {
     const body = await readJson<{ relation_id: string }>(request);
-    if (!body.relation_id) return jsonResponse({ error: "relation_id is required" }, 400);
+    if (!body.relation_id) return jsonResponse({ error: "relation_id is required" }, 400, request);
 
     const { data: run, error: runError } = await supabase
       .from("agent_runs")
@@ -114,6 +119,9 @@ Deno.serve(async (request) => {
       cost_usd: score.cost_usd,
     });
 
+    // LINK_ATTACH_SKILL is intentionally not emitted here: the checker only
+    // re-scores an existing relation, so it can detach stale matches or upvote
+    // still-good ones without inventing new attachments.
     const suggestion =
       score.relevance < config.relevance
         ? {
@@ -199,7 +207,7 @@ Deno.serve(async (request) => {
       emitted_suggestion_id: submitted?.suggestion_id ?? null,
     });
 
-    return jsonResponse({ run_id: runId, suggestions_created: suggestionsCreated });
+    return jsonResponse({ run_id: runId, suggestions_created: suggestionsCreated }, 200, request);
   } catch (error) {
     if (runId) {
       await supabase
@@ -211,6 +219,6 @@ Deno.serve(async (request) => {
         })
         .eq("id", runId);
     }
-    return errorResponse(error);
+    return errorResponse(error, 500, request);
   }
 });

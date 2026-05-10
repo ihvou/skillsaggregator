@@ -1,4 +1,4 @@
-import { corsHeaders, errorResponse, jsonResponse, readJson } from "../_shared/responses.ts";
+import { corsForbiddenResponse, errorResponse, isAllowedCorsOrigin, jsonResponse, optionsResponse, readJson } from "../_shared/responses.ts";
 import { getServiceClient } from "../_shared/supabase.ts";
 
 async function cacheThumbnailIfNeeded(suggestionId: string) {
@@ -59,12 +59,13 @@ async function cacheThumbnailIfNeeded(suggestionId: string) {
 }
 
 Deno.serve(async (request) => {
-  if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
-  if (request.method !== "POST") return jsonResponse({ error: "Method not allowed" }, 405);
+  if (request.method === "OPTIONS") return optionsResponse(request);
+  if (!isAllowedCorsOrigin(request)) return corsForbiddenResponse(request);
+  if (request.method !== "POST") return jsonResponse({ error: "Method not allowed" }, 405, request);
 
   try {
     const body = await readJson<{ suggestion_id: string; moderator_user_id?: string | null }>(request);
-    if (!body.suggestion_id) return jsonResponse({ error: "suggestion_id is required" }, 400);
+    if (!body.suggestion_id) return jsonResponse({ error: "suggestion_id is required" }, 400, request);
 
     const supabase = getServiceClient();
     const { data, error } = await supabase.rpc("apply_suggestion_transaction", {
@@ -75,8 +76,8 @@ Deno.serve(async (request) => {
 
     await cacheThumbnailIfNeeded(body.suggestion_id);
 
-    return jsonResponse(data);
+    return jsonResponse(data, 200, request);
   } catch (error) {
-    return errorResponse(error);
+    return errorResponse(error, 500, request);
   }
 });

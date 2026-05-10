@@ -6,6 +6,8 @@ coverage
 playwright-report
 test-results
 .validation
+.collection
+bin/yt-dlp
 .env
 .env.local
 .env.*.local
