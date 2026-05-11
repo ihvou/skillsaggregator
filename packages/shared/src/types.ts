@@ -47,7 +47,11 @@ export interface SkillResource {
   public_note: string | null;
   skill_level: SkillLevel | null;
   upvote_count: number;
+  created_at?: string | null;
   link: LinkResource;
+  skill?: Pick<SkillSummary, "id" | "slug" | "name" | "category_slug"> & {
+    category_name?: string | null;
+  };
 }
 
 export interface TriangulationVote {

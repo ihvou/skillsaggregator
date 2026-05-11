@@ -345,12 +345,37 @@ $$;
 grant execute on function public.get_skill_resource_counts(uuid[]) to anon, authenticated;
 
 insert into public.categories (id, slug, name, description)
-values (
-  '00000000-0000-4000-8000-000000000001',
-  'badminton',
-  'Badminton',
-  'A focused library of technique, movement, strategy, and equipment resources for badminton learners.'
-)
+values
+  (
+    '00000000-0000-4000-8000-000000000001',
+    'badminton',
+    'Badminton',
+    'A focused library of technique, movement, strategy, and equipment resources for badminton learners.'
+  ),
+  (
+    '00000000-0000-4000-8000-000000000002',
+    'padel',
+    'Padel',
+    'Practical technique, movement, tactics, and equipment resources for improving padel players.'
+  ),
+  (
+    '00000000-0000-4000-8000-000000000003',
+    'gym-men',
+    'Gym (men)',
+    'Strength, hypertrophy, mobility, and nutrition resources for men''s gym training.'
+  ),
+  (
+    '00000000-0000-4000-8000-000000000004',
+    'gym-women',
+    'Gym (women)',
+    'Strength, hypertrophy, mobility, and confidence-building resources for women''s gym training.'
+  ),
+  (
+    '00000000-0000-4000-8000-000000000005',
+    'surfing',
+    'Surfing',
+    'Technique, ocean reading, board handling, and progression resources for surfers.'
+  )
 on conflict (slug) do nothing;
 
 insert into public.skills (id, category_id, slug, name, description)
@@ -363,7 +388,7 @@ values
   ('00000000-0000-4000-8000-000000000106', '00000000-0000-4000-8000-000000000001', 'net-shot', 'Net shot', 'Control tight spinning replies close to the tape.'),
   ('00000000-0000-4000-8000-000000000107', '00000000-0000-4000-8000-000000000001', 'drive', 'Drive', 'Play fast flat exchanges through the mid-court with compact preparation.'),
   ('00000000-0000-4000-8000-000000000108', '00000000-0000-4000-8000-000000000001', 'lift', 'Lift', 'Lift from the front court to reset rallies or move opponents backward.'),
-  ('00000000-0000-4000-8000-000000000109', '00000000-0000-4000-8000-000000000001', 'push', 'Push the shuttle into open mid-court spaces with quick racket preparation.'),
+  ('00000000-0000-4000-8000-000000000109', '00000000-0000-4000-8000-000000000001', 'push', 'Push', 'Push the shuttle into open mid-court spaces with quick racket preparation.'),
   ('00000000-0000-4000-8000-000000000110', '00000000-0000-4000-8000-000000000001', 'serve-high', 'Serve (high)', 'Use a high serve to start singles rallies with depth and height.'),
   ('00000000-0000-4000-8000-000000000111', '00000000-0000-4000-8000-000000000001', 'serve-low', 'Serve (low)', 'Keep low serves tight and legal for doubles and singles pressure.'),
   ('00000000-0000-4000-8000-000000000112', '00000000-0000-4000-8000-000000000001', 'footwork-front-court', 'Footwork (front court)', 'Move efficiently into lunges and recover from front-court shots.'),
@@ -378,17 +403,91 @@ values
   ('00000000-0000-4000-8000-000000000121', '00000000-0000-4000-8000-000000000001', 'stringing-and-tension', 'Stringing and tension', 'Understand string choice and tension tradeoffs for feel, control, and power.')
 on conflict (category_id, slug) do nothing;
 
+insert into public.skills (id, category_id, slug, name, description)
+values
+  ('00000000-0000-4000-8000-000000001001', '00000000-0000-4000-8000-000000000002', 'continental-grip', 'Continental grip', 'Hold the racket for volleys, bandejas, viboras, and controlled defensive shots.'),
+  ('00000000-0000-4000-8000-000000001002', '00000000-0000-4000-8000-000000000002', 'forehand-groundstroke', 'Forehand groundstroke', 'Build a compact forehand with clean contact, depth, and direction changes.'),
+  ('00000000-0000-4000-8000-000000001003', '00000000-0000-4000-8000-000000000002', 'backhand-groundstroke', 'Backhand groundstroke', 'Develop a reliable backhand for low balls, blocks, and resets.'),
+  ('00000000-0000-4000-8000-000000001004', '00000000-0000-4000-8000-000000000002', 'volley-technique', 'Volley technique', 'Control forehand and backhand volleys with short preparation and stable contact.'),
+  ('00000000-0000-4000-8000-000000001005', '00000000-0000-4000-8000-000000000002', 'bandeja', 'Bandeja', 'Use the bandeja to keep net position and neutralize lobs without over-attacking.'),
+  ('00000000-0000-4000-8000-000000001006', '00000000-0000-4000-8000-000000000002', 'vibora', 'Vibora', 'Add sidespin and pressure from overhead positions while keeping placement under control.'),
+  ('00000000-0000-4000-8000-000000001007', '00000000-0000-4000-8000-000000000002', 'smash-x3', 'Smash and x3', 'Choose and execute attacking smashes, including kick-smash patterns that leave the court.'),
+  ('00000000-0000-4000-8000-000000001008', '00000000-0000-4000-8000-000000000002', 'glass-defense', 'Glass defense', 'Read wall rebounds and defend after the ball hits the back or side glass.'),
+  ('00000000-0000-4000-8000-000000001009', '00000000-0000-4000-8000-000000000002', 'lob', 'Lob', 'Use height, depth, and timing to recover court position or move opponents back.'),
+  ('00000000-0000-4000-8000-000000001010', '00000000-0000-4000-8000-000000000002', 'chiquita', 'Chiquita', 'Play low, soft attacks at opponents'' feet to transition toward the net.'),
+  ('00000000-0000-4000-8000-000000001011', '00000000-0000-4000-8000-000000000002', 'net-positioning', 'Net positioning', 'Coordinate distance, angles, and partner spacing while attacking at the net.'),
+  ('00000000-0000-4000-8000-000000001012', '00000000-0000-4000-8000-000000000002', 'serve-first-volley', 'Serve and first volley', 'Start points with a serve plan and move into a balanced first volley.'),
+  ('00000000-0000-4000-8000-000000002001', '00000000-0000-4000-8000-000000000003', 'barbell-squat', 'Barbell squat', 'Train squat depth, bracing, bar path, and progressive loading safely.'),
+  ('00000000-0000-4000-8000-000000002002', '00000000-0000-4000-8000-000000000003', 'bench-press', 'Bench press', 'Build pressing strength with stable setup, touch point, and shoulder-friendly technique.'),
+  ('00000000-0000-4000-8000-000000002003', '00000000-0000-4000-8000-000000000003', 'deadlift', 'Deadlift', 'Hinge and brace for strong pulls while managing grip, setup, and lockout mechanics.'),
+  ('00000000-0000-4000-8000-000000002004', '00000000-0000-4000-8000-000000000003', 'pull-up-progression', 'Pull-up progression', 'Develop vertical pulling strength from assisted reps to loaded pull-ups.'),
+  ('00000000-0000-4000-8000-000000002005', '00000000-0000-4000-8000-000000000003', 'overhead-press', 'Overhead press', 'Press overhead with stacked posture, bar path control, and scalable loading.'),
+  ('00000000-0000-4000-8000-000000002006', '00000000-0000-4000-8000-000000000003', 'hypertrophy-programming', 'Hypertrophy programming', 'Plan sets, reps, volume, proximity to failure, and exercise selection for muscle gain.'),
+  ('00000000-0000-4000-8000-000000002007', '00000000-0000-4000-8000-000000000003', 'fat-loss-nutrition', 'Fat-loss nutrition', 'Use calorie targets, protein, adherence, and training support for sustainable fat loss.'),
+  ('00000000-0000-4000-8000-000000002008', '00000000-0000-4000-8000-000000000003', 'mobility-warm-up', 'Mobility warm-up', 'Prepare shoulders, hips, ankles, and spine for productive lifting sessions.'),
+  ('00000000-0000-4000-8000-000000002009', '00000000-0000-4000-8000-000000000003', 'core-bracing', 'Core bracing', 'Coordinate breath, trunk tension, and rib position for compound lifts.'),
+  ('00000000-0000-4000-8000-000000002010', '00000000-0000-4000-8000-000000000003', 'shoulder-health', 'Shoulder health', 'Manage pressing volume, scapular control, and rotator cuff accessory work.'),
+  ('00000000-0000-4000-8000-000000002011', '00000000-0000-4000-8000-000000000003', 'arm-training', 'Arm training', 'Train biceps, triceps, and forearms with joint-friendly volume and progression.'),
+  ('00000000-0000-4000-8000-000000002012', '00000000-0000-4000-8000-000000000003', 'recovery-habits', 'Recovery habits', 'Balance sleep, deloads, soreness, and training stress across a lifting block.'),
+  ('00000000-0000-4000-8000-000000003001', '00000000-0000-4000-8000-000000000004', 'glute-bridge-hip-thrust', 'Glute bridge and hip thrust', 'Set up hip thrusts and bridges for glute stimulus without low-back overload.'),
+  ('00000000-0000-4000-8000-000000003002', '00000000-0000-4000-8000-000000000004', 'goblet-squat', 'Goblet squat', 'Use goblet squats to learn depth, balance, and bracing before heavier loading.'),
+  ('00000000-0000-4000-8000-000000003003', '00000000-0000-4000-8000-000000000004', 'romanian-deadlift', 'Romanian deadlift', 'Train the hip hinge with hamstring tension, neutral spine, and controlled tempo.'),
+  ('00000000-0000-4000-8000-000000003004', '00000000-0000-4000-8000-000000000004', 'dumbbell-bench-press', 'Dumbbell bench press', 'Press with stable shoulders, range of motion, and balanced dumbbell control.'),
+  ('00000000-0000-4000-8000-000000003005', '00000000-0000-4000-8000-000000000004', 'lat-pulldown', 'Lat pulldown', 'Build back strength with controlled shoulder position and clean pulling mechanics.'),
+  ('00000000-0000-4000-8000-000000003006', '00000000-0000-4000-8000-000000000004', 'lower-body-hypertrophy', 'Lower-body hypertrophy', 'Program quads, glutes, and hamstrings with balanced volume and progression.'),
+  ('00000000-0000-4000-8000-000000003007', '00000000-0000-4000-8000-000000000004', 'upper-body-hypertrophy', 'Upper-body hypertrophy', 'Train shoulders, back, chest, and arms with confidence and recovery in mind.'),
+  ('00000000-0000-4000-8000-000000003008', '00000000-0000-4000-8000-000000000004', 'pelvic-floor-aware-lifting', 'Pelvic floor aware lifting', 'Coordinate breath, pressure, and load for lifters managing pelvic-floor symptoms.'),
+  ('00000000-0000-4000-8000-000000003009', '00000000-0000-4000-8000-000000000004', 'cycle-aware-training', 'Cycle-aware training', 'Adjust training expectations and recovery around menstrual-cycle symptoms when helpful.'),
+  ('00000000-0000-4000-8000-000000003010', '00000000-0000-4000-8000-000000000004', 'gym-confidence', 'Gym confidence', 'Navigate equipment, etiquette, and progression without feeling lost on the gym floor.'),
+  ('00000000-0000-4000-8000-000000003011', '00000000-0000-4000-8000-000000000004', 'nutrition-for-strength', 'Nutrition for strength', 'Support performance with protein, energy availability, hydration, and consistent habits.'),
+  ('00000000-0000-4000-8000-000000003012', '00000000-0000-4000-8000-000000000004', 'mobility-stability', 'Mobility and stability', 'Improve usable range, control, and joint stability for lifting sessions.'),
+  ('00000000-0000-4000-8000-000000004001', '00000000-0000-4000-8000-000000000005', 'paddling-technique', 'Paddling technique', 'Paddle efficiently with body position, stroke mechanics, and breathing control.'),
+  ('00000000-0000-4000-8000-000000004002', '00000000-0000-4000-8000-000000000005', 'pop-up', 'Pop-up', 'Move from prone to stance quickly with stable foot placement and low posture.'),
+  ('00000000-0000-4000-8000-000000004003', '00000000-0000-4000-8000-000000000005', 'wave-selection', 'Wave selection', 'Read sets, peaks, shoulders, and wave quality before committing to a paddle.'),
+  ('00000000-0000-4000-8000-000000004004', '00000000-0000-4000-8000-000000000005', 'takeoff-timing', 'Takeoff timing', 'Match paddle speed and timing to enter waves with control.'),
+  ('00000000-0000-4000-8000-000000004005', '00000000-0000-4000-8000-000000000005', 'bottom-turn', 'Bottom turn', 'Set the rail and redirect speed from the lower third of the wave.'),
+  ('00000000-0000-4000-8000-000000004006', '00000000-0000-4000-8000-000000000005', 'cutback', 'Cutback', 'Return to the power source with rail control, rotation, and rebound timing.'),
+  ('00000000-0000-4000-8000-000000004007', '00000000-0000-4000-8000-000000000005', 'duck-dive', 'Duck dive', 'Get under breaking waves with board angle, body weight, and recovery timing.'),
+  ('00000000-0000-4000-8000-000000004008', '00000000-0000-4000-8000-000000000005', 'turtle-roll', 'Turtle roll', 'Pass whitewater on longer boards with safe grip, rotation, and reset.'),
+  ('00000000-0000-4000-8000-000000004009', '00000000-0000-4000-8000-000000000005', 'surf-stance', 'Surf stance', 'Build balance, compression, foot placement, and upper-body alignment on the board.'),
+  ('00000000-0000-4000-8000-000000004010', '00000000-0000-4000-8000-000000000005', 'lineup-positioning', 'Lineup positioning', 'Choose takeoff spots while respecting priority, currents, and crowd flow.'),
+  ('00000000-0000-4000-8000-000000004011', '00000000-0000-4000-8000-000000000005', 'surf-etiquette', 'Surf etiquette', 'Understand right of way, paddling lanes, communication, and safe decision-making.'),
+  ('00000000-0000-4000-8000-000000004012', '00000000-0000-4000-8000-000000000005', 'board-choice', 'Board choice', 'Match volume, shape, fin setup, and length to waves and ability level.')
+on conflict (category_id, slug) do nothing;
+
+-- Channel IDs verified via yt-dlp on 2026-05-09 (handle → channel_id resolution).
+-- Original placeholder IDs replaced; only YouTube channels with confirmed UC IDs are seeded.
 insert into public.trusted_sources (source_type, identifier, display_name, category_id)
 values
-  ('youtube_channel', 'UC2cKr3rQwlR2Z6CSNa3Lqlw', 'Badminton Insight', '00000000-0000-4000-8000-000000000001'),
-  ('youtube_channel', 'UCkzL9CwOJ4ZDSkpb2rj_RIw', 'Badminton Famly', '00000000-0000-4000-8000-000000000001'),
-  ('youtube_channel', 'UCtuSKlYXWXwlu6_3OYDjVTQ', 'Coach Lee', '00000000-0000-4000-8000-000000000001'),
-  ('youtube_channel', 'UCWHtFQg1mOHLXLqM_GFaXgw', 'BWF', '00000000-0000-4000-8000-000000000001'),
-  ('youtube_channel', 'UC_kCu9-TFC4jPQXNvmsMcUw', 'Mix Badminton', '00000000-0000-4000-8000-000000000001'),
-  ('youtube_channel', 'UCvxrFGFY-w5p_Z4OS7yyEhA', 'ShuttleAmp', '00000000-0000-4000-8000-000000000001'),
+  ('youtube_channel', 'UCk2gRC4RewYvvXXqXZxaTbQ', 'Badminton Insight', '00000000-0000-4000-8000-000000000001'),
+  ('youtube_channel', 'UC57H0Kg7TQpc8Na96gfm4kg', 'Badminton Famly', '00000000-0000-4000-8000-000000000001'),
+  ('youtube_channel', 'UChh-akEbUM8_6ghGVnJd6cQ', 'BWF TV', '00000000-0000-4000-8000-000000000001'),
   ('domain', 'badmintonbites.com', 'Badminton Bites', '00000000-0000-4000-8000-000000000001'),
   ('domain', 'badmintonpassion.com', 'Badminton Passion', '00000000-0000-4000-8000-000000000001'),
-  ('domain', 'badmintonfamly.com', 'Badminton Famly Blog', '00000000-0000-4000-8000-000000000001')
+  ('domain', 'badmintonfamly.com', 'Badminton Famly Blog', '00000000-0000-4000-8000-000000000001'),
+  ('youtube_channel', 'UCmswycX_XINvjrPX0i_17rg', 'The Padel School', '00000000-0000-4000-8000-000000000002'),
+  ('youtube_channel', 'UCH6Y34ndSHpQ5chh0bk6Iqg', 'EverythingPadel', '00000000-0000-4000-8000-000000000002'),
+  ('domain', 'thepadelschool.com', 'The Padel School', '00000000-0000-4000-8000-000000000002'),
+  ('domain', 'everythingpadel.co.uk', 'EverythingPadel', '00000000-0000-4000-8000-000000000002'),
+  ('domain', 'padelalto.com', 'Padel Alto', '00000000-0000-4000-8000-000000000002'),
+  ('youtube_channel', 'UC68TLK0mAEzUyHx5x5k-S1Q', 'Jeff Nippard', '00000000-0000-4000-8000-000000000003'),
+  ('youtube_channel', 'UCfQgsKhHjSyRLOp9mnffqVg', 'Renaissance Periodization', '00000000-0000-4000-8000-000000000003'),
+  ('youtube_channel', 'UCERm5yFZ1SptUEU4wZ2vJvw', 'Jeremy Ethier', '00000000-0000-4000-8000-000000000003'),
+  ('domain', 'jeffnippard.com', 'Jeff Nippard', '00000000-0000-4000-8000-000000000003'),
+  ('domain', 'rpstrength.com', 'Renaissance Periodization', '00000000-0000-4000-8000-000000000003'),
+  ('domain', 'builtwithscience.com', 'Built With Science', '00000000-0000-4000-8000-000000000003'),
+  ('youtube_channel', 'UCj_GeRF7G4NEpvQ5_A1wSvg', 'MegSquats', '00000000-0000-4000-8000-000000000004'),
+  ('youtube_channel', 'UCf2HPiMK_PAESm_yFbm2CKw', 'SoheeFit', '00000000-0000-4000-8000-000000000004'),
+  ('youtube_channel', 'UCpis3RcTw6t47XO0R_KY4WQ', 'Caroline Girvan', '00000000-0000-4000-8000-000000000004'),
+  ('domain', 'megsquats.com', 'MegSquats', '00000000-0000-4000-8000-000000000004'),
+  ('domain', 'soheefit.com', 'SoheeFit', '00000000-0000-4000-8000-000000000004'),
+  ('domain', 'carolinegirvan.com', 'Caroline Girvan', '00000000-0000-4000-8000-000000000004'),
+  ('youtube_channel', 'UC8bEqBo6HUYBETZZS2AsMlg', 'Surf Simply', '00000000-0000-4000-8000-000000000005'),
+  ('youtube_channel', 'UCvOh9i-BOFzu51rpj33fGag', 'Barefoot Surf', '00000000-0000-4000-8000-000000000005'),
+  ('youtube_channel', 'UCuZSTHZf3vd7eVehhnotcsg', 'How to Rip', '00000000-0000-4000-8000-000000000005'),
+  ('domain', 'surfsimply.com', 'Surf Simply', '00000000-0000-4000-8000-000000000005'),
+  ('domain', 'barefootsurftravel.com', 'Barefoot Surf', '00000000-0000-4000-8000-000000000005'),
+  ('domain', 'howtorip.com', 'How to Rip', '00000000-0000-4000-8000-000000000005')
 on conflict (source_type, identifier) do nothing;
 
 insert into public.internal_users (id, display_name, is_agent_actor)
@@ -402,5 +501,17 @@ insert into public.internal_user_category_interests (internal_user_id, category_
 values
   ('00000000-0000-4000-8000-000000000201', '00000000-0000-4000-8000-000000000001', 3),
   ('00000000-0000-4000-8000-000000000202', '00000000-0000-4000-8000-000000000001', 2),
-  ('00000000-0000-4000-8000-000000000203', '00000000-0000-4000-8000-000000000001', 1)
+  ('00000000-0000-4000-8000-000000000203', '00000000-0000-4000-8000-000000000001', 1),
+  ('00000000-0000-4000-8000-000000000201', '00000000-0000-4000-8000-000000000002', 3),
+  ('00000000-0000-4000-8000-000000000202', '00000000-0000-4000-8000-000000000002', 2),
+  ('00000000-0000-4000-8000-000000000203', '00000000-0000-4000-8000-000000000002', 1),
+  ('00000000-0000-4000-8000-000000000201', '00000000-0000-4000-8000-000000000003', 3),
+  ('00000000-0000-4000-8000-000000000202', '00000000-0000-4000-8000-000000000003', 2),
+  ('00000000-0000-4000-8000-000000000203', '00000000-0000-4000-8000-000000000003', 1),
+  ('00000000-0000-4000-8000-000000000201', '00000000-0000-4000-8000-000000000004', 3),
+  ('00000000-0000-4000-8000-000000000202', '00000000-0000-4000-8000-000000000004', 2),
+  ('00000000-0000-4000-8000-000000000203', '00000000-0000-4000-8000-000000000004', 1),
+  ('00000000-0000-4000-8000-000000000201', '00000000-0000-4000-8000-000000000005', 3),
+  ('00000000-0000-4000-8000-000000000202', '00000000-0000-4000-8000-000000000005', 2),
+  ('00000000-0000-4000-8000-000000000203', '00000000-0000-4000-8000-000000000005', 1)
 on conflict (internal_user_id, category_id) do nothing;

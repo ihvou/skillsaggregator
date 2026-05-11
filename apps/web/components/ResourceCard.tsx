@@ -1,4 +1,5 @@
 import Image from "next/image";
+import Link from "next/link";
 import { ExternalLink, ThumbsUp } from "lucide-react";
 import type { SkillResource } from "@skillsaggregator/shared";
 
@@ -63,6 +64,20 @@ export function ResourceCard({ resource }: ResourceCardProps) {
           <ThumbsUp className="h-4 w-4" aria-hidden="true" />
           <span>{resource.upvote_count} approved upvotes</span>
         </div>
+        {resource.skill ? (
+          <div className="mt-3 text-sm text-graphite">
+            Skill:{" "}
+            <Link
+              href={`/${resource.skill.category_slug}/${resource.skill.slug}`}
+              className="focus-ring font-semibold text-court hover:text-ink"
+            >
+              {resource.skill.name}
+            </Link>
+            {resource.skill.category_name ? (
+              <span className="text-graphite/80"> in {resource.skill.category_name}</span>
+            ) : null}
+          </div>
+        ) : null}
       </div>
     </article>
   );

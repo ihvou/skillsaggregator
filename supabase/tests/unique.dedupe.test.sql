@@ -24,6 +24,7 @@ select throws_ok(
       'duplicate-key'
     )$$,
   '23505',
+  'duplicate key value violates unique constraint "suggestions_active_dedupe_key_idx"',
   'active suggestion dedupe key is unique across approved and pending'
 );
 

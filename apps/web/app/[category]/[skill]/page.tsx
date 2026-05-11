@@ -8,14 +8,16 @@ import {
 } from "@skillsaggregator/shared";
 import { JsonLd } from "@/components/JsonLd";
 import { ResourceGroups } from "@/components/ResourceGroups";
-import { getCatalog, getSkillPage } from "@/lib/data";
+import { getAllCatalogs, getSkillPage } from "@/lib/data";
 import { getBaseUrl } from "@/lib/env";
 
 export const revalidate = 3600;
 
 export async function generateStaticParams() {
-  const { category, skills } = await getCatalog();
-  return skills.map((skill) => ({ category: category.slug, skill: skill.slug }));
+  const catalogs = await getAllCatalogs();
+  return catalogs.flatMap(({ category, skills }) =>
+    skills.map((skill) => ({ category: category.slug, skill: skill.slug })),
+  );
 }
 
 export async function generateMetadata({

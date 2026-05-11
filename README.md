@@ -1,8 +1,8 @@
 # Skills Aggregator
 
-An MVP learning-resource aggregator for badminton skills. It includes:
+An MVP learning-resource aggregator for sport and training skills. It includes:
 
-- Supabase schema, RLS, seed taxonomy, local collection, cron cleanup, and Edge Functions.
+- Supabase schema, RLS, multi-sport seed taxonomy, local collection, cron cleanup, and Edge Functions.
 - Next.js public SEO pages and an admin moderation queue.
 - Expo mobile app with browsing, level filters, saved resources, and completed state.
 - Shared Zod schemas, prompt templates, and tests for the suggestion pipeline.
@@ -59,12 +59,28 @@ Copy `.env.example` values into the relevant app and Supabase environments.
 
 1. Create a Supabase project, copy the URL, anon key, and service role key into `.env.local`, and keep `DEMO_MODE` unset for any real environment.
 2. Run the migrations and seed locally with `supabase db reset`.
-3. Add moderator rows in `public.moderators`; admin access is fail-closed and no longer trusts `MODERATOR_EMAILS` or user-editable auth metadata:
+3. Add moderators in both Supabase Auth and `public.moderators`; admin access is fail-closed and no longer trusts `MODERATOR_EMAILS` or user-editable auth metadata. The helper does both:
+
+```bash
+npm run add:moderator -- --email you@example.com
+```
+
+Manual equivalent:
 
 ```sql
 insert into public.moderators (email)
 values ('you@example.com')
 on conflict (email) do update set is_active = true;
+```
+
+Also create the matching Auth user with `email_confirm: true` through the Admin API:
+
+```bash
+curl -X POST "$SUPABASE_URL/auth/v1/admin/users" \
+  -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
+  -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"email":"you@example.com","email_confirm":true}'
 ```
 
 4. Store cron and webhook secrets in Supabase Vault, not database GUCs:
@@ -137,7 +153,13 @@ ALLOWED_ORIGINS=http://localhost:3000
 REVALIDATE_SECRET=local-dev-secret
 ```
 
-5. Add a moderator in Studio at `http://localhost:54323` or through SQL:
+5. Add a moderator in Auth and the moderator table:
+
+```bash
+npm run add:moderator -- --email you@example.com
+```
+
+The SQL-only table row is not enough when local Auth signup is disabled; the matching `auth.users` row must exist before magic-link OTP can be sent.
 
 ```sql
 insert into public.moderators (email)
@@ -158,6 +180,13 @@ npm run dev:web
 ollama pull qwen2.5:7b
 npm run collect:articles -- --dry-run --max-per-domain 2 --skill forehand-clear
 npm run collect:articles
+```
+
+Video collection can target one category across the seeded taxonomy:
+
+```bash
+node scripts/run-collection.mjs --category padel --all
+node scripts/run-collection.mjs --category surfing --skill pop-up
 ```
 
 ## Demo Flow

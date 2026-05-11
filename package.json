@@ -15,6 +15,7 @@
     "test": "npm run test --workspaces --if-present",
     "check:edge-shared": "node scripts/check-edge-shared-sync.mjs",
     "sync:edge-shared": "node scripts/check-edge-shared-sync.mjs --write",
+    "add:moderator": "node scripts/add-moderator.mjs",
     "collect:articles": "node scripts/run-article-collection.mjs",
     "h1": "node scripts/h1_youtube_density.mjs",
     "h2": "node scripts/h2_transcript_availability.mjs",
