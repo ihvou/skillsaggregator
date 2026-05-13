@@ -24,6 +24,8 @@
  *   COLLECT_MIN_DURATION_SEC      default 60
  *   COLLECT_MAX_DURATION_SEC      default 2700  (45 min)
  *   COLLECT_MAX_VIDEO_AGE_DAYS    default 1825 (5 years)
+ *   COLLECT_SECONDARY_RELEVANCE_THRESHOLD default 0.6
+ *   COLLECT_MAX_SECONDARY_SKILLS   default 4
  *   COLLECT_TRANSCRIPT_TMP_DIR    default .collection/transcripts
  *   COLLECT_OUTPUT_DIR            default .collection/runs
  */
@@ -50,6 +52,8 @@ const config = {
   minDurationSec: Number(process.env.COLLECT_MIN_DURATION_SEC ?? 60),
   maxDurationSec: Number(process.env.COLLECT_MAX_DURATION_SEC ?? 2700),
   maxVideoAgeDays: Number(process.env.COLLECT_MAX_VIDEO_AGE_DAYS ?? 1825),
+  secondaryRelevanceThreshold: Number(process.env.COLLECT_SECONDARY_RELEVANCE_THRESHOLD ?? 0.6),
+  maxSecondarySkills: Number(process.env.COLLECT_MAX_SECONDARY_SKILLS ?? 4),
   transcriptDir: process.env.COLLECT_TRANSCRIPT_TMP_DIR ?? join(root, ".collection", "transcripts"),
   outputDir: process.env.COLLECT_OUTPUT_DIR ?? join(root, ".collection", "runs"),
   ytdlpSleepRequests: Number(process.env.YTDLP_SLEEP_REQUESTS ?? 3),
@@ -137,6 +141,19 @@ async function loadSkills(slug) {
        ${categorySlugFilter ? "and c.slug = $1" : ""}
      order by c.slug, s.name`,
     params,
+  );
+  return rows.map(([id, slug, name, description, categoryId, categorySlug]) => ({
+    id, slug, name, description, category_id: categoryId, category_slug: categorySlug,
+  }));
+}
+
+async function loadCategorySkills(categoryId) {
+  const rows = await dbQuery(
+    `select s.id, s.slug, s.name, coalesce(s.description, ''), s.category_id, c.slug
+     from public.skills s join public.categories c on c.id = s.category_id
+     where s.is_active and s.category_id = $1
+     order by s.name`,
+    [categoryId],
   );
   return rows.map(([id, slug, name, description, categoryId, categorySlug]) => ({
     id, slug, name, description, category_id: categoryId, category_slug: categorySlug,
@@ -320,7 +337,17 @@ function vttToText(vtt) {
   return out.join(" ").replace(/\s+/g, " ").trim();
 }
 
-const PROMPT_SYSTEM = "You score badminton tutorial videos against a sub-skill. Be strict. Return JSON only.";
+function promptSystem(skill) {
+  const category = skill.category_name ?? skill.category_slug ?? "the sport";
+  return [
+    `You score ${category} tutorial videos against a specific sub-skill.`,
+    `A video qualifies if it substantially teaches, demonstrates, or improves the sub-skill — even when the title uses synonyms or focuses on a sub-aspect (e.g. "Pop Up Hand Position" still teaches the surf pop-up; "How to Squat Properly" still covers the barbell squat).`,
+    `Equipment is implicit by context: a strength-training "squat" video counts as a barbell squat when performed with a barbell, "bandeja" counts as the padel bandeja, etc.`,
+    `Score relevance < 0.4 only when the video is clearly about a different sub-skill or only mentions this sub-skill in passing.`,
+    `Be strict on teaching_quality (clickbait and rambling = low) but generous on relevance for genuinely on-topic content.`,
+    `Return JSON only.`,
+  ].join(" ");
+}
 function promptUser(skill, candidate, transcript) {
   return [
     `Return JSON with these exact keys:`,
@@ -338,13 +365,22 @@ function promptUser(skill, candidate, transcript) {
   ].join("\n");
 }
 
+function parseOllamaJson(payload, context) {
+  const cleaned = (payload.response ?? "").replace(/[‘’]/g, "'").replace(/[“”]/g, '"');
+  try {
+    return JSON.parse(cleaned);
+  } catch (_error) {
+    throw new Error(`${context}_json_parse_failed: ${cleaned.slice(0, 120)}`);
+  }
+}
+
 async function scoreWithOllama(skill, candidate, transcript) {
   const body = {
     model: config.ollamaModel,
     stream: false,
     format: "json",
     options: { temperature: 0.1 },
-    system: PROMPT_SYSTEM,
+    system: promptSystem(skill),
     prompt: promptUser(skill, candidate, transcript),
   };
   const response = await fetch(`${config.ollamaUrl}/api/generate`, {
@@ -354,10 +390,7 @@ async function scoreWithOllama(skill, candidate, transcript) {
   });
   if (!response.ok) throw new Error(`Ollama ${response.status}`);
   const payload = await response.json();
-  const cleaned = (payload.response ?? "").replace(/[‘’]/g, "'").replace(/[“”]/g, '"');
-  let parsed;
-  try { parsed = JSON.parse(cleaned); }
-  catch (error) { throw new Error(`json_parse_failed: ${cleaned.slice(0, 120)}`); }
+  const parsed = parseOllamaJson(payload, "score");
   return {
     relevance: Number(parsed.relevance ?? 0),
     teaching_quality: Number(parsed.teaching_quality ?? 0),
@@ -366,6 +399,81 @@ async function scoreWithOllama(skill, candidate, transcript) {
     public_note: String(parsed.public_note ?? "").slice(0, 140),
     evidence_quote: String(parsed.evidence_quote ?? "").slice(0, 200),
   };
+}
+
+function secondaryPromptSystem(skill) {
+  const category = skill.category_name ?? skill.category_slug ?? "the category";
+  return [
+    `You identify secondary ${category} skills taught by a tutorial video.`,
+    `Only include skills that the transcript substantially teaches, demonstrates, or improves.`,
+    `Do not include the primary skill being scored.`,
+    `Prefer 2 to ${config.maxSecondarySkills} secondary skills when genuinely supported; return an empty array when none are supported.`,
+    `Return JSON only.`,
+  ].join(" ");
+}
+
+function secondaryPromptUser(primarySkill, categorySkills, candidate, transcript) {
+  const skillList = categorySkills
+    .filter((skill) => skill.id !== primarySkill.id)
+    .map((skill) => `- ${skill.slug}: ${skill.name} — ${skill.description}`)
+    .join("\n");
+  return [
+    `Return JSON with this exact shape:`,
+    `{"secondary":[{"skill_slug":"slug-from-list","relevance":0..1,"public_note":"<=140 chars explaining why this video teaches that skill"}]}`,
+    "",
+    `Rules:`,
+    `- choose only from the skill list below`,
+    `- relevance means how clearly this video teaches that secondary skill`,
+    `- skip skills that are merely mentioned in passing`,
+    `- keep public_note specific to that secondary skill`,
+    "",
+    `primary_skill: "${primarySkill.slug}: ${primarySkill.name}"`,
+    `candidate_title: "${candidate.title}"`,
+    "",
+    `category_skill_list:`,
+    skillList,
+    "",
+    `transcript_excerpt: "${transcript.slice(0, 5000)}"`,
+  ].join("\n");
+}
+
+async function findSecondarySkills(primarySkill, categorySkills, candidate, transcript) {
+  const body = {
+    model: config.ollamaModel,
+    stream: false,
+    format: "json",
+    options: { temperature: 0 },
+    system: secondaryPromptSystem(primarySkill),
+    prompt: secondaryPromptUser(primarySkill, categorySkills, candidate, transcript),
+  };
+  log("debug", "secondary_score_started", "Scoring secondary skill overlap", {
+    video_id: candidate.video_id,
+    primary_skill: primarySkill.slug,
+    category_skill_count: categorySkills.length,
+  });
+  const response = await fetch(`${config.ollamaUrl}/api/generate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) throw new Error(`Ollama secondary ${response.status}`);
+  const payload = await response.json();
+  const parsed = parseOllamaJson(payload, "secondary");
+  const skillsBySlug = new Map(categorySkills.map((skill) => [skill.slug, skill]));
+  const seen = new Set();
+  const secondary = Array.isArray(parsed.secondary) ? parsed.secondary : [];
+  return secondary.flatMap((item) => {
+    const skillSlug = String(item.skill_slug ?? "").trim();
+    const skill = skillsBySlug.get(skillSlug);
+    const relevance = Number(item.relevance ?? 0);
+    if (!skill || skill.id === primarySkill.id || seen.has(skill.id) || !Number.isFinite(relevance)) return [];
+    seen.add(skill.id);
+    return [{
+      skill,
+      relevance: Math.max(0, Math.min(1, relevance)),
+      public_note: String(item.public_note ?? "").slice(0, 140),
+    }];
+  }).slice(0, config.maxSecondarySkills);
 }
 
 async function postSuggestion(skill, candidate, transcript, score, viewCount) {
@@ -411,11 +519,85 @@ async function postSuggestion(skill, candidate, transcript, score, viewCount) {
   return JSON.parse(text);
 }
 
+async function ensureLinkPlaceholder(candidate) {
+  const thumbnailUrl = `https://i.ytimg.com/vi/${candidate.video_id}/hqdefault.jpg`;
+  const rows = await dbQuery(
+    `insert into public.links (
+       url,
+       canonical_url,
+       domain,
+       title,
+       description,
+       thumbnail_url,
+       content_type,
+       language,
+       preview_status,
+       fetched_at,
+       is_active
+     )
+     values ($1, $2, 'youtube.com', $3, null, $4, 'video', 'en', 'fetched', now(), false)
+     on conflict (canonical_url) do update set
+       url = excluded.url,
+       domain = excluded.domain,
+       title = coalesce(excluded.title, public.links.title),
+       thumbnail_url = coalesce(excluded.thumbnail_url, public.links.thumbnail_url),
+       content_type = coalesce(excluded.content_type, public.links.content_type),
+       language = coalesce(excluded.language, public.links.language),
+       preview_status = excluded.preview_status,
+       fetched_at = coalesce(public.links.fetched_at, excluded.fetched_at),
+       updated_at = now()
+     returning id`,
+    [candidate.url, candidate.canonical_url, candidate.title, thumbnailUrl],
+  );
+  const linkId = rows[0]?.[0];
+  if (!linkId) throw new Error("link_placeholder_missing");
+  return linkId;
+}
+
+async function postAttachSuggestion(primarySkill, secondary, candidate, transcript, score, linkId) {
+  const payload = {
+    type: "LINK_ATTACH_SKILL",
+    origin_type: "agent",
+    origin_name: "local-collection-secondary",
+    category_id: secondary.skill.category_id,
+    skill_id: secondary.skill.id,
+    link_id: linkId,
+    payload_json: {
+      link_id: linkId,
+      target_skill_id: secondary.skill.id,
+      public_note: secondary.public_note || `Also teaches ${secondary.skill.name}.`,
+      skill_level: score.level,
+    },
+    evidence_json: {
+      source: "youtube_local_collection_secondary",
+      channel_id: candidate.channel_id,
+      video_id: candidate.video_id,
+      primary_skill_slug: primarySkill.slug,
+      secondary_skill_slug: secondary.skill.slug,
+      secondary_relevance: secondary.relevance,
+      transcript_excerpt: transcript.slice(0, 600),
+    },
+    confidence: secondary.relevance,
+  };
+  const response = await fetch(`${config.supabaseUrl}/functions/v1/submit-suggestion`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${config.serviceRoleKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+  const text = await response.text();
+  if (!response.ok) throw new Error(`submit-secondary ${response.status}: ${text}`);
+  return JSON.parse(text);
+}
+
 async function processSkill(skill, summary) {
   const runId = await startAgentRun(skill);
   log("info", "skill_run_started", "Starting collection for skill", { skill: skill.slug, run_id: runId });
 
   const channels = await loadChannels(skill.category_id);
+  const categorySkills = await loadCategorySkills(skill.category_id);
   const terms = termsForSkill(skill);
   const allCandidates = [];
   const seenVideoIds = new Set();
@@ -455,6 +637,8 @@ async function processSkill(skill, summary) {
   });
 
   let submitted = 0;
+  let primarySubmitted = 0;
+  let secondarySubmitted = 0;
   let firstCandidate = true;
   for (const candidate of toScore) {
     if (!firstCandidate) {
@@ -499,18 +683,82 @@ async function processSkill(skill, summary) {
 
     try {
       const result = await postSuggestion(skill, candidate, transcript, score, candidate.view_count);
-      if (!result.duplicate) submitted += 1;
+      if (!result.duplicate) {
+        submitted += 1;
+        primarySubmitted += 1;
+      }
       log("info", "suggestion_submitted", "Suggestion submitted to local DB", {
         suggestion_id: result.suggestion_id, duplicate: Boolean(result.duplicate),
       });
     } catch (error) {
       log("error", "submit_failed", error.message, { video_id: candidate.video_id });
+      continue;
+    }
+
+    try {
+      const secondaryCandidates = await findSecondarySkills(skill, categorySkills, candidate, transcript);
+      const acceptedSecondaries = secondaryCandidates.filter(
+        (secondary) => secondary.relevance >= config.secondaryRelevanceThreshold,
+      );
+      if (!acceptedSecondaries.length) {
+        log("debug", "secondary_skills_none", "No secondary skills passed threshold", {
+          video_id: candidate.video_id,
+          primary_skill: skill.slug,
+          candidates: secondaryCandidates.map((secondary) => ({
+            skill: secondary.skill.slug,
+            relevance: secondary.relevance,
+          })),
+          threshold: config.secondaryRelevanceThreshold,
+        });
+        continue;
+      }
+
+      const linkId = await ensureLinkPlaceholder(candidate);
+      for (const secondary of acceptedSecondaries) {
+        try {
+          const result = await postAttachSuggestion(skill, secondary, candidate, transcript, score, linkId);
+          if (!result.duplicate) {
+            submitted += 1;
+            secondarySubmitted += 1;
+          }
+          log("info", "secondary_suggestion_submitted", "Secondary skill attach submitted", {
+            suggestion_id: result.suggestion_id,
+            duplicate: Boolean(result.duplicate),
+            video_id: candidate.video_id,
+            link_id: linkId,
+            primary_skill: skill.slug,
+            secondary_skill: secondary.skill.slug,
+            relevance: secondary.relevance,
+          });
+        } catch (error) {
+          log("error", "secondary_submit_failed", error.message, {
+            video_id: candidate.video_id,
+            primary_skill: skill.slug,
+            secondary_skill: secondary.skill.slug,
+          });
+        }
+      }
+    } catch (error) {
+      log("warn", "secondary_score_failed", error.message, {
+        video_id: candidate.video_id,
+        primary_skill: skill.slug,
+      });
     }
   }
 
   await finishAgentRun(runId, { suggestionsCreated: submitted });
-  log("info", "skill_run_completed", "Skill run complete", { skill: skill.slug, submitted });
-  summary.push({ skill: skill.slug, submitted });
+  log("info", "skill_run_completed", "Skill run complete", {
+    skill: skill.slug,
+    submitted,
+    primary_submitted: primarySubmitted,
+    secondary_submitted: secondarySubmitted,
+  });
+  summary.push({
+    skill: skill.slug,
+    submitted,
+    primary_submitted: primarySubmitted,
+    secondary_submitted: secondarySubmitted,
+  });
 }
 
 async function main() {
