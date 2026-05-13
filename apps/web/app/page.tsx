@@ -40,7 +40,7 @@ export default async function HomePage({
           <div className="mt-5 max-w-3xl space-y-4 text-base leading-8 text-graphite md:text-lg">
             <p>
               Want to nail a forehand smash? Master the padel bandeja? Build a stronger squat?
-              We organize the web's best free tutorials by the exact skill they teach — so you
+              We organize the web&rsquo;s best free tutorials by the exact skill they teach — so you
               skip the search rabbit hole and get straight to practicing.
             </p>
             <p>
