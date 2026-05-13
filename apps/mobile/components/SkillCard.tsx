@@ -1,15 +1,21 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Link } from "expo-router";
 import type { SkillSummary } from "@skillsaggregator/shared";
+import type { LevelFilterValue } from "./LevelFilter";
 import { colors } from "@/lib/theme";
 
 interface SkillCardProps {
   skill: SkillSummary;
+  level?: LevelFilterValue;
 }
 
-export function SkillCard({ skill }: SkillCardProps) {
+export function SkillCard({ skill, level = "all" }: SkillCardProps) {
+  const href = level === "all"
+    ? `/${skill.category_slug}/${skill.slug}`
+    : `/${skill.category_slug}/${skill.slug}?level=${level}`;
+
   return (
-    <Link href={`/${skill.category_slug}/${skill.slug}`} asChild>
+    <Link href={href} asChild>
       <Pressable style={({ pressed }) => [styles.card, pressed && styles.pressed]}>
         <View style={styles.header}>
           <Text style={styles.title}>{skill.name}</Text>

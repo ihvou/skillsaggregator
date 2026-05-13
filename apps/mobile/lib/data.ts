@@ -1,7 +1,8 @@
 import {
   badmintonCategory,
-  badmintonSkills,
+  fallbackCategories,
   fallbackResources,
+  fallbackSkills,
   type CategorySummary,
   type LinkResource,
   type SkillResource,
@@ -9,25 +10,87 @@ import {
 } from "@skillsaggregator/shared";
 import { getSupabase } from "./supabase";
 
-export async function getCategory(): Promise<CategorySummary> {
-  const supabase = getSupabase();
-  if (!supabase) return badmintonCategory;
-  const { data } = await supabase
-    .from("categories")
-    .select("id, slug, name, description")
-    .eq("slug", "badminton")
-    .single();
-  return data ?? badmintonCategory;
+export type SavedLinkResource = LinkResource & {
+  primary_skill: {
+    name: string;
+    slug: string;
+    category_name: string;
+    category_slug: string;
+  } | null;
+};
+
+function fallbackSkillsForCategory(categorySlug: string) {
+  return fallbackSkills.filter((skill) => skill.category_slug === categorySlug);
 }
 
-export async function getSkills(): Promise<SkillSummary[]> {
-  const supabase = getSupabase();
-  if (!supabase) return badmintonSkills;
+function fallbackCategoryBySlug(categorySlug: string) {
+  return fallbackCategories.find((category) => category.slug === categorySlug) ?? null;
+}
 
-  const category = await getCategory();
+function fallbackResourceRows() {
+  const skillBySlug = new Map(fallbackSkills.map((skill) => [skill.slug, skill]));
+  const categoryBySlug = new Map(fallbackCategories.map((category) => [category.slug, category]));
+
+  return Object.entries(fallbackResources).flatMap(([skillSlug, resources]) => {
+    const skill = skillBySlug.get(skillSlug);
+    if (!skill) return resources;
+    const category = categoryBySlug.get(skill.category_slug) ?? null;
+    return resources.map((resource) => ({
+      ...resource,
+      skill: {
+        id: skill.id,
+        slug: skill.slug,
+        name: skill.name,
+        category_slug: skill.category_slug,
+        category_name: category?.name ?? null,
+      },
+    }));
+  });
+}
+
+export async function getCategories(): Promise<CategorySummary[]> {
+  const supabase = getSupabase();
+  if (!supabase) return fallbackCategories;
+
+  const { data } = await supabase
+    .from("categories")
+    .select("id, slug, name, description, updated_at")
+    .eq("is_active", true)
+    .order("name");
+
+  return data?.length ? data : fallbackCategories;
+}
+
+export async function getCategory(categorySlug = badmintonCategory.slug): Promise<CategorySummary | null> {
+  const supabase = getSupabase();
+  if (!supabase) return fallbackCategoryBySlug(categorySlug);
+
+  const { data } = await supabase
+    .from("categories")
+    .select("id, slug, name, description, updated_at")
+    .eq("slug", categorySlug)
+    .eq("is_active", true)
+    .maybeSingle();
+
+  return data ?? fallbackCategoryBySlug(categorySlug);
+}
+
+export async function getSkillsForCategory(categorySlug: string): Promise<{
+  category: CategorySummary | null;
+  skills: SkillSummary[];
+}> {
+  const supabase = getSupabase();
+  if (!supabase) {
+    const category = fallbackCategoryBySlug(categorySlug);
+    return { category, skills: category ? fallbackSkillsForCategory(category.slug) : [] };
+  }
+
+  const category = await getCategory(categorySlug);
+  if (!category) return { category: null, skills: [] };
+
   const { data } = await supabase
     .from("skills")
-    .select("id, category_id, slug, name, description")
+    .select("id, category_id, slug, name, description, updated_at")
     .eq("category_id", category.id)
     .eq("is_active", true)
     .order("name");
@@ -46,29 +109,56 @@ export async function getSkills(): Promise<SkillSummary[]> {
     counts.set(relation.skill_id, (counts.get(relation.skill_id) ?? 0) + 1);
   }
 
-  return (data ?? badmintonSkills).map((skill) => ({
-    ...skill,
-    category_slug: "badminton",
-    resource_count: counts.get(skill.id) ?? 0,
-  }));
+  return {
+    category,
+    skills: (data ?? []).map((skill) => ({
+      ...skill,
+      category_slug: category.slug,
+      resource_count: counts.get(skill.id) ?? 0,
+    })),
+  };
 }
 
-export async function getSkillResources(skillSlug: string): Promise<{
+export async function getSkills(): Promise<SkillSummary[]> {
+  const { skills } = await getSkillsForCategory(badmintonCategory.slug);
+  return skills;
+}
+
+export async function getSkillResources(categorySlug: string, skillSlug: string): Promise<{
+  category: CategorySummary | null;
   skill: SkillSummary | null;
   resources: SkillResource[];
 }> {
   const supabase = getSupabase();
   if (!supabase) {
-    const skill = badmintonSkills.find((item) => item.slug === skillSlug) ?? null;
-    return { skill, resources: fallbackResources[skillSlug] ?? [] };
+    const category = fallbackCategoryBySlug(categorySlug);
+    const skill = fallbackSkillsForCategory(categorySlug).find((item) => item.slug === skillSlug) ?? null;
+    const resources = skill
+      ? (fallbackResources[skillSlug] ?? []).map((resource) => ({
+          ...resource,
+          skill: {
+            id: skill.id,
+            slug: skill.slug,
+            name: skill.name,
+            category_slug: skill.category_slug,
+            category_name: category?.name ?? null,
+          },
+        }))
+      : [];
+    return { category, skill, resources };
   }
 
   const { data: skill } = await supabase
     .from("skills")
-    .select("id, category_id, slug, name, description")
+    .select("id, category_id, slug, name, description, updated_at, categories!inner(id, slug, name, description, updated_at)")
     .eq("slug", skillSlug)
-    .single();
-  if (!skill) return { skill: null, resources: [] };
+    .eq("categories.slug", categorySlug)
+    .eq("is_active", true)
+    .maybeSingle();
+
+  if (!skill) return { category: null, skill: null, resources: [] };
+  const category = Array.isArray(skill.categories) ? skill.categories[0] : skill.categories;
+  if (!category) return { category: null, skill: null, resources: [] };
 
   const { data: relations } = await supabase
     .from("link_skill_relations")
@@ -78,7 +168,17 @@ export async function getSkillResources(skillSlug: string): Promise<{
     .order("upvote_count", { ascending: false });
 
   return {
-    skill: { ...skill, category_slug: "badminton", resource_count: relations?.length ?? 0 },
+    category,
+    skill: {
+      id: skill.id,
+      category_id: skill.category_id,
+      category_slug: category.slug,
+      slug: skill.slug,
+      name: skill.name,
+      description: skill.description,
+      resource_count: relations?.length ?? 0,
+      updated_at: skill.updated_at,
+    },
     resources: (relations ?? []).flatMap((relation) => {
       const link = Array.isArray(relation.links) ? relation.links[0] : relation.links;
       if (!link) return [];
@@ -89,26 +189,73 @@ export async function getSkillResources(skillSlug: string): Promise<{
           skill_level: relation.skill_level,
           upvote_count: relation.upvote_count,
           link,
+          skill: {
+            id: skill.id,
+            slug: skill.slug,
+            name: skill.name,
+            category_slug: category.slug,
+            category_name: category.name,
+          },
         },
       ];
     }),
   };
 }
 
-export async function getLinksByIds(ids: string[]): Promise<LinkResource[]> {
+export async function getLinksByIds(ids: string[]): Promise<SavedLinkResource[]> {
   if (ids.length === 0) return [];
   const supabase = getSupabase();
   if (!supabase) {
-    return Object.values(fallbackResources)
-      .flat()
-      .map((resource) => resource.link)
+    return fallbackResourceRows()
+      .map((resource) => ({
+        ...resource.link,
+        primary_skill: resource.skill
+          ? {
+              name: resource.skill.name,
+              slug: resource.skill.slug,
+              category_name: resource.skill.category_name ?? resource.skill.category_slug,
+              category_slug: resource.skill.category_slug,
+            }
+          : null,
+      }))
       .filter((link) => ids.includes(link.id));
   }
 
-  const { data } = await supabase
+  const { data: links } = await supabase
     .from("links")
     .select("id, url, canonical_url, domain, title, description, thumbnail_url, content_type")
     .in("id", ids)
     .eq("is_active", true);
-  return data ?? [];
+
+  const { data: relations } = links?.length
+    ? await supabase
+        .from("link_skill_relations")
+        .select("link_id, skills!inner(slug, name, categories!inner(slug, name))")
+        .in("link_id", ids)
+        .eq("is_active", true)
+        .order("upvote_count", { ascending: false })
+    : { data: [] };
+
+  const primaryByLinkId = new Map<string, SavedLinkResource["primary_skill"]>();
+  for (const relation of relations ?? []) {
+    if (primaryByLinkId.has(relation.link_id)) continue;
+    const skill = Array.isArray(relation.skills) ? relation.skills[0] : relation.skills;
+    const category = skill
+      ? Array.isArray(skill.categories)
+        ? skill.categories[0]
+        : skill.categories
+      : null;
+    if (!skill || !category) continue;
+    primaryByLinkId.set(relation.link_id, {
+      name: skill.name,
+      slug: skill.slug,
+      category_name: category.name,
+      category_slug: category.slug,
+    });
+  }
+
+  return (links ?? []).map((link) => ({
+    ...link,
+    primary_skill: primaryByLinkId.get(link.id) ?? null,
+  }));
 }

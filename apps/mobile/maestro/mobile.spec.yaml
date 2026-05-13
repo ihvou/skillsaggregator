@@ -2,12 +2,10 @@ appId: com.skillsaggregator.mobile
 ---
 - launchApp
 - assertVisible: "Skills Aggregator"
-- assertVisible: "Multi-sport learning resources"
-- tapOn: "Padel"
-- assertVisible: "Padel"
-- assertVisible: "Bandeja"
-- tapOn: "Bandeja"
+- tapOn: "Gym (men)"
+- assertVisible: "Gym (men)"
+- assertVisible: "Barbell squat"
+- tapOn: "Barbell squat"
 - assertVisible: "Skill detail"
-- assertVisible: "Bandeja"
 - tapOn: "Saved"
 - assertVisible: "Resources"

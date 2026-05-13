@@ -4,9 +4,8 @@ import { Image } from "expo-image";
 import { FlashList } from "@shopify/flash-list";
 import { useFocusEffect } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
-import type { LinkResource } from "@skillsaggregator/shared";
 import { Screen } from "@/components/Screen";
-import { getLinksByIds } from "@/lib/data";
+import { getLinksByIds, type SavedLinkResource } from "@/lib/data";
 import { getKeys } from "@/lib/localState";
 import { colors } from "@/lib/theme";
 
@@ -31,7 +30,7 @@ export default function SavedTab() {
         <Text style={styles.eyebrow}>Saved</Text>
         <Text style={styles.title}>Resources</Text>
       </View>
-      <FlashList<LinkResource>
+      <FlashList<SavedLinkResource>
         data={query.data ?? []}
         style={styles.list}
         estimatedItemSize={96}
@@ -52,6 +51,11 @@ export default function SavedTab() {
               <Text style={styles.rowTitle} numberOfLines={2}>
                 {item.title ?? item.url}
               </Text>
+              {item.primary_skill ? (
+                <Text style={styles.context} numberOfLines={1}>
+                  {item.primary_skill.category_name} / {item.primary_skill.name}
+                </Text>
+              ) : null}
               <Text style={styles.domain}>{item.domain}</Text>
             </View>
           </Pressable>
@@ -117,5 +121,11 @@ const styles = StyleSheet.create({
     color: colors.graphite,
     fontSize: 12,
     fontWeight: "700",
+  },
+  context: {
+    marginTop: 5,
+    color: colors.court,
+    fontSize: 12,
+    fontWeight: "800",
   },
 });

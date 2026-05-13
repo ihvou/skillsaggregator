@@ -12,13 +12,22 @@ import { setLastSeenSkill } from "@/lib/localState";
 import { colors } from "@/lib/theme";
 
 export default function SkillDetailScreen() {
-  const { skill } = useLocalSearchParams<{ skill: string }>();
+  const { category, skill, level: initialLevel } = useLocalSearchParams<{
+    category: string;
+    skill: string;
+    level?: LevelFilterValue;
+  }>();
+  const categorySlug = category ?? "badminton";
   const skillSlug = skill ?? "forehand-smash";
-  const [level, setLevel] = useState<LevelFilterValue>("all");
+  const [level, setLevel] = useState<LevelFilterValue>(
+    initialLevel === "beginner" || initialLevel === "intermediate" || initialLevel === "advanced"
+      ? initialLevel
+      : "all",
+  );
   const query = useQuery({
-    queryKey: ["skill", skillSlug],
+    queryKey: ["skill", categorySlug, skillSlug],
     queryFn: async () => {
-      const data = await getSkillResources(skillSlug);
+      const data = await getSkillResources(categorySlug, skillSlug);
       if (data.skill) setLastSeenSkill(data.skill.id);
       return data;
     },
@@ -35,6 +44,9 @@ export default function SkillDetailScreen() {
       <View style={styles.header}>
         <Text style={styles.eyebrow}>Skill detail</Text>
         <Text style={styles.title}>{query.data?.skill?.name ?? "Skill"}</Text>
+        {query.data?.category ? (
+          <Text style={styles.categoryName}>{query.data.category.name}</Text>
+        ) : null}
         {query.data?.skill?.description ? (
           <Text style={styles.subtitle}>{query.data.skill.description}</Text>
         ) : null}
@@ -83,6 +95,12 @@ const styles = StyleSheet.create({
     color: colors.graphite,
     fontSize: 15,
     lineHeight: 22,
+  },
+  categoryName: {
+    marginTop: 6,
+    color: colors.court,
+    fontSize: 13,
+    fontWeight: "800",
   },
   empty: {
     marginTop: 20,

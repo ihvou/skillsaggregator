@@ -1,6 +1,10 @@
 appId: com.skillsaggregator.mobile
 ---
 - launchApp
-- tapOn: "Forehand smash"
+- tapOn: "Surfing"
+- assertVisible: "Surfing"
 - tapOn: "beginner"
-- assertVisible: "No approved resources match this filter yet."
+- tapOn: "Pop-up"
+- assertVisible: "Skill detail"
+- assertVisible: "Pop-up"
+- assertVisible: "beginner"
