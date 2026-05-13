@@ -58,7 +58,6 @@ export default function SkillDetailScreen() {
         <FlashList<SkillResource>
           data={resources}
           style={styles.list}
-          estimatedItemSize={310}
           keyExtractor={(item) => item.id}
           ListEmptyComponent={
             <Text style={styles.empty}>No approved resources match this filter yet.</Text>

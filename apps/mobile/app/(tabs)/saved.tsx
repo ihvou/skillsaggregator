@@ -33,7 +33,6 @@ export default function SavedTab() {
       <FlashList<SavedLinkResource>
         data={query.data ?? []}
         style={styles.list}
-        estimatedItemSize={96}
         keyExtractor={(item) => item.id}
         ListEmptyComponent={<Text style={styles.empty}>Saved resources will appear here.</Text>}
         ItemSeparatorComponent={() => <View style={{ height: 10 }} />}

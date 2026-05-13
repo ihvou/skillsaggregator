@@ -40,7 +40,6 @@ export default function CategoryScreen() {
         <FlashList
           data={query.data?.skills ?? []}
           style={styles.list}
-          estimatedItemSize={132}
           keyExtractor={(item) => item.id}
           ListEmptyComponent={<Text style={styles.empty}>No active skills found for this category.</Text>}
           ItemSeparatorComponent={() => <View style={{ height: 12 }} />}

@@ -51,7 +51,6 @@ export default function BrowseTab() {
         <FlashList
           data={skillsQuery.data?.skills ?? []}
           style={styles.list}
-          estimatedItemSize={132}
           keyExtractor={(item) => item.id}
           ListEmptyComponent={<Text style={styles.empty}>No active skills found yet.</Text>}
           ItemSeparatorComponent={() => <View style={{ height: 12 }} />}

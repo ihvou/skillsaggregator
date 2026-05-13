@@ -15,7 +15,8 @@ export function SkillCard({ skill, level = "all" }: SkillCardProps) {
     : `/${skill.category_slug}/${skill.slug}?level=${level}`;
 
   return (
-    <Link href={href} asChild>
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    <Link href={href as any} asChild>
       <Pressable style={({ pressed }) => [styles.card, pressed && styles.pressed]}>
         <View style={styles.header}>
           <Text style={styles.title}>{skill.name}</Text>
