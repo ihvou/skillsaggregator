@@ -63,6 +63,41 @@ export function CategoryFilterChips({ categories }: { categories: CategorySummar
   );
 }
 
+const categoryEmoji: Record<string, string> = {
+  badminton: "🏸",
+  padel: "🎾",
+  "gym-men": "🏋️‍♂️",
+  "gym-women": "🏋️‍♀️",
+  surfing: "🏄",
+};
+
+export function CategoryCards({ categories }: { categories: CategorySummary[] }) {
+  return (
+    <div
+      className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5"
+      aria-label="Pick a category"
+    >
+      {categories.map((category) => {
+        const emoji = categoryEmoji[category.slug] ?? "📚";
+        return (
+          <Link
+            key={category.id}
+            href={`/${category.slug}`}
+            className="focus-ring group flex flex-col items-center justify-center gap-2 rounded-xl border border-ink/10 bg-white p-4 text-center shadow-sm transition hover:-translate-y-0.5 hover:border-court/50 hover:shadow-md"
+          >
+            <span aria-hidden="true" className="text-5xl leading-none">
+              {emoji}
+            </span>
+            <span className="text-sm font-bold text-ink group-hover:text-court">
+              {category.name}
+            </span>
+          </Link>
+        );
+      })}
+    </div>
+  );
+}
+
 export function SkillFilterChips({
   categorySlug,
   skills,

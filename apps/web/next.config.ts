@@ -11,6 +11,7 @@ const nextConfig: NextConfig = {
       { protocol: "https", hostname: "*.supabase.in" },
       { protocol: "http", hostname: "127.0.0.1", port: "54321" },
       { protocol: "http", hostname: "localhost", port: "54321" },
+      { protocol: "http", hostname: "192.168.10.108", port: "54321" },
     ],
   },
 };

@@ -7,7 +7,7 @@ export const metadata: Metadata = {
     default: "Skills Aggregator",
     template: "%s | Skills Aggregator",
   },
-  description: "Curated learning resources organized by badminton sub-skill.",
+  description: "Find the best free tutorials for any skill you want to learn, across sports and training.",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
@@ -20,9 +20,6 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
               Skills Aggregator
             </Link>
             <div className="flex items-center gap-4 text-sm font-medium text-graphite">
-              <Link className="focus-ring hover:text-court" href="/badminton">
-                Badminton
-              </Link>
               <Link className="focus-ring hover:text-court" href="/admin">
                 Admin
               </Link>
