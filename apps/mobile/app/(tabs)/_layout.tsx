@@ -1,5 +1,5 @@
 import { Tabs } from "expo-router";
-import { Bookmark, Dumbbell } from "lucide-react-native";
+import { Bookmark, Compass, Search } from "lucide-react-native";
 import { colors } from "@/lib/theme";
 
 export default function TabsLayout() {
@@ -15,8 +15,15 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: "Browse",
-          tabBarIcon: ({ color, size }) => <Dumbbell color={color} size={size} />,
+          title: "Discover",
+          tabBarIcon: ({ color, size }) => <Compass color={color} size={size} />,
+        }}
+      />
+      <Tabs.Screen
+        name="search"
+        options={{
+          title: "Search",
+          tabBarIcon: ({ color, size }) => <Search color={color} size={size} />,
         }}
       />
       <Tabs.Screen

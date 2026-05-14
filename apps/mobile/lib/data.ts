@@ -28,6 +28,19 @@ function fallbackCategoryBySlug(categorySlug: string) {
   return fallbackCategories.find((category) => category.slug === categorySlug) ?? null;
 }
 
+function withResourceSummaries(skills: SkillSummary[]) {
+  return skills.map((skill) => {
+    const resources = fallbackResources[skill.slug] ?? [];
+    return {
+      ...skill,
+      resource_count: resources.length,
+      preview_thumbnails: resources
+        .flatMap((resource) => resource.link.thumbnail_url ? [resource.link.thumbnail_url] : [])
+        .slice(0, 3),
+    };
+  });
+}
+
 function normalizeSort(sort: ResourceSort | undefined): ResourceSort {
   return sort === "newest" ? "newest" : "popular";
 }
@@ -94,7 +107,7 @@ export async function getSkillsForCategory(categorySlug: string): Promise<{
   const supabase = getSupabase();
   if (!supabase) {
     const category = fallbackCategoryBySlug(categorySlug);
-    return { category, skills: category ? fallbackSkillsForCategory(category.slug) : [] };
+    return { category, skills: category ? withResourceSummaries(fallbackSkillsForCategory(category.slug)) : [] };
   }
 
   const category = await getCategory(categorySlug);
@@ -111,14 +124,23 @@ export async function getSkillsForCategory(categorySlug: string): Promise<{
   const { data: relations } = skillIds.length
     ? await supabase
         .from("link_skill_relations")
-        .select("skill_id")
+        .select("skill_id, upvote_count, links!inner(thumbnail_url)")
         .in("skill_id", skillIds)
         .eq("is_active", true)
+        .eq("links.is_active", true)
+        .order("upvote_count", { ascending: false })
     : { data: [] };
 
   const counts = new Map<string, number>();
+  const previews = new Map<string, string[]>();
   for (const relation of relations ?? []) {
     counts.set(relation.skill_id, (counts.get(relation.skill_id) ?? 0) + 1);
+    const link = Array.isArray(relation.links) ? relation.links[0] : relation.links;
+    if (!link?.thumbnail_url) continue;
+    const current = previews.get(relation.skill_id) ?? [];
+    if (current.length >= 3) continue;
+    current.push(link.thumbnail_url);
+    previews.set(relation.skill_id, current);
   }
 
   return {
@@ -127,8 +149,15 @@ export async function getSkillsForCategory(categorySlug: string): Promise<{
       ...skill,
       category_slug: category.slug,
       resource_count: counts.get(skill.id) ?? 0,
+      preview_thumbnails: previews.get(skill.id) ?? [],
     })),
   };
+}
+
+export async function getAllSkills(): Promise<SkillSummary[]> {
+  const categories = await getCategories();
+  const batches = await Promise.all(categories.map((category) => getSkillsForCategory(category.slug)));
+  return batches.flatMap((batch) => batch.skills);
 }
 
 export async function getSkills(): Promise<SkillSummary[]> {

@@ -1,5 +1,6 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Link } from "expo-router";
+import { Image } from "expo-image";
 import type { SkillSummary } from "@skillsaggregator/shared";
 import type { LevelFilterValue } from "./LevelFilter";
 import { colors } from "@/lib/theme";
@@ -25,6 +26,19 @@ export function SkillCard({ skill, level = "all" }: SkillCardProps) {
         <Text style={styles.description} numberOfLines={3}>
           {skill.description}
         </Text>
+        {skill.preview_thumbnails?.length ? (
+          <View style={styles.previewStrip}>
+            {skill.preview_thumbnails.map((thumbnailUrl) => (
+              <Image
+                key={thumbnailUrl}
+                source={thumbnailUrl}
+                style={styles.previewThumb}
+                contentFit="cover"
+                accessibilityLabel=""
+              />
+            ))}
+          </View>
+        ) : null}
       </Pressable>
     </Link>
   );
@@ -72,5 +86,16 @@ const styles = StyleSheet.create({
     color: colors.graphite,
     fontSize: 14,
     lineHeight: 20,
+  },
+  previewStrip: {
+    marginTop: 12,
+    flexDirection: "row",
+    gap: 6,
+  },
+  previewThumb: {
+    width: 76,
+    height: 46,
+    borderRadius: 6,
+    backgroundColor: "rgba(16,32,38,0.08)",
   },
 });

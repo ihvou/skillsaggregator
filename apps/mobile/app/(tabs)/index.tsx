@@ -1,15 +1,20 @@
 import { useState } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
 import { FlashList } from "@shopify/flash-list";
 import { useQuery } from "@tanstack/react-query";
+import { Search } from "lucide-react-native";
 import { CategoryChips } from "@/components/CategoryChips";
+import { EmptyState } from "@/components/EmptyState";
+import { SearchBar } from "@/components/SearchBar";
 import { Screen } from "@/components/Screen";
 import { SkillCard } from "@/components/SkillCard";
+import { SkeletonList } from "@/components/SkeletonList";
 import { getCategories, getSkillsForCategory } from "@/lib/data";
 import { colors } from "@/lib/theme";
 
 export default function BrowseTab() {
   const [showAllSkills, setShowAllSkills] = useState(false);
+  const [search, setSearch] = useState("");
   const categoriesQuery = useQuery({
     queryKey: ["categories"],
     queryFn: getCategories,
@@ -24,19 +29,32 @@ export default function BrowseTab() {
     staleTime: 300000,
   });
   const skills = skillsQuery.data?.skills ?? [];
-  const visibleSkills = showAllSkills ? skills : skills.filter((skill) => skill.resource_count > 0);
-  const hiddenEmptyCount = skills.length - visibleSkills.length;
+  const searchedSkills = search.trim()
+    ? skills.filter((skill) => {
+        const needle = search.trim().toLowerCase();
+        return `${skill.name} ${skill.description ?? ""}`.toLowerCase().includes(needle);
+      })
+    : skills;
+  const visibleSkills = showAllSkills ? searchedSkills : searchedSkills.filter((skill) => skill.resource_count > 0);
+  const hiddenEmptyCount = searchedSkills.length - visibleSkills.length;
 
   return (
     <Screen>
       <View style={styles.header}>
-        <Text style={styles.eyebrow}>Skills Aggregator</Text>
-        <Text style={styles.title}>Browse</Text>
+        <Text style={styles.title}>Discover</Text>
         <Text style={styles.subtitle}>Multi-sport learning resources by category and skill.</Text>
       </View>
 
+      <View style={styles.searchWrap}>
+        <SearchBar value={search} onChangeText={setSearch} />
+      </View>
+
       {categoriesQuery.isLoading ? (
-        <ActivityIndicator color={colors.court} />
+        <View style={styles.categorySkeletons}>
+          <View style={[styles.categorySkeleton, styles.categorySkeletonSmall]} />
+          <View style={[styles.categorySkeleton, styles.categorySkeletonLarge]} />
+          <View style={[styles.categorySkeleton, styles.categorySkeletonMedium]} />
+        </View>
       ) : (
         <View style={styles.categories}>
           <CategoryChips categories={categories} activeSlug={activeCategory?.slug} />
@@ -60,15 +78,31 @@ export default function BrowseTab() {
       ) : null}
 
       {skillsQuery.isLoading ? (
-        <ActivityIndicator color={colors.court} style={{ marginTop: 20 }} />
+        <SkeletonList />
       ) : (
         <FlashList
           data={visibleSkills}
           style={styles.list}
           keyExtractor={(item) => item.id}
-          ListEmptyComponent={<Text style={styles.empty}>No skills with resources yet.</Text>}
+          ListEmptyComponent={
+            <EmptyState
+              icon={Search}
+              title={search.trim() ? "No matching skills" : "No skills with resources yet"}
+              subtitle={search.trim() ? "Try a broader search term or switch category." : "Use Show all skills to browse the full taxonomy."}
+            />
+          }
           ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
           renderItem={({ item }) => <SkillCard skill={item} />}
+          refreshControl={
+            <RefreshControl
+              refreshing={categoriesQuery.isRefetching || skillsQuery.isRefetching}
+              onRefresh={() => {
+                categoriesQuery.refetch();
+                skillsQuery.refetch();
+              }}
+              tintColor={colors.court}
+            />
+          }
           showsVerticalScrollIndicator={false}
         />
       )}
@@ -80,15 +114,7 @@ const styles = StyleSheet.create({
   header: {
     marginBottom: 16,
   },
-  eyebrow: {
-    color: colors.court,
-    fontSize: 12,
-    fontWeight: "800",
-    letterSpacing: 0,
-    textTransform: "uppercase",
-  },
   title: {
-    marginTop: 6,
     color: colors.ink,
     fontSize: 34,
     fontWeight: "800",
@@ -101,6 +127,28 @@ const styles = StyleSheet.create({
   },
   categories: {
     marginBottom: 18,
+  },
+  categorySkeletons: {
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: 18,
+  },
+  categorySkeleton: {
+    height: 38,
+    borderRadius: 8,
+    backgroundColor: "rgba(16,32,38,0.09)",
+  },
+  categorySkeletonSmall: {
+    width: 72,
+  },
+  categorySkeletonMedium: {
+    width: 84,
+  },
+  categorySkeletonLarge: {
+    width: 96,
+  },
+  searchWrap: {
+    marginBottom: 14,
   },
   sectionHeader: {
     marginBottom: 12,
@@ -128,11 +176,6 @@ const styles = StyleSheet.create({
     color: colors.courtDark,
     fontSize: 13,
     fontWeight: "800",
-  },
-  empty: {
-    marginTop: 20,
-    color: colors.graphite,
-    fontSize: 15,
   },
   list: {
     flex: 1,

@@ -33,6 +33,7 @@ export function CategoryChips({ categories, activeSlug }: CategoryChipsProps) {
 const styles = StyleSheet.create({
   wrap: {
     gap: 8,
+    paddingLeft: 4,
     paddingRight: 4,
   },
   chip: {
@@ -47,6 +48,9 @@ const styles = StyleSheet.create({
   active: {
     borderColor: colors.courtDark,
     backgroundColor: colors.courtDark,
+    shadowColor: colors.courtDark,
+    shadowOpacity: 0.16,
+    shadowRadius: 4,
   },
   pressed: {
     opacity: 0.72,

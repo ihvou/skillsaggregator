@@ -29,6 +29,7 @@ export interface SkillSummary {
   name: string;
   description: string | null;
   resource_count: number;
+  preview_thumbnails?: string[];
   updated_at?: string | null;
 }
 
