@@ -100,49 +100,61 @@ export function ResourceCard({ resource, density = "compact" }: ResourceCardProp
           )}
           {isSaved ? (
             <View style={styles.savedOverlay}>
-              <BookmarkCheck size={17} color={colors.white} fill={colors.court} />
+              <BookmarkCheck size={14} color={colors.white} fill={colors.white} />
             </View>
           ) : null}
         </View>
         <View style={styles.body}>
-          <View style={styles.meta}>
-            <Text style={styles.domain}>{resource.link.domain}</Text>
-            {resource.skill_level ? <Text style={styles.level}>{resource.skill_level}</Text> : null}
-          </View>
           <Text style={styles.title} numberOfLines={2}>
             {resource.link.title ?? resource.link.url}
           </Text>
           {resource.public_note ? (
-            <Text style={styles.note} numberOfLines={1}>
+            <Text style={styles.note} numberOfLines={2}>
               {resource.public_note}
             </Text>
           ) : null}
-          <View style={styles.actions}>
-            <Pressable
-              onPress={toggleSaved}
-              style={[styles.iconButton, isSaved && styles.iconButtonActive]}
-              accessibilityRole="button"
-              accessibilityLabel="Save resource"
-            >
-              <SavedIcon
-                size={18}
-                color={isSaved ? colors.white : colors.court}
-                fill={isSaved ? "rgba(255,255,255,0.24)" : "transparent"}
-              />
-            </Pressable>
-            <Pressable
-              onPress={toggleCompleted}
-              style={[styles.iconButton, isCompleted && styles.iconButtonActive]}
-              accessibilityRole="button"
-              accessibilityLabel="Mark completed"
-            >
-              <CompletedIcon
-                size={18}
-                color={isCompleted ? colors.white : colors.court}
-                fill={isCompleted ? "rgba(255,255,255,0.24)" : "transparent"}
-              />
-            </Pressable>
-            <ExternalLink size={18} color={colors.graphite} />
+          <View style={styles.metaRow}>
+            {resource.skill_level ? (
+              <Text style={styles.level}>{resource.skill_level}</Text>
+            ) : null}
+            <Text style={styles.domain}>{resource.link.domain}</Text>
+            <View style={styles.actions}>
+              <Pressable
+                onPress={toggleSaved}
+                hitSlop={{ top: 10, right: 8, bottom: 10, left: 8 }}
+                style={styles.iconTap}
+                accessibilityRole="button"
+                accessibilityLabel="Save resource"
+              >
+                <SavedIcon
+                  size={20}
+                  color={isSaved ? colors.court : colors.muted}
+                  fill={isSaved ? colors.court : "transparent"}
+                />
+              </Pressable>
+              <Pressable
+                onPress={toggleCompleted}
+                hitSlop={{ top: 10, right: 8, bottom: 10, left: 8 }}
+                style={styles.iconTap}
+                accessibilityRole="button"
+                accessibilityLabel="Mark completed"
+              >
+                <CompletedIcon
+                  size={20}
+                  color={isCompleted ? colors.court : colors.muted}
+                  fill={isCompleted ? colors.court : "transparent"}
+                />
+              </Pressable>
+              <Pressable
+                onPress={() => Linking.openURL(resource.link.url)}
+                hitSlop={{ top: 10, right: 8, bottom: 10, left: 8 }}
+                style={styles.iconTap}
+                accessibilityRole="button"
+                accessibilityLabel="Open resource"
+              >
+                <ExternalLink size={20} color={colors.muted} />
+              </Pressable>
+            </View>
           </View>
         </View>
       </Pressable>
@@ -152,52 +164,48 @@ export function ResourceCard({ resource, density = "compact" }: ResourceCardProp
 
 const styles = StyleSheet.create({
   swipeContainer: {
-    borderRadius: 8,
+    borderRadius: 12,
   },
   swipeAction: {
     width: 104,
     alignItems: "center",
     justifyContent: "center",
     gap: 6,
-    borderRadius: 8,
+    borderRadius: 12,
   },
   saveAction: {
     backgroundColor: colors.court,
   },
   completeAction: {
-    backgroundColor: colors.amber,
+    backgroundColor: colors.ink,
   },
   swipeActionText: {
     color: colors.white,
     fontSize: 12,
-    fontWeight: "800",
+    fontWeight: "700",
   },
   card: {
-    minHeight: 120,
     flexDirection: "row",
     gap: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: colors.line,
+    borderRadius: 12,
     backgroundColor: colors.white,
-    padding: 10,
+    padding: 12,
   },
   comfortableCard: {
     minHeight: 168,
   },
   pressed: {
-    opacity: 0.72,
+    opacity: 0.7,
   },
   completed: {
-    borderColor: "rgba(45,106,79,0.36)",
-    backgroundColor: "rgba(45,106,79,0.04)",
+    backgroundColor: colors.tint,
   },
   thumbWrap: {
-    width: 96,
-    minHeight: 96,
+    width: 104,
+    aspectRatio: 16 / 11,
     overflow: "hidden",
-    borderRadius: 7,
-    backgroundColor: "rgba(16,32,38,0.08)",
+    borderRadius: 8,
+    backgroundColor: "rgba(16,32,38,0.06)",
   },
   thumbnail: {
     width: "100%",
@@ -210,9 +218,9 @@ const styles = StyleSheet.create({
   },
   thumbnailText: {
     paddingHorizontal: 8,
-    color: colors.graphite,
+    color: colors.muted,
     fontSize: 12,
-    fontWeight: "700",
+    fontWeight: "600",
     textAlign: "center",
     textTransform: "capitalize",
   },
@@ -220,70 +228,63 @@ const styles = StyleSheet.create({
     position: "absolute",
     top: 6,
     right: 6,
-    width: 28,
-    height: 28,
+    width: 22,
+    height: 22,
     alignItems: "center",
     justifyContent: "center",
-    borderRadius: 14,
-    backgroundColor: "rgba(16,32,38,0.68)",
+    borderRadius: 11,
+    backgroundColor: colors.court,
   },
   body: {
     flex: 1,
-    justifyContent: "center",
-  },
-  meta: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-    alignItems: "center",
-  },
-  domain: {
-    color: colors.graphite,
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  level: {
-    overflow: "hidden",
-    borderRadius: 12,
-    backgroundColor: "rgba(217,119,6,0.12)",
-    color: colors.amber,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    fontSize: 12,
-    fontWeight: "700",
-    textTransform: "capitalize",
+    justifyContent: "space-between",
+    gap: 4,
   },
   title: {
-    marginTop: 6,
     color: colors.ink,
-    fontSize: 15,
-    fontWeight: "700",
-    lineHeight: 20,
+    fontSize: 16,
+    fontWeight: "600",
+    lineHeight: 21,
+    letterSpacing: -0.1,
   },
   note: {
-    marginTop: 5,
-    color: colors.graphite,
+    color: colors.muted,
     fontSize: 13,
     lineHeight: 18,
   },
-  actions: {
-    marginTop: 8,
+  metaRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
+    marginTop: 4,
   },
-  iconButton: {
-    width: 44,
-    height: 44,
+  level: {
+    overflow: "hidden",
+    borderRadius: 999,
+    backgroundColor: colors.tint,
+    color: colors.court,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    fontSize: 11,
+    fontWeight: "700",
+    textTransform: "capitalize",
+    letterSpacing: 0.2,
+  },
+  domain: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: "500",
+    flex: 1,
+  },
+  actions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+  },
+  iconTap: {
+    minWidth: 24,
+    minHeight: 24,
     alignItems: "center",
     justifyContent: "center",
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: colors.line,
-    backgroundColor: colors.white,
-  },
-  iconButtonActive: {
-    backgroundColor: colors.court,
-    borderColor: colors.court,
   },
 });

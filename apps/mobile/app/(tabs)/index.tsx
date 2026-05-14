@@ -42,7 +42,6 @@ export default function BrowseTab() {
     <Screen>
       <View style={styles.header}>
         <Text style={styles.title}>Discover</Text>
-        <Text style={styles.subtitle}>Multi-sport learning resources by category and skill.</Text>
       </View>
 
       <View style={styles.searchWrap}>
@@ -61,20 +60,15 @@ export default function BrowseTab() {
         </View>
       )}
 
-      {activeCategory ? (
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>{activeCategory.name}</Text>
-          {hiddenEmptyCount > 0 ? (
-            <Pressable
-              onPress={() => setShowAllSkills((current) => !current)}
-              style={({ pressed }) => [styles.toggle, pressed && styles.pressed]}
-            >
-              <Text style={styles.toggleText}>
-                {showAllSkills ? "Hide empty skills" : `Show all skills (${hiddenEmptyCount} empty)`}
-              </Text>
-            </Pressable>
-          ) : null}
-        </View>
+      {activeCategory && hiddenEmptyCount > 0 ? (
+        <Pressable
+          onPress={() => setShowAllSkills((current) => !current)}
+          style={({ pressed }) => [styles.toggle, pressed && styles.pressed]}
+        >
+          <Text style={styles.toggleText}>
+            {showAllSkills ? "Hide empty skills" : `Show all skills (${hiddenEmptyCount} empty)`}
+          </Text>
+        </Pressable>
       ) : null}
 
       {skillsQuery.isLoading ? (
@@ -112,31 +106,26 @@ export default function BrowseTab() {
 
 const styles = StyleSheet.create({
   header: {
-    marginBottom: 16,
+    marginBottom: 14,
   },
   title: {
     color: colors.ink,
-    fontSize: 34,
-    fontWeight: "800",
-  },
-  subtitle: {
-    marginTop: 8,
-    color: colors.graphite,
-    fontSize: 16,
-    lineHeight: 23,
+    fontSize: 32,
+    fontWeight: "700",
+    letterSpacing: -0.5,
   },
   categories: {
-    marginBottom: 18,
+    marginBottom: 14,
   },
   categorySkeletons: {
     flexDirection: "row",
-    gap: 8,
-    marginBottom: 18,
+    gap: 6,
+    marginBottom: 14,
   },
   categorySkeleton: {
-    height: 38,
-    borderRadius: 8,
-    backgroundColor: "rgba(16,32,38,0.09)",
+    height: 36,
+    borderRadius: 999,
+    backgroundColor: "rgba(16,32,38,0.06)",
   },
   categorySkeletonSmall: {
     width: 72,
@@ -148,34 +137,24 @@ const styles = StyleSheet.create({
     width: 96,
   },
   searchWrap: {
-    marginBottom: 14,
-  },
-  sectionHeader: {
     marginBottom: 12,
-    gap: 10,
-  },
-  sectionTitle: {
-    color: colors.ink,
-    fontSize: 22,
-    fontWeight: "800",
   },
   toggle: {
     alignSelf: "flex-start",
-    minHeight: 36,
+    minHeight: 32,
+    marginBottom: 12,
     justifyContent: "center",
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: colors.line,
-    backgroundColor: colors.white,
+    borderRadius: 999,
     paddingHorizontal: 12,
+    backgroundColor: colors.tint,
   },
   pressed: {
-    opacity: 0.72,
+    opacity: 0.7,
   },
   toggleText: {
-    color: colors.courtDark,
+    color: colors.court,
     fontSize: 13,
-    fontWeight: "800",
+    fontWeight: "600",
   },
   list: {
     flex: 1,

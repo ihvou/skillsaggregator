@@ -31,7 +31,6 @@ export default function SearchTab() {
     <Screen>
       <View style={styles.header}>
         <Text style={styles.title}>Search</Text>
-        <Text style={styles.subtitle}>Find a skill across every sport and training category.</Text>
       </View>
       <View style={styles.searchWrap}>
         <SearchBar value={search} onChangeText={setSearch} placeholder="Search all skills" />
@@ -42,6 +41,7 @@ export default function SearchTab() {
         <FlashList
           data={results}
           style={styles.list}
+          estimatedItemSize={150}
           keyExtractor={(item) => item.id}
           ListEmptyComponent={
             <EmptyState
@@ -68,21 +68,16 @@ export default function SearchTab() {
 
 const styles = StyleSheet.create({
   header: {
-    marginBottom: 14,
+    marginBottom: 12,
   },
   title: {
     color: colors.ink,
-    fontSize: 34,
-    fontWeight: "800",
-  },
-  subtitle: {
-    marginTop: 8,
-    color: colors.graphite,
-    fontSize: 16,
-    lineHeight: 23,
+    fontSize: 32,
+    fontWeight: "700",
+    letterSpacing: -0.5,
   },
   searchWrap: {
-    marginBottom: 14,
+    marginBottom: 12,
   },
   list: {
     flex: 1,

@@ -23,9 +23,11 @@ export function SkillCard({ skill, level = "all" }: SkillCardProps) {
           <Text style={styles.title}>{skill.name}</Text>
           <Text style={styles.count}>{skill.resource_count}</Text>
         </View>
-        <Text style={styles.description} numberOfLines={3}>
-          {skill.description}
-        </Text>
+        {skill.description ? (
+          <Text style={styles.description} numberOfLines={2}>
+            {skill.description}
+          </Text>
+        ) : null}
         {skill.preview_thumbnails?.length ? (
           <View style={styles.previewStrip}>
             {skill.preview_thumbnails.map((thumbnailUrl) => (
@@ -46,19 +48,16 @@ export function SkillCard({ skill, level = "all" }: SkillCardProps) {
 
 const styles = StyleSheet.create({
   card: {
-    minHeight: 116,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: colors.line,
+    borderRadius: 12,
     backgroundColor: colors.white,
     padding: 14,
   },
   pressed: {
-    opacity: 0.72,
+    opacity: 0.7,
   },
   header: {
     flexDirection: "row",
-    alignItems: "flex-start",
+    alignItems: "center",
     justifyContent: "space-between",
     gap: 10,
   },
@@ -66,26 +65,20 @@ const styles = StyleSheet.create({
     flex: 1,
     color: colors.ink,
     fontSize: 17,
-    fontWeight: "700",
+    fontWeight: "600",
     lineHeight: 22,
+    letterSpacing: -0.2,
   },
   count: {
-    minWidth: 30,
-    overflow: "hidden",
-    borderRadius: 15,
-    backgroundColor: "rgba(45,106,79,0.10)",
-    color: colors.court,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    textAlign: "center",
-    fontSize: 12,
-    fontWeight: "700",
+    color: colors.muted,
+    fontSize: 13,
+    fontWeight: "600",
   },
   description: {
-    marginTop: 8,
-    color: colors.graphite,
-    fontSize: 14,
-    lineHeight: 20,
+    marginTop: 4,
+    color: colors.muted,
+    fontSize: 13,
+    lineHeight: 18,
   },
   previewStrip: {
     marginTop: 12,
@@ -93,9 +86,9 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   previewThumb: {
-    width: 76,
-    height: 46,
-    borderRadius: 6,
-    backgroundColor: "rgba(16,32,38,0.08)",
+    flex: 1,
+    aspectRatio: 16 / 10,
+    borderRadius: 8,
+    backgroundColor: "rgba(16,32,38,0.06)",
   },
 });

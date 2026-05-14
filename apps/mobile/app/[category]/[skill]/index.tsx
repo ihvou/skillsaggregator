@@ -51,8 +51,9 @@ export default function SkillDetailScreen() {
 
   return (
     <Screen>
-      <Stack.Screen options={{ title: query.data?.skill?.name ?? "Skill" }} />
+      <Stack.Screen options={{ title: query.data?.skill?.name ?? "" }} />
       <View style={styles.header}>
+        <Text style={styles.title}>{query.data?.skill?.name ?? "Skill"}</Text>
         {query.data?.category ? (
           <Text style={styles.categoryName}>{query.data.category.name}</Text>
         ) : null}
@@ -66,6 +67,7 @@ export default function SkillDetailScreen() {
         <FlashList<SkillResource>
           data={resources}
           style={styles.list}
+          estimatedItemSize={140}
           keyExtractor={(item) => item.id}
           ListHeaderComponent={
             <View style={styles.filterBarWrap}>
@@ -133,18 +135,25 @@ export default function SkillDetailScreen() {
 
 const styles = StyleSheet.create({
   header: {
-    marginBottom: 10,
+    marginBottom: 14,
   },
-  subtitle: {
-    marginTop: 8,
-    color: colors.graphite,
-    fontSize: 15,
-    lineHeight: 22,
+  title: {
+    color: colors.ink,
+    fontSize: 28,
+    fontWeight: "700",
+    letterSpacing: -0.4,
   },
   categoryName: {
+    marginTop: 4,
     color: colors.court,
     fontSize: 13,
-    fontWeight: "800",
+    fontWeight: "600",
+  },
+  subtitle: {
+    marginTop: 10,
+    color: colors.muted,
+    fontSize: 15,
+    lineHeight: 22,
   },
   filterBarWrap: {
     marginBottom: 12,
@@ -152,34 +161,32 @@ const styles = StyleSheet.create({
   },
   filterBar: {
     alignItems: "center",
-    gap: 8,
+    gap: 6,
     paddingBottom: 2,
   },
   filterChip: {
-    minHeight: 38,
+    minHeight: 32,
     justifyContent: "center",
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: colors.line,
-    backgroundColor: colors.white,
+    borderRadius: 999,
     paddingHorizontal: 12,
   },
   filterChipActive: {
-    borderColor: colors.court,
-    backgroundColor: colors.court,
+    backgroundColor: colors.ink,
   },
   filterChipText: {
-    color: colors.graphite,
+    color: colors.muted,
     fontSize: 13,
-    fontWeight: "800",
+    fontWeight: "600",
     textTransform: "capitalize",
   },
   filterChipTextActive: {
     color: colors.white,
+    fontWeight: "700",
   },
   filterDivider: {
     width: 1,
-    height: 24,
+    height: 18,
+    marginHorizontal: 4,
     backgroundColor: colors.line,
   },
   list: {

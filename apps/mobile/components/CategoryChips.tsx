@@ -32,35 +32,29 @@ export function CategoryChips({ categories, activeSlug }: CategoryChipsProps) {
 
 const styles = StyleSheet.create({
   wrap: {
-    gap: 8,
-    paddingLeft: 4,
-    paddingRight: 4,
+    gap: 6,
+    paddingHorizontal: 4,
   },
   chip: {
-    minHeight: 38,
+    minHeight: 36,
     justifyContent: "center",
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: colors.line,
-    backgroundColor: colors.white,
-    paddingHorizontal: 12,
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    backgroundColor: "transparent",
   },
   active: {
-    borderColor: colors.courtDark,
-    backgroundColor: colors.courtDark,
-    shadowColor: colors.courtDark,
-    shadowOpacity: 0.16,
-    shadowRadius: 4,
+    backgroundColor: colors.ink,
   },
   pressed: {
-    opacity: 0.72,
+    opacity: 0.7,
   },
   label: {
-    color: colors.ink,
-    fontSize: 13,
-    fontWeight: "800",
+    color: colors.muted,
+    fontSize: 14,
+    fontWeight: "600",
   },
   activeLabel: {
     color: colors.white,
+    fontWeight: "700",
   },
 });

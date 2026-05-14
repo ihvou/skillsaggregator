@@ -62,6 +62,7 @@ export default function CategoryScreen() {
         <FlashList
           data={visibleSkills}
           style={styles.list}
+          estimatedItemSize={150}
           keyExtractor={(item) => item.id}
           ListEmptyComponent={
             <EmptyState
@@ -89,10 +90,10 @@ export default function CategoryScreen() {
 
 const styles = StyleSheet.create({
   header: {
-    marginBottom: 12,
+    marginBottom: 14,
   },
   subtitle: {
-    color: colors.graphite,
+    color: colors.muted,
     fontSize: 15,
     lineHeight: 22,
   },
@@ -101,21 +102,20 @@ const styles = StyleSheet.create({
   },
   toggle: {
     alignSelf: "flex-start",
-    minHeight: 36,
+    minHeight: 32,
+    marginBottom: 12,
     justifyContent: "center",
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: colors.line,
-    backgroundColor: colors.white,
+    borderRadius: 999,
     paddingHorizontal: 12,
+    backgroundColor: colors.tint,
   },
   pressed: {
-    opacity: 0.72,
+    opacity: 0.7,
   },
   toggleText: {
-    color: colors.courtDark,
+    color: colors.court,
     fontSize: 13,
-    fontWeight: "800",
+    fontWeight: "600",
   },
   list: {
     flex: 1,

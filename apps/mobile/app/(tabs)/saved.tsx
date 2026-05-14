@@ -88,52 +88,50 @@ export default function SavedTab() {
 
 const styles = StyleSheet.create({
   header: {
-    marginBottom: 16,
+    marginBottom: 14,
   },
   title: {
     color: colors.ink,
-    fontSize: 34,
-    fontWeight: "800",
+    fontSize: 32,
+    fontWeight: "700",
+    letterSpacing: -0.5,
   },
   list: {
     flex: 1,
   },
   row: {
-    minHeight: 94,
     flexDirection: "row",
     gap: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: colors.line,
+    borderRadius: 12,
     backgroundColor: colors.white,
-    padding: 10,
+    padding: 12,
   },
   thumb: {
     width: 96,
-    height: 72,
-    borderRadius: 6,
-    backgroundColor: "rgba(16,32,38,0.08)",
+    aspectRatio: 16 / 11,
+    borderRadius: 8,
+    backgroundColor: "rgba(16,32,38,0.06)",
   },
   rowBody: {
     flex: 1,
     justifyContent: "center",
+    gap: 4,
   },
   rowTitle: {
     color: colors.ink,
-    fontSize: 16,
-    fontWeight: "700",
-    lineHeight: 21,
-  },
-  domain: {
-    marginTop: 6,
-    color: colors.graphite,
-    fontSize: 12,
-    fontWeight: "700",
+    fontSize: 15,
+    fontWeight: "600",
+    lineHeight: 20,
+    letterSpacing: -0.1,
   },
   context: {
-    marginTop: 5,
     color: colors.court,
     fontSize: 12,
-    fontWeight: "800",
+    fontWeight: "600",
+  },
+  domain: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: "500",
   },
 });
