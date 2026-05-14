@@ -80,6 +80,9 @@ const config = {
   skipSystemPressureCheck: process.env.COLLECT_SKIP_SYSTEM_PRESSURE === "1",
   systemPressurePauseMs: Number(process.env.COLLECT_SYSTEM_PRESSURE_PAUSE_MS ?? 60_000),
   freeMemoryAbortMb: Number(process.env.COLLECT_FREE_MEMORY_ABORT_MB ?? 100),
+  memoryPressureAbortLevel: Number(process.env.COLLECT_MEMORY_PRESSURE_ABORT_LEVEL ?? 2),
+  memoryPressureWarningFreePercent: Number(process.env.COLLECT_MEMORY_PRESSURE_WARNING_FREE_PERCENT ?? 10),
+  memoryPressureCriticalFreePercent: Number(process.env.COLLECT_MEMORY_PRESSURE_CRITICAL_FREE_PERCENT ?? 5),
   systemCommandTimeoutMs: Number(process.env.COLLECT_SYSTEM_COMMAND_TIMEOUT_MS ?? 5_000),
   preflightChannelId: process.env.COLLECT_PREFLIGHT_CHANNEL_ID ?? "UCk2gRC4RewYvvXXqXZxaTbQ",
 };
@@ -441,12 +444,54 @@ function parseVmStat(output) {
   };
   const freePages = readPages("Pages free");
   const speculativePages = readPages("Pages speculative") ?? 0;
+  const effectiveAvailablePages = freePages === null ? null : freePages + speculativePages;
   return {
     page_size: pageSize,
     free_pages: freePages,
     speculative_pages: speculativePages,
+    effective_available_pages: effectiveAvailablePages,
     free_mb: freePages === null ? null : Math.round((freePages * pageSize) / 1024 / 1024),
     speculative_mb: Math.round((speculativePages * pageSize) / 1024 / 1024),
+    effective_available_mb: effectiveAvailablePages === null
+      ? null
+      : Math.round((effectiveAvailablePages * pageSize) / 1024 / 1024),
+  };
+}
+
+function parseMemoryPressure(output) {
+  const trimmed = output.trim();
+  const singleLevel = trimmed.match(/^([0-4])$/)?.[1];
+  const labelledLevel = trimmed.match(/(?:memory pressure|pressure level|level):?\s*([0-4])/i)?.[1];
+  const freePercent = Number(trimmed.match(/System-wide memory free percentage:\s*(\d+)%/i)?.[1] ?? Number.NaN);
+  const normalized = trimmed.toLowerCase();
+  let level = singleLevel ?? labelledLevel;
+  let source = level ? "reported_level" : null;
+
+  if (level === undefined) {
+    if (normalized.includes("critical")) {
+      level = "4";
+      source = "reported_state";
+    } else if (normalized.includes("warning") || normalized.includes("warn")) {
+      level = "2";
+      source = "reported_state";
+    } else if (normalized.includes("normal")) {
+      level = "0";
+      source = "reported_state";
+    } else if (Number.isFinite(freePercent)) {
+      level = freePercent < config.memoryPressureCriticalFreePercent
+        ? "4"
+        : freePercent < config.memoryPressureWarningFreePercent
+          ? "2"
+          : "0";
+      source = "free_percent";
+    }
+  }
+
+  return {
+    level: level === undefined ? null : Number(level),
+    free_percent: Number.isFinite(freePercent) ? freePercent : null,
+    source: source ?? "unavailable",
+    sample: trimmed.split("\n").slice(0, 3).join(" | "),
   };
 }
 
@@ -462,40 +507,91 @@ function parseThermalLevel(output) {
   return null;
 }
 
+async function readThermalPressure() {
+  try {
+    const thermal = await execForProbe("pmset", ["-g", "thermlog"]);
+    const level = parseThermalLevel(thermal);
+    if (level !== null) {
+      return {
+        level,
+        source: "pmset_thermlog",
+        sample: thermal.split("\n").slice(0, 5).join(" | "),
+      };
+    }
+  } catch (_error) {
+    // pmset -g thermlog is unavailable on some Macs; sysctl is a quieter fallback.
+  }
+
+  try {
+    const sysctl = await execForProbe("sysctl", ["machdep.xcpm.cpu_thermal_level"]);
+    const level = Number(sysctl.match(/:\s*(-?\d+)/)?.[1] ?? Number.NaN);
+    if (Number.isFinite(level)) {
+      return {
+        level: Math.max(0, level),
+        source: "sysctl_machdep_xcpm",
+        sample: sysctl.trim(),
+      };
+    }
+  } catch (_error) {
+    // Treat unavailable thermal probes as OK rather than polluting every log event.
+  }
+
+  return { level: 0, source: "unavailable", sample: null };
+}
+
 async function readSystemPressure() {
   if (config.skipSystemPressureCheck || platform() !== "darwin") {
     return { skipped: true, reason: config.skipSystemPressureCheck ? "disabled_by_env" : "non_darwin" };
   }
 
-  const pressure = { skipped: false, memory: null, thermal_level: null, pmset_batt: null };
+  const pressure = {
+    skipped: false,
+    memory_pressure: null,
+    memory: null,
+    thermal_level: 0,
+    thermal: null,
+    pmset_batt: null,
+  };
+  try {
+    pressure.memory_pressure = parseMemoryPressure(await execForProbe("memory_pressure", ["-Q"]));
+  } catch (error) {
+    pressure.memory_pressure = {
+      level: null,
+      free_percent: null,
+      source: "command_failed",
+      sample: errorMessage(error),
+    };
+  }
+
   try {
     pressure.memory = parseVmStat(await execForProbe("vm_stat", []));
   } catch (error) {
     pressure.memory_error = errorMessage(error);
   }
 
-  try {
-    const thermal = await execForProbe("pmset", ["-g", "thermlog"]);
-    pressure.thermal_level = parseThermalLevel(thermal);
-    pressure.thermal_sample = thermal.split("\n").slice(0, 5).join(" | ");
-  } catch (error) {
-    pressure.thermal_error = errorMessage(error);
-  }
+  pressure.thermal = await readThermalPressure();
+  pressure.thermal_level = pressure.thermal.level;
 
   try {
     pressure.pmset_batt = (await execForProbe("pmset", ["-g", "batt"])).split("\n").slice(0, 2).join(" | ");
-  } catch (error) {
-    pressure.pmset_batt_error = errorMessage(error);
+  } catch (_error) {
+    pressure.pmset_batt = null;
   }
 
   return pressure;
 }
 
 function isPressureHigh(pressure) {
-  const freeMb = pressure.memory?.free_mb;
-  const lowMemory = typeof freeMb === "number" && freeMb < config.freeMemoryAbortMb;
+  const memoryPressureLevel = pressure.memory_pressure?.level;
+  const highMemoryPressure =
+    typeof memoryPressureLevel === "number" && memoryPressureLevel >= config.memoryPressureAbortLevel;
+  const effectiveAvailableMb = pressure.memory?.effective_available_mb;
+  const fallbackLowMemory =
+    memoryPressureLevel === null
+    && typeof effectiveAvailableMb === "number"
+    && effectiveAvailableMb < config.freeMemoryAbortMb;
   const hot = typeof pressure.thermal_level === "number" && pressure.thermal_level >= 2;
-  return lowMemory || hot;
+  return highMemoryPressure || fallbackLowMemory || hot;
 }
 
 async function ensureSystemHealthy(skill, candidate) {
