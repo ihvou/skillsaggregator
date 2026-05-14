@@ -3,10 +3,11 @@ import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import { FlashList } from "@shopify/flash-list";
 import { useQuery } from "@tanstack/react-query";
-import type { SkillResource } from "@skillsaggregator/shared";
+import type { ResourceSort, SkillResource } from "@skillsaggregator/shared";
 import { LevelFilter, type LevelFilterValue } from "@/components/LevelFilter";
 import { ResourceCard } from "@/components/ResourceCard";
 import { Screen } from "@/components/Screen";
+import { SortChips } from "@/components/SortChips";
 import { getSkillResources } from "@/lib/data";
 import { setLastSeenSkill } from "@/lib/localState";
 import { colors } from "@/lib/theme";
@@ -24,10 +25,11 @@ export default function SkillDetailScreen() {
       ? initialLevel
       : "all",
   );
+  const [sort, setSort] = useState<ResourceSort>("popular");
   const query = useQuery({
-    queryKey: ["skill", categorySlug, skillSlug],
+    queryKey: ["skill", categorySlug, skillSlug, sort],
     queryFn: async () => {
-      const data = await getSkillResources(categorySlug, skillSlug);
+      const data = await getSkillResources(categorySlug, skillSlug, sort);
       if (data.skill) setLastSeenSkill(data.skill.id);
       return data;
     },
@@ -51,7 +53,16 @@ export default function SkillDetailScreen() {
           <Text style={styles.subtitle}>{query.data.skill.description}</Text>
         ) : null}
       </View>
-      <LevelFilter value={level} onChange={setLevel} />
+      <View style={styles.filters}>
+        <View style={styles.filterGroup}>
+          <Text style={styles.filterLabel}>Level</Text>
+          <LevelFilter value={level} onChange={setLevel} />
+        </View>
+        <View style={styles.filterGroup}>
+          <Text style={styles.filterLabel}>Sort</Text>
+          <SortChips value={sort} onChange={setSort} />
+        </View>
+      </View>
       {query.isLoading ? (
         <ActivityIndicator color={colors.court} style={{ marginTop: 20 }} />
       ) : (
@@ -100,6 +111,18 @@ const styles = StyleSheet.create({
     color: colors.court,
     fontSize: 13,
     fontWeight: "800",
+  },
+  filters: {
+    gap: 10,
+  },
+  filterGroup: {
+    gap: 8,
+  },
+  filterLabel: {
+    color: colors.graphite,
+    fontSize: 12,
+    fontWeight: "800",
+    textTransform: "uppercase",
   },
   empty: {
     marginTop: 20,

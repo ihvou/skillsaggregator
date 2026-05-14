@@ -1,4 +1,5 @@
 export type SkillLevel = "beginner" | "intermediate" | "advanced";
+export type ResourceSort = "newest" | "popular";
 
 export type SuggestionType =
   | "LINK_ADD"
@@ -40,6 +41,7 @@ export interface LinkResource {
   description: string | null;
   thumbnail_url: string | null;
   content_type: "video" | "article" | "podcast" | "course" | null;
+  created_at?: string | null;
 }
 
 export interface SkillResource {

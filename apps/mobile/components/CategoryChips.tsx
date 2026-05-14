@@ -45,8 +45,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   active: {
-    borderColor: colors.court,
-    backgroundColor: colors.court,
+    borderColor: colors.courtDark,
+    backgroundColor: colors.courtDark,
   },
   pressed: {
     opacity: 0.72,

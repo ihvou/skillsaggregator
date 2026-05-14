@@ -5,6 +5,7 @@ import {
   fallbackSkills,
   type CategorySummary,
   type LinkResource,
+  type ResourceSort,
   type SkillResource,
   type SkillSummary,
 } from "@skillsaggregator/shared";
@@ -25,6 +26,17 @@ function fallbackSkillsForCategory(categorySlug: string) {
 
 function fallbackCategoryBySlug(categorySlug: string) {
   return fallbackCategories.find((category) => category.slug === categorySlug) ?? null;
+}
+
+function normalizeSort(sort: ResourceSort | undefined): ResourceSort {
+  return sort === "newest" ? "newest" : "popular";
+}
+
+function resourceSorter(sort: ResourceSort) {
+  return (a: SkillResource, b: SkillResource) => {
+    if (sort === "popular") return b.upvote_count - a.upvote_count;
+    return Date.parse(b.created_at ?? "") - Date.parse(a.created_at ?? "");
+  };
 }
 
 function fallbackResourceRows() {
@@ -124,11 +136,12 @@ export async function getSkills(): Promise<SkillSummary[]> {
   return skills;
 }
 
-export async function getSkillResources(categorySlug: string, skillSlug: string): Promise<{
+export async function getSkillResources(categorySlug: string, skillSlug: string, sortInput?: ResourceSort): Promise<{
   category: CategorySummary | null;
   skill: SkillSummary | null;
   resources: SkillResource[];
 }> {
+  const sort = normalizeSort(sortInput);
   const supabase = getSupabase();
   if (!supabase) {
     const category = fallbackCategoryBySlug(categorySlug);
@@ -144,6 +157,7 @@ export async function getSkillResources(categorySlug: string, skillSlug: string)
             category_name: category?.name ?? null,
           },
         }))
+        .sort(resourceSorter(sort))
       : [];
     return { category, skill, resources };
   }
@@ -162,10 +176,10 @@ export async function getSkillResources(categorySlug: string, skillSlug: string)
 
   const { data: relations } = await supabase
     .from("link_skill_relations")
-    .select("id, public_note, skill_level, upvote_count, links(id, url, canonical_url, domain, title, description, thumbnail_url, content_type)")
+    .select("id, public_note, skill_level, upvote_count, created_at, links(id, url, canonical_url, domain, title, description, thumbnail_url, content_type, created_at)")
     .eq("skill_id", skill.id)
     .eq("is_active", true)
-    .order("upvote_count", { ascending: false });
+    .order(sort === "newest" ? "created_at" : "upvote_count", { ascending: false });
 
   return {
     category,
@@ -188,6 +202,7 @@ export async function getSkillResources(categorySlug: string, skillSlug: string)
           public_note: relation.public_note,
           skill_level: relation.skill_level,
           upvote_count: relation.upvote_count,
+          created_at: relation.created_at,
           link,
           skill: {
             id: skill.id,

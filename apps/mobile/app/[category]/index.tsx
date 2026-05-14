@@ -1,9 +1,8 @@
 import { useState } from "react";
-import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import { FlashList } from "@shopify/flash-list";
 import { useQuery } from "@tanstack/react-query";
-import { LevelFilter, type LevelFilterValue } from "@/components/LevelFilter";
 import { Screen } from "@/components/Screen";
 import { SkillCard } from "@/components/SkillCard";
 import { getSkillsForCategory } from "@/lib/data";
@@ -12,12 +11,15 @@ import { colors } from "@/lib/theme";
 export default function CategoryScreen() {
   const { category } = useLocalSearchParams<{ category: string }>();
   const categorySlug = category ?? "badminton";
-  const [level, setLevel] = useState<LevelFilterValue>("all");
+  const [showAllSkills, setShowAllSkills] = useState(false);
   const query = useQuery({
     queryKey: ["category", categorySlug, "skills"],
     queryFn: () => getSkillsForCategory(categorySlug),
     staleTime: 300000,
   });
+  const skills = query.data?.skills ?? [];
+  const visibleSkills = showAllSkills ? skills : skills.filter((skill) => skill.resource_count > 0);
+  const hiddenEmptyCount = skills.length - visibleSkills.length;
 
   return (
     <Screen>
@@ -29,21 +31,27 @@ export default function CategoryScreen() {
         ) : null}
       </View>
 
-      <View style={styles.filterWrap}>
-        <Text style={styles.filterLabel}>Open skill resources at level</Text>
-        <LevelFilter value={level} onChange={setLevel} />
-      </View>
+      {hiddenEmptyCount > 0 ? (
+        <Pressable
+          onPress={() => setShowAllSkills((current) => !current)}
+          style={({ pressed }) => [styles.toggle, pressed && styles.pressed]}
+        >
+          <Text style={styles.toggleText}>
+            {showAllSkills ? "Hide empty skills" : `Show all skills (${hiddenEmptyCount} empty)`}
+          </Text>
+        </Pressable>
+      ) : null}
 
       {query.isLoading ? (
         <ActivityIndicator color={colors.court} style={{ marginTop: 20 }} />
       ) : (
         <FlashList
-          data={query.data?.skills ?? []}
+          data={visibleSkills}
           style={styles.list}
           keyExtractor={(item) => item.id}
-          ListEmptyComponent={<Text style={styles.empty}>No active skills found for this category.</Text>}
+          ListEmptyComponent={<Text style={styles.empty}>No skills with resources yet.</Text>}
           ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
-          renderItem={({ item }) => <SkillCard skill={item} level={level} />}
+          renderItem={({ item }) => <SkillCard skill={item} />}
           contentContainerStyle={{ paddingTop: 14, paddingBottom: 24 }}
           showsVerticalScrollIndicator={false}
         />
@@ -75,14 +83,23 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 22,
   },
-  filterWrap: {
-    gap: 8,
+  toggle: {
+    alignSelf: "flex-start",
+    minHeight: 36,
+    justifyContent: "center",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.line,
+    backgroundColor: colors.white,
+    paddingHorizontal: 12,
   },
-  filterLabel: {
-    color: colors.graphite,
-    fontSize: 12,
+  pressed: {
+    opacity: 0.72,
+  },
+  toggleText: {
+    color: colors.courtDark,
+    fontSize: 13,
     fontWeight: "800",
-    textTransform: "uppercase",
   },
   empty: {
     marginTop: 20,
