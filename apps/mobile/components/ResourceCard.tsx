@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { Linking, PanResponder, Pressable, StyleSheet, Text, View } from "react-native";
+import { Linking, Pressable, StyleSheet, Text, View } from "react-native";
 import { Image } from "expo-image";
 import * as Haptics from "expo-haptics";
 import { Bookmark, BookmarkCheck, Check, CheckCircle, ExternalLink } from "lucide-react-native";
+import { Swipeable } from "react-native-gesture-handler";
 import type { SkillResource } from "@skillsaggregator/shared";
 import { getFlag, setFlag } from "@/lib/localState";
 import { colors } from "@/lib/theme";
@@ -11,6 +12,8 @@ interface ResourceCardProps {
   resource: SkillResource;
   density?: "compact" | "comfortable";
 }
+
+type SwipeDirection = "left" | "right";
 
 function triggerSelectionHaptic() {
   Haptics.selectionAsync().catch(() => undefined);
@@ -34,93 +37,141 @@ export function ResourceCard({ resource, density = "compact" }: ResourceCardProp
     triggerSelectionHaptic();
   }
 
-  const panResponder = PanResponder.create({
-    onMoveShouldSetPanResponder: (_, gesture) => Math.abs(gesture.dx) > 36 && Math.abs(gesture.dy) < 18,
-    onPanResponderRelease: (_, gesture) => {
-      if (gesture.dx < -64) toggleSaved();
-      if (gesture.dx > 64) toggleCompleted();
-    },
-  });
+  function handleSwipeOpen(direction: SwipeDirection, swipeable: Swipeable) {
+    if (direction === "right") toggleSaved();
+    if (direction === "left") toggleCompleted();
+    swipeable.close();
+  }
+
+  function renderLeftActions() {
+    return (
+      <View style={[styles.swipeAction, styles.completeAction]}>
+        <CheckCircle size={22} color={colors.white} />
+        <Text style={styles.swipeActionText}>{isCompleted ? "Undo" : "Complete"}</Text>
+      </View>
+    );
+  }
+
+  function renderRightActions() {
+    return (
+      <View style={[styles.swipeAction, styles.saveAction]}>
+        <BookmarkCheck size={22} color={colors.white} />
+        <Text style={styles.swipeActionText}>{isSaved ? "Unsave" : "Save"}</Text>
+      </View>
+    );
+  }
+
   const SavedIcon = isSaved ? BookmarkCheck : Bookmark;
   const CompletedIcon = isCompleted ? CheckCircle : Check;
 
   return (
-    <Pressable
-      {...panResponder.panHandlers}
-      onPress={() => Linking.openURL(resource.link.url)}
-      onLongPress={toggleSaved}
-      style={({ pressed }) => [
-        styles.card,
-        density === "comfortable" && styles.comfortableCard,
-        pressed && styles.pressed,
-        isCompleted && styles.completed,
-      ]}
+    <Swipeable
+      containerStyle={styles.swipeContainer}
+      friction={1.8}
+      leftThreshold={56}
+      rightThreshold={56}
+      overshootFriction={8}
+      renderLeftActions={renderLeftActions}
+      renderRightActions={renderRightActions}
+      onSwipeableOpen={handleSwipeOpen}
     >
-      <View style={styles.thumbWrap}>
-        {resource.link.thumbnail_url ? (
-          <Image
-            source={resource.link.thumbnail_url}
-            style={styles.thumbnail}
-            contentFit="cover"
-            accessibilityLabel={resource.link.title ?? "Resource thumbnail"}
-          />
-        ) : (
-          <View style={styles.thumbnailFallback}>
-            <Text style={styles.thumbnailText}>{resource.link.content_type ?? "resource"}</Text>
-          </View>
-        )}
-        {isSaved ? (
-          <View style={styles.savedOverlay}>
-            <BookmarkCheck size={17} color={colors.white} fill={colors.court} />
-          </View>
-        ) : null}
-      </View>
-      <View style={styles.body}>
-        <View style={styles.meta}>
-          <Text style={styles.domain}>{resource.link.domain}</Text>
-          {resource.skill_level ? <Text style={styles.level}>{resource.skill_level}</Text> : null}
+      <Pressable
+        onPress={() => Linking.openURL(resource.link.url)}
+        onLongPress={toggleSaved}
+        style={({ pressed }) => [
+          styles.card,
+          density === "comfortable" && styles.comfortableCard,
+          pressed && styles.pressed,
+          isCompleted && styles.completed,
+        ]}
+      >
+        <View style={styles.thumbWrap}>
+          {resource.link.thumbnail_url ? (
+            <Image
+              source={resource.link.thumbnail_url}
+              style={styles.thumbnail}
+              contentFit="cover"
+              accessibilityLabel={resource.link.title ?? "Resource thumbnail"}
+            />
+          ) : (
+            <View style={styles.thumbnailFallback}>
+              <Text style={styles.thumbnailText}>{resource.link.content_type ?? "resource"}</Text>
+            </View>
+          )}
+          {isSaved ? (
+            <View style={styles.savedOverlay}>
+              <BookmarkCheck size={17} color={colors.white} fill={colors.court} />
+            </View>
+          ) : null}
         </View>
-        <Text style={styles.title} numberOfLines={2}>
-          {resource.link.title ?? resource.link.url}
-        </Text>
-        {resource.public_note ? (
-          <Text style={styles.note} numberOfLines={1}>
-            {resource.public_note}
+        <View style={styles.body}>
+          <View style={styles.meta}>
+            <Text style={styles.domain}>{resource.link.domain}</Text>
+            {resource.skill_level ? <Text style={styles.level}>{resource.skill_level}</Text> : null}
+          </View>
+          <Text style={styles.title} numberOfLines={2}>
+            {resource.link.title ?? resource.link.url}
           </Text>
-        ) : null}
-        <View style={styles.actions}>
-          <Pressable
-            onPress={toggleSaved}
-            style={[styles.iconButton, isSaved && styles.iconButtonActive]}
-            accessibilityRole="button"
-            accessibilityLabel="Save resource"
-          >
-            <SavedIcon
-              size={18}
-              color={isSaved ? colors.white : colors.court}
-              fill={isSaved ? "rgba(255,255,255,0.24)" : "transparent"}
-            />
-          </Pressable>
-          <Pressable
-            onPress={toggleCompleted}
-            style={[styles.iconButton, isCompleted && styles.iconButtonActive]}
-            accessibilityRole="button"
-            accessibilityLabel="Mark completed"
-          >
-            <CompletedIcon
-              size={18}
-              color={isCompleted ? colors.white : colors.court}
-              fill={isCompleted ? "rgba(255,255,255,0.24)" : "transparent"}
-            />
-          </Pressable>
-          <ExternalLink size={18} color={colors.graphite} />
+          {resource.public_note ? (
+            <Text style={styles.note} numberOfLines={1}>
+              {resource.public_note}
+            </Text>
+          ) : null}
+          <View style={styles.actions}>
+            <Pressable
+              onPress={toggleSaved}
+              style={[styles.iconButton, isSaved && styles.iconButtonActive]}
+              accessibilityRole="button"
+              accessibilityLabel="Save resource"
+            >
+              <SavedIcon
+                size={18}
+                color={isSaved ? colors.white : colors.court}
+                fill={isSaved ? "rgba(255,255,255,0.24)" : "transparent"}
+              />
+            </Pressable>
+            <Pressable
+              onPress={toggleCompleted}
+              style={[styles.iconButton, isCompleted && styles.iconButtonActive]}
+              accessibilityRole="button"
+              accessibilityLabel="Mark completed"
+            >
+              <CompletedIcon
+                size={18}
+                color={isCompleted ? colors.white : colors.court}
+                fill={isCompleted ? "rgba(255,255,255,0.24)" : "transparent"}
+              />
+            </Pressable>
+            <ExternalLink size={18} color={colors.graphite} />
+          </View>
         </View>
-      </View>
-    </Pressable>
+      </Pressable>
+    </Swipeable>
   );
 }
 
 const styles = StyleSheet.create({
+  swipeContainer: {
+    borderRadius: 8,
+  },
+  swipeAction: {
+    width: 104,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    borderRadius: 8,
+  },
+  saveAction: {
+    backgroundColor: colors.court,
+  },
+  completeAction: {
+    backgroundColor: colors.amber,
+  },
+  swipeActionText: {
+    color: colors.white,
+    fontSize: 12,
+    fontWeight: "800",
+  },
   card: {
     minHeight: 120,
     flexDirection: "row",
