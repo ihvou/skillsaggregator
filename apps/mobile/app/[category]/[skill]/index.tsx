@@ -1,18 +1,19 @@
 import { useMemo, useState } from "react";
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
-import { Stack, useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams } from "expo-router";
 import { FlashList } from "@shopify/flash-list";
 import { useQuery } from "@tanstack/react-query";
 import type { ResourceSort, SkillResource } from "@skillsaggregator/shared";
 import { Search } from "lucide-react-native";
 import { EmptyState } from "@/components/EmptyState";
 import type { LevelFilterValue } from "@/components/LevelFilter";
+import { PageHeader } from "@/components/PageHeader";
 import { ResourceCard } from "@/components/ResourceCard";
 import { Screen } from "@/components/Screen";
 import { SkeletonList } from "@/components/SkeletonList";
 import { getSkillResources } from "@/lib/data";
 import { setLastSeenSkill } from "@/lib/localState";
-import { colors } from "@/lib/theme";
+import { colors, spacing, typography } from "@/lib/theme";
 
 const levels: LevelFilterValue[] = ["all", "beginner", "intermediate", "advanced"];
 const sorts: Array<{ value: ResourceSort; label: string }> = [
@@ -50,24 +51,26 @@ export default function SkillDetailScreen() {
   }, [level, query.data?.resources]);
 
   return (
-    <Screen>
-      <Stack.Screen options={{ title: query.data?.skill?.name ?? "" }} />
-      <View style={styles.header}>
-        <Text style={styles.title}>{query.data?.skill?.name ?? "Skill"}</Text>
-        {query.data?.category ? (
-          <Text style={styles.categoryName}>{query.data.category.name}</Text>
-        ) : null}
+    <Screen edges={["top"]} padded={false}>
+      <View style={styles.headerWrap}>
+        <PageHeader
+          title={query.data?.skill?.name ?? "Skill"}
+          subtitle={query.data?.category?.name ?? undefined}
+          showBack
+          showMenu
+        />
         {query.data?.skill?.description ? (
-          <Text style={styles.subtitle}>{query.data.skill.description}</Text>
+          <Text style={styles.description}>{query.data.skill.description}</Text>
         ) : null}
       </View>
       {query.isLoading ? (
-        <SkeletonList />
+        <View style={styles.skeletonWrap}>
+          <SkeletonList count={3} />
+        </View>
       ) : (
         <FlashList<SkillResource>
           data={resources}
           style={styles.list}
-          estimatedItemSize={140}
           keyExtractor={(item) => item.id}
           ListHeaderComponent={
             <View style={styles.filterBarWrap}>
@@ -108,22 +111,27 @@ export default function SkillDetailScreen() {
               </ScrollView>
             </View>
           }
-          stickyHeaderIndices={[0]}
           ListEmptyComponent={
-            <EmptyState
-              icon={Search}
-              title="No matches for this level"
-              subtitle="Try All, switch the sort, or check back after moderation."
-            />
+            <View style={styles.emptyWrap}>
+              <EmptyState
+                icon={Search}
+                title="No matches for this level"
+                subtitle="Try All, switch the sort, or check back after moderation."
+              />
+            </View>
           }
-          ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
-          renderItem={({ item }) => <ResourceCard resource={item} />}
-          contentContainerStyle={{ paddingTop: 14, paddingBottom: 24 }}
+          ItemSeparatorComponent={() => <View style={styles.divider} />}
+          renderItem={({ item }) => (
+            <View style={styles.rowWrap}>
+              <ResourceCard resource={item} />
+            </View>
+          )}
+          contentContainerStyle={{ paddingBottom: spacing.xxl }}
           refreshControl={
             <RefreshControl
               refreshing={query.isRefetching}
               onRefresh={() => query.refetch()}
-              tintColor={colors.court}
+              tintColor={colors.ink}
             />
           }
           showsVerticalScrollIndicator={false}
@@ -134,30 +142,19 @@ export default function SkillDetailScreen() {
 }
 
 const styles = StyleSheet.create({
-  header: {
-    marginBottom: 14,
+  headerWrap: {
+    paddingHorizontal: spacing.page,
+    paddingTop: spacing.md,
   },
-  title: {
-    color: colors.ink,
-    fontSize: 28,
-    fontWeight: "700",
-    letterSpacing: -0.4,
-  },
-  categoryName: {
-    marginTop: 4,
-    color: colors.court,
-    fontSize: 13,
-    fontWeight: "600",
-  },
-  subtitle: {
-    marginTop: 10,
-    color: colors.muted,
-    fontSize: 15,
-    lineHeight: 22,
+  description: {
+    marginTop: spacing.sm,
+    ...typography.body,
   },
   filterBarWrap: {
-    marginBottom: 12,
-    backgroundColor: colors.shuttle,
+    paddingHorizontal: spacing.page,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.sm,
+    backgroundColor: colors.bgGroup,
   },
   filterBar: {
     alignItems: "center",
@@ -169,6 +166,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     borderRadius: 999,
     paddingHorizontal: 12,
+    backgroundColor: colors.surface,
   },
   filterChipActive: {
     backgroundColor: colors.ink,
@@ -180,16 +178,32 @@ const styles = StyleSheet.create({
     textTransform: "capitalize",
   },
   filterChipTextActive: {
-    color: colors.white,
+    color: colors.surface,
     fontWeight: "700",
   },
   filterDivider: {
     width: 1,
     height: 18,
     marginHorizontal: 4,
-    backgroundColor: colors.line,
+    backgroundColor: colors.divider,
   },
   list: {
     flex: 1,
+  },
+  rowWrap: {
+    paddingHorizontal: spacing.page,
+  },
+  divider: {
+    height: StyleSheet.hairlineWidth,
+    marginLeft: spacing.page + 96 + spacing.sm,
+    marginRight: spacing.page,
+    backgroundColor: colors.divider,
+  },
+  skeletonWrap: {
+    paddingHorizontal: spacing.page,
+    paddingTop: spacing.md,
+  },
+  emptyWrap: {
+    paddingHorizontal: spacing.page,
   },
 });

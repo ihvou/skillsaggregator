@@ -2,24 +2,44 @@ import { useState } from "react";
 import { Linking, Pressable, StyleSheet, Text, View } from "react-native";
 import { Image } from "expo-image";
 import * as Haptics from "expo-haptics";
-import { Bookmark, BookmarkCheck, Check, CheckCircle, ExternalLink } from "lucide-react-native";
+import { Bookmark, BookmarkCheck, Check, CheckCircle2, MoreHorizontal } from "lucide-react-native";
 import { Swipeable } from "react-native-gesture-handler";
 import type { SkillResource } from "@skillsaggregator/shared";
 import { getFlag, setFlag } from "@/lib/localState";
-import { colors } from "@/lib/theme";
+import { colors, radius, shadows, spacing, typography } from "@/lib/theme";
 
 interface ResourceCardProps {
   resource: SkillResource;
-  density?: "compact" | "comfortable";
+  /** Optional label to render above the title (e.g. a date or breadcrumb). */
+  topLabel?: string;
+  /** Show category/skill breadcrumb instead of plain domain in meta row. */
+  showContext?: boolean;
 }
 
 type SwipeDirection = "left" | "right";
+
+const MONTHS_SHORT = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
 
 function triggerSelectionHaptic() {
   Haptics.selectionAsync().catch(() => undefined);
 }
 
-export function ResourceCard({ resource, density = "compact" }: ResourceCardProps) {
+function formatTopDate(iso?: string | null) {
+  if (!iso) return undefined;
+  const parsed = Date.parse(iso);
+  if (Number.isNaN(parsed)) return undefined;
+  const date = new Date(parsed);
+  return `${MONTHS_SHORT[date.getMonth()]} ${date.getDate()}`;
+}
+
+/**
+ * Apple Podcasts "Saved" / episode row.
+ *  - Rectangular rounded thumbnail on the left with subtle shadow
+ *  - Right column: optional small label, 2-line bold title, meta line
+ *  - Far-right column of small action icons (save / complete / more)
+ *  - Tap opens the URL; swipe right to save, swipe left to mark complete
+ */
+export function ResourceCard({ resource, topLabel, showContext = false }: ResourceCardProps) {
   const [isSaved, setIsSaved] = useState(() => getFlag(`saved:${resource.link.id}`));
   const [isCompleted, setIsCompleted] = useState(() => getFlag(`completed:${resource.link.id}`));
 
@@ -46,8 +66,8 @@ export function ResourceCard({ resource, density = "compact" }: ResourceCardProp
   function renderLeftActions() {
     return (
       <View style={[styles.swipeAction, styles.completeAction]}>
-        <CheckCircle size={22} color={colors.white} />
-        <Text style={styles.swipeActionText}>{isCompleted ? "Undo" : "Complete"}</Text>
+        <CheckCircle2 size={22} color={colors.surface} />
+        <Text style={styles.swipeActionText}>{isCompleted ? "Undo" : "Done"}</Text>
       </View>
     );
   }
@@ -55,14 +75,18 @@ export function ResourceCard({ resource, density = "compact" }: ResourceCardProp
   function renderRightActions() {
     return (
       <View style={[styles.swipeAction, styles.saveAction]}>
-        <BookmarkCheck size={22} color={colors.white} />
+        <BookmarkCheck size={22} color={colors.surface} />
         <Text style={styles.swipeActionText}>{isSaved ? "Unsave" : "Save"}</Text>
       </View>
     );
   }
 
   const SavedIcon = isSaved ? BookmarkCheck : Bookmark;
-  const CompletedIcon = isCompleted ? CheckCircle : Check;
+  const breadcrumb = resource.skill?.category_name && resource.skill?.name
+    ? `${resource.skill.category_name} · ${resource.skill.name}`
+    : resource.link.domain;
+  const metaText = showContext ? breadcrumb : resource.link.domain;
+  const resolvedTopLabel = topLabel ?? formatTopDate(resource.created_at);
 
   return (
     <Swipeable
@@ -78,12 +102,7 @@ export function ResourceCard({ resource, density = "compact" }: ResourceCardProp
       <Pressable
         onPress={() => Linking.openURL(resource.link.url)}
         onLongPress={toggleSaved}
-        style={({ pressed }) => [
-          styles.card,
-          density === "comfortable" && styles.comfortableCard,
-          pressed && styles.pressed,
-          isCompleted && styles.completed,
-        ]}
+        style={({ pressed }) => [styles.row, pressed && styles.pressed]}
       >
         <View style={styles.thumbWrap}>
           {resource.link.thumbnail_url ? (
@@ -94,118 +113,103 @@ export function ResourceCard({ resource, density = "compact" }: ResourceCardProp
               accessibilityLabel={resource.link.title ?? "Resource thumbnail"}
             />
           ) : (
-            <View style={styles.thumbnailFallback}>
-              <Text style={styles.thumbnailText}>{resource.link.content_type ?? "resource"}</Text>
-            </View>
+            <View style={styles.thumbnailFallback} />
           )}
-          {isSaved ? (
-            <View style={styles.savedOverlay}>
-              <BookmarkCheck size={14} color={colors.white} fill={colors.white} />
-            </View>
-          ) : null}
         </View>
         <View style={styles.body}>
+          {resolvedTopLabel ? <Text style={styles.topLabel}>{resolvedTopLabel}</Text> : null}
           <Text style={styles.title} numberOfLines={2}>
             {resource.link.title ?? resource.link.url}
           </Text>
-          {resource.public_note ? (
-            <Text style={styles.note} numberOfLines={2}>
-              {resource.public_note}
-            </Text>
-          ) : null}
-          <View style={styles.metaRow}>
-            {resource.skill_level ? (
-              <Text style={styles.level}>{resource.skill_level}</Text>
-            ) : null}
-            <Text style={styles.domain}>{resource.link.domain}</Text>
-            <View style={styles.actions}>
-              <Pressable
-                onPress={toggleSaved}
-                hitSlop={{ top: 10, right: 8, bottom: 10, left: 8 }}
-                style={styles.iconTap}
-                accessibilityRole="button"
-                accessibilityLabel="Save resource"
-              >
-                <SavedIcon
-                  size={20}
-                  color={isSaved ? colors.court : colors.muted}
-                  fill={isSaved ? colors.court : "transparent"}
-                />
-              </Pressable>
-              <Pressable
-                onPress={toggleCompleted}
-                hitSlop={{ top: 10, right: 8, bottom: 10, left: 8 }}
-                style={styles.iconTap}
-                accessibilityRole="button"
-                accessibilityLabel="Mark completed"
-              >
-                <CompletedIcon
-                  size={20}
-                  color={isCompleted ? colors.court : colors.muted}
-                  fill={isCompleted ? colors.court : "transparent"}
-                />
-              </Pressable>
-              <Pressable
-                onPress={() => Linking.openURL(resource.link.url)}
-                hitSlop={{ top: 10, right: 8, bottom: 10, left: 8 }}
-                style={styles.iconTap}
-                accessibilityRole="button"
-                accessibilityLabel="Open resource"
-              >
-                <ExternalLink size={20} color={colors.muted} />
-              </Pressable>
-            </View>
-          </View>
+          <Text style={styles.meta} numberOfLines={1}>
+            {resource.skill_level ? `${capitalize(resource.skill_level)} · ${metaText}` : metaText}
+          </Text>
+        </View>
+        <View style={styles.actions}>
+          <Pressable
+            onPress={toggleSaved}
+            hitSlop={{ top: 10, right: 8, bottom: 10, left: 8 }}
+            style={styles.iconTap}
+            accessibilityRole="button"
+            accessibilityLabel={isSaved ? "Unsave resource" : "Save resource"}
+          >
+            <SavedIcon
+              size={20}
+              color={isSaved ? colors.accent : colors.muted}
+              fill={isSaved ? colors.accent : "transparent"}
+              strokeWidth={2}
+            />
+          </Pressable>
+          <Pressable
+            onPress={toggleCompleted}
+            hitSlop={{ top: 10, right: 8, bottom: 10, left: 8 }}
+            style={styles.iconTap}
+            accessibilityRole="button"
+            accessibilityLabel={isCompleted ? "Mark not completed" : "Mark completed"}
+          >
+            {isCompleted ? (
+              <CheckCircle2 size={20} color={colors.accent} fill={colors.accent} stroke={colors.surface} strokeWidth={2} />
+            ) : (
+              <Check size={20} color={colors.muted} strokeWidth={2} />
+            )}
+          </Pressable>
+          <Pressable
+            onPress={() => Linking.openURL(resource.link.url)}
+            hitSlop={{ top: 10, right: 8, bottom: 10, left: 8 }}
+            style={styles.iconTap}
+            accessibilityRole="button"
+            accessibilityLabel="Open resource"
+          >
+            <MoreHorizontal size={20} color={colors.muted} />
+          </Pressable>
         </View>
       </Pressable>
     </Swipeable>
   );
 }
 
+function capitalize(value: string) {
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
 const styles = StyleSheet.create({
   swipeContainer: {
-    borderRadius: 12,
+    borderRadius: radius.md,
   },
   swipeAction: {
-    width: 104,
+    width: 92,
     alignItems: "center",
     justifyContent: "center",
-    gap: 6,
-    borderRadius: 12,
+    gap: 4,
+    borderRadius: radius.md,
   },
   saveAction: {
-    backgroundColor: colors.court,
+    backgroundColor: colors.accent,
   },
   completeAction: {
     backgroundColor: colors.ink,
   },
   swipeActionText: {
-    color: colors.white,
+    color: colors.surface,
     fontSize: 12,
     fontWeight: "700",
   },
-  card: {
+  row: {
     flexDirection: "row",
-    gap: 12,
-    borderRadius: 12,
-    backgroundColor: colors.white,
-    padding: 12,
-  },
-  comfortableCard: {
-    minHeight: 168,
+    alignItems: "center",
+    gap: spacing.sm,
+    paddingVertical: spacing.sm,
   },
   pressed: {
-    opacity: 0.7,
-  },
-  completed: {
-    backgroundColor: colors.tint,
+    opacity: 0.6,
   },
   thumbWrap: {
-    width: 104,
+    width: 96,
     aspectRatio: 16 / 11,
     overflow: "hidden",
-    borderRadius: 8,
-    backgroundColor: "rgba(16,32,38,0.06)",
+    borderRadius: radius.md,
+    backgroundColor: colors.bgGroup,
+    ...shadows.thumbnail,
   },
   thumbnail: {
     width: "100%",
@@ -213,73 +217,32 @@ const styles = StyleSheet.create({
   },
   thumbnailFallback: {
     flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  thumbnailText: {
-    paddingHorizontal: 8,
-    color: colors.muted,
-    fontSize: 12,
-    fontWeight: "600",
-    textAlign: "center",
-    textTransform: "capitalize",
-  },
-  savedOverlay: {
-    position: "absolute",
-    top: 6,
-    right: 6,
-    width: 22,
-    height: 22,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 11,
-    backgroundColor: colors.court,
+    backgroundColor: colors.bgGroup,
   },
   body: {
     flex: 1,
-    justifyContent: "space-between",
-    gap: 4,
+    justifyContent: "center",
+    gap: 2,
+  },
+  topLabel: {
+    ...typography.date,
+    fontSize: 11,
+    fontWeight: "600",
+    letterSpacing: 0.4,
+    textTransform: "uppercase",
   },
   title: {
-    color: colors.ink,
-    fontSize: 16,
-    fontWeight: "600",
-    lineHeight: 21,
-    letterSpacing: -0.1,
+    ...typography.rowTitle,
   },
-  note: {
-    color: colors.muted,
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  metaRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    marginTop: 4,
-  },
-  level: {
-    overflow: "hidden",
-    borderRadius: 999,
-    backgroundColor: colors.tint,
-    color: colors.court,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    fontSize: 11,
-    fontWeight: "700",
-    textTransform: "capitalize",
-    letterSpacing: 0.2,
-  },
-  domain: {
-    color: colors.muted,
+  meta: {
+    marginTop: 2,
+    ...typography.meta,
     fontSize: 12,
-    fontWeight: "500",
-    flex: 1,
   },
   actions: {
-    flexDirection: "row",
     alignItems: "center",
     gap: 14,
+    paddingLeft: spacing.xs,
   },
   iconTap: {
     minWidth: 24,

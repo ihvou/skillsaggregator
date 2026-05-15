@@ -20,6 +20,16 @@ export type SavedLinkResource = LinkResource & {
   } | null;
 };
 
+export type CategoryWithPreview = CategorySummary & {
+  resource_count: number;
+  preview_thumbnail: string | null;
+};
+
+export type SkillSection = {
+  skill: SkillSummary;
+  resources: SkillResource[];
+};
+
 function fallbackSkillsForCategory(categorySlug: string) {
   return fallbackSkills.filter((skill) => skill.category_slug === categorySlug);
 }
@@ -244,6 +254,89 @@ export async function getSkillResources(categorySlug: string, skillSlug: string,
       ];
     }),
   };
+}
+
+export async function getCategoriesWithPreviews(): Promise<CategoryWithPreview[]> {
+  const categories = await getCategories();
+  const supabase = getSupabase();
+
+  if (!supabase) {
+    // Fallback: build previews from in-memory sample resources.
+    return categories.map((category) => {
+      const skills = fallbackSkillsForCategory(category.slug);
+      const resources = skills.flatMap((skill) => fallbackResources[skill.slug] ?? []);
+      const preview = resources.find((resource) => resource.link.thumbnail_url)?.link.thumbnail_url ?? null;
+      return { ...category, resource_count: resources.length, preview_thumbnail: preview };
+    });
+  }
+
+  // Live: pull link counts + a single preview thumbnail per category.
+  const categoryIds = categories.map((category) => category.id);
+  if (categoryIds.length === 0) return [];
+
+  const { data: skills } = await supabase
+    .from("skills")
+    .select("id, category_id")
+    .in("category_id", categoryIds)
+    .eq("is_active", true);
+
+  const skillIdsByCategory = new Map<string, string[]>();
+  for (const skill of skills ?? []) {
+    const bucket = skillIdsByCategory.get(skill.category_id) ?? [];
+    bucket.push(skill.id);
+    skillIdsByCategory.set(skill.category_id, bucket);
+  }
+
+  const allSkillIds = (skills ?? []).map((skill) => skill.id);
+  const { data: relations } = allSkillIds.length
+    ? await supabase
+        .from("link_skill_relations")
+        .select("skill_id, links!inner(thumbnail_url)")
+        .in("skill_id", allSkillIds)
+        .eq("is_active", true)
+        .eq("links.is_active", true)
+        .order("upvote_count", { ascending: false })
+    : { data: [] };
+
+  const countsBySkill = new Map<string, number>();
+  const thumbBySkill = new Map<string, string | null>();
+  for (const relation of relations ?? []) {
+    countsBySkill.set(relation.skill_id, (countsBySkill.get(relation.skill_id) ?? 0) + 1);
+    if (!thumbBySkill.has(relation.skill_id)) {
+      const link = Array.isArray(relation.links) ? relation.links[0] : relation.links;
+      thumbBySkill.set(relation.skill_id, link?.thumbnail_url ?? null);
+    }
+  }
+
+  return categories.map((category) => {
+    const skillIds = skillIdsByCategory.get(category.id) ?? [];
+    let resourceCount = 0;
+    let preview: string | null = null;
+    for (const skillId of skillIds) {
+      resourceCount += countsBySkill.get(skillId) ?? 0;
+      if (!preview) preview = thumbBySkill.get(skillId) ?? null;
+    }
+    return { ...category, resource_count: resourceCount, preview_thumbnail: preview };
+  });
+}
+
+export async function getCategoryWithSkillResources(
+  categorySlug: string,
+  perSkill = 8,
+): Promise<{ category: CategorySummary | null; sections: SkillSection[] }> {
+  const { category, skills } = await getSkillsForCategory(categorySlug);
+  if (!category) return { category: null, sections: [] };
+
+  const sectionsRaw = await Promise.all(
+    skills
+      .filter((skill) => skill.resource_count > 0)
+      .map(async (skill) => {
+        const data = await getSkillResources(categorySlug, skill.slug, "popular");
+        return { skill: data.skill ?? skill, resources: data.resources.slice(0, perSkill) };
+      }),
+  );
+
+  return { category, sections: sectionsRaw.filter((section) => section.resources.length > 0) };
 }
 
 export async function getLinksByIds(ids: string[]): Promise<SavedLinkResource[]> {

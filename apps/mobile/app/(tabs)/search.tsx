@@ -1,15 +1,16 @@
 import { useMemo, useState } from "react";
-import { RefreshControl, StyleSheet, Text, View } from "react-native";
+import { Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
+import { Link } from "expo-router";
 import { FlashList } from "@shopify/flash-list";
 import { useQuery } from "@tanstack/react-query";
-import { Search } from "lucide-react-native";
+import { ChevronRight, Search } from "lucide-react-native";
 import { EmptyState } from "@/components/EmptyState";
+import { PageHeader } from "@/components/PageHeader";
 import { SearchBar } from "@/components/SearchBar";
 import { Screen } from "@/components/Screen";
-import { SkillCard } from "@/components/SkillCard";
 import { SkeletonList } from "@/components/SkeletonList";
 import { getAllSkills } from "@/lib/data";
-import { colors } from "@/lib/theme";
+import { colors, radius, shadows, spacing, typography } from "@/lib/theme";
 
 export default function SearchTab() {
   const [search, setSearch] = useState("");
@@ -28,35 +29,54 @@ export default function SearchTab() {
   }, [query.data, search]);
 
   return (
-    <Screen>
-      <View style={styles.header}>
-        <Text style={styles.title}>Search</Text>
-      </View>
-      <View style={styles.searchWrap}>
-        <SearchBar value={search} onChangeText={setSearch} placeholder="Search all skills" />
+    <Screen edges={["top"]} padded={false}>
+      <View style={styles.headerWrap}>
+        <PageHeader title="Search" subtitle="All skills" showMenu />
+        <View style={styles.searchWrap}>
+          <SearchBar value={search} onChangeText={setSearch} placeholder="Search all skills" />
+        </View>
       </View>
       {query.isLoading ? (
-        <SkeletonList />
+        <View style={styles.skeletonWrap}>
+          <SkeletonList count={4} />
+        </View>
       ) : (
         <FlashList
           data={results}
           style={styles.list}
-          estimatedItemSize={150}
           keyExtractor={(item) => item.id}
           ListEmptyComponent={
-            <EmptyState
-              icon={Search}
-              title={search.trim() ? "No matching skills" : "Search the skill library"}
-              subtitle={search.trim() ? "Try a broader term or another sport." : "Type a movement, technique, or training goal."}
-            />
+            <View style={styles.emptyWrap}>
+              <EmptyState
+                icon={Search}
+                title={search.trim() ? "No matching skills" : "Search the skill library"}
+                subtitle={search.trim() ? "Try a broader term or another sport." : "Type a movement, technique, or training goal."}
+              />
+            </View>
           }
-          ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
-          renderItem={({ item }) => <SkillCard skill={item} />}
+          ItemSeparatorComponent={() => <View style={styles.divider} />}
+          renderItem={({ item }) => (
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            <Link href={`/${item.category_slug}/${item.slug}` as any} asChild>
+              <Pressable style={({ pressed }) => [styles.row, pressed && styles.pressed]}>
+                <View style={styles.body}>
+                  <Text style={styles.title} numberOfLines={1}>
+                    {item.name}
+                  </Text>
+                  <Text style={styles.meta} numberOfLines={1}>
+                    {item.category_slug} · {item.resource_count} {item.resource_count === 1 ? "resource" : "resources"}
+                  </Text>
+                </View>
+                <ChevronRight size={18} color={colors.faint} />
+              </Pressable>
+            </Link>
+          )}
+          contentContainerStyle={styles.listContent}
           refreshControl={
             <RefreshControl
               refreshing={query.isRefetching}
               onRefresh={() => query.refetch()}
-              tintColor={colors.court}
+              tintColor={colors.ink}
             />
           }
           showsVerticalScrollIndicator={false}
@@ -67,19 +87,56 @@ export default function SearchTab() {
 }
 
 const styles = StyleSheet.create({
-  header: {
-    marginBottom: 12,
-  },
-  title: {
-    color: colors.ink,
-    fontSize: 32,
-    fontWeight: "700",
-    letterSpacing: -0.5,
+  headerWrap: {
+    paddingHorizontal: spacing.page,
+    paddingTop: spacing.md,
   },
   searchWrap: {
-    marginBottom: 12,
+    marginTop: spacing.md,
+    marginBottom: spacing.sm,
   },
   list: {
     flex: 1,
+  },
+  listContent: {
+    paddingHorizontal: spacing.page,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.xxl,
+  },
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    minHeight: 56,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.md,
+    backgroundColor: colors.surface,
+    ...shadows.thumbnail,
+  },
+  pressed: {
+    opacity: 0.6,
+  },
+  body: {
+    flex: 1,
+    gap: 2,
+  },
+  title: {
+    ...typography.rowTitle,
+    fontSize: 15,
+  },
+  meta: {
+    ...typography.meta,
+    fontSize: 12,
+    textTransform: "capitalize",
+  },
+  divider: {
+    height: spacing.xs,
+  },
+  skeletonWrap: {
+    paddingHorizontal: spacing.page,
+  },
+  emptyWrap: {
+    paddingHorizontal: spacing.page,
   },
 });
