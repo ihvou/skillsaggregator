@@ -1,17 +1,18 @@
 import { useCallback, useState } from "react";
-import { Linking, Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
-import { Image } from "expo-image";
+import { RefreshControl, StyleSheet, View } from "react-native";
 import { FlashList } from "@shopify/flash-list";
 import { useFocusEffect } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
-import { Bookmark, BookmarkCheck, MoreHorizontal } from "lucide-react-native";
+import { Bookmark } from "lucide-react-native";
+import type { SkillResource } from "@skillsaggregator/shared";
 import { EmptyState } from "@/components/EmptyState";
 import { PageHeader } from "@/components/PageHeader";
+import { ResourceCard } from "@/components/ResourceCard";
 import { Screen } from "@/components/Screen";
 import { SkeletonList } from "@/components/SkeletonList";
-import { getLinksByIds, type SavedLinkResource } from "@/lib/data";
-import { getKeys, setFlag } from "@/lib/localState";
-import { colors, radius, shadows, spacing, typography } from "@/lib/theme";
+import { getSavedResources } from "@/lib/data";
+import { getKeys } from "@/lib/localState";
+import { colors, spacing } from "@/lib/theme";
 
 export default function SavedTab() {
   const [savedIds, setSavedIds] = useState<string[]>([]);
@@ -23,15 +24,10 @@ export default function SavedTab() {
 
   const query = useQuery({
     queryKey: ["saved", savedIds],
-    queryFn: () => getLinksByIds(savedIds),
+    queryFn: () => getSavedResources(savedIds),
     enabled: savedIds.length > 0,
     staleTime: 600000,
   });
-
-  function handleUnsave(id: string) {
-    setFlag(`saved:${id}`, false);
-    setSavedIds((current) => current.filter((item) => item !== id));
-  }
 
   return (
     <Screen edges={["top"]} padded={false}>
@@ -43,7 +39,7 @@ export default function SavedTab() {
           <SkeletonList count={3} />
         </View>
       ) : (
-        <FlashList<SavedLinkResource>
+        <FlashList<SkillResource>
           data={query.data ?? []}
           style={styles.list}
           keyExtractor={(item) => item.id}
@@ -57,6 +53,12 @@ export default function SavedTab() {
             </View>
           }
           ItemSeparatorComponent={() => <View style={styles.divider} />}
+          renderItem={({ item }) => (
+            <View style={styles.rowWrap}>
+              <ResourceCard resource={item} />
+            </View>
+          )}
+          contentContainerStyle={{ paddingBottom: spacing.xxl }}
           refreshControl={
             <RefreshControl
               refreshing={query.isRefetching}
@@ -67,53 +69,7 @@ export default function SavedTab() {
               tintColor={colors.ink}
             />
           }
-          renderItem={({ item }) => (
-            <Pressable
-              onPress={() => Linking.openURL(item.url)}
-              style={({ pressed }) => [styles.row, pressed && styles.pressed]}
-            >
-              <View style={styles.thumbWrap}>
-                {item.thumbnail_url ? (
-                  <Image source={item.thumbnail_url} style={styles.thumb} contentFit="cover" />
-                ) : (
-                  <View style={styles.thumbFallback} />
-                )}
-              </View>
-              <View style={styles.body}>
-                <Text style={styles.title} numberOfLines={2}>
-                  {item.title ?? item.url}
-                </Text>
-                {item.primary_skill ? (
-                  <Text style={styles.context} numberOfLines={1}>
-                    {item.primary_skill.category_name} · {item.primary_skill.name}
-                  </Text>
-                ) : null}
-                <Text style={styles.domain} numberOfLines={1}>
-                  {item.domain}
-                </Text>
-              </View>
-              <View style={styles.actions}>
-                <Pressable
-                  onPress={() => handleUnsave(item.id)}
-                  hitSlop={{ top: 10, right: 8, bottom: 10, left: 8 }}
-                  style={styles.iconTap}
-                  accessibilityRole="button"
-                  accessibilityLabel="Unsave resource"
-                >
-                  <BookmarkCheck size={20} color={colors.accent} fill={colors.accent} strokeWidth={2} />
-                </Pressable>
-                <Pressable
-                  onPress={() => Linking.openURL(item.url)}
-                  hitSlop={{ top: 10, right: 8, bottom: 10, left: 8 }}
-                  style={styles.iconTap}
-                  accessibilityRole="button"
-                  accessibilityLabel="More"
-                >
-                  <MoreHorizontal size={20} color={colors.muted} />
-                </Pressable>
-              </View>
-            </Pressable>
-          )}
+          showsVerticalScrollIndicator={false}
         />
       )}
     </Screen>
@@ -129,62 +85,8 @@ const styles = StyleSheet.create({
   list: {
     flex: 1,
   },
-  row: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.sm,
-    paddingVertical: spacing.md,
+  rowWrap: {
     paddingHorizontal: spacing.page,
-  },
-  pressed: {
-    opacity: 0.6,
-  },
-  thumbWrap: {
-    width: 112,
-    aspectRatio: 16 / 11,
-    overflow: "hidden",
-    borderRadius: radius.md,
-    backgroundColor: colors.bgGroup,
-    ...shadows.thumbnail,
-  },
-  thumb: {
-    width: "100%",
-    height: "100%",
-  },
-  thumbFallback: {
-    flex: 1,
-    backgroundColor: colors.bgGroup,
-  },
-  body: {
-    flex: 1,
-    justifyContent: "center",
-    gap: 2,
-  },
-  title: {
-    ...typography.rowTitle,
-    fontSize: 16,
-  },
-  context: {
-    marginTop: 2,
-    color: colors.muted,
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  domain: {
-    color: colors.faint,
-    fontSize: 12,
-    fontWeight: "500",
-  },
-  actions: {
-    alignItems: "center",
-    gap: 14,
-    paddingLeft: spacing.xs,
-  },
-  iconTap: {
-    minWidth: 24,
-    minHeight: 24,
-    alignItems: "center",
-    justifyContent: "center",
   },
   divider: {
     height: StyleSheet.hairlineWidth,

@@ -1,5 +1,5 @@
-import { useCallback, useMemo, useState } from "react";
-import { ActionSheetIOS, Alert, Platform, RefreshControl, StyleSheet, View } from "react-native";
+import { useMemo, useState } from "react";
+import { RefreshControl, StyleSheet, View } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import { FlashList } from "@shopify/flash-list";
 import { useQuery } from "@tanstack/react-query";
@@ -11,20 +11,21 @@ import { PageHeader } from "@/components/PageHeader";
 import { ResourceCard } from "@/components/ResourceCard";
 import { Screen } from "@/components/Screen";
 import { SkeletonList } from "@/components/SkeletonList";
+import { SortFilterSheet } from "@/components/SortFilterSheet";
 import { getSkillResources } from "@/lib/data";
 import { setLastSeenSkill } from "@/lib/localState";
 import { colors, spacing } from "@/lib/theme";
 
-const SORTS: Array<{ value: ResourceSort; label: string }> = [
-  { value: "popular", label: "Popular" },
-  { value: "newest", label: "Newest" },
-];
-const LEVELS: Array<{ value: LevelFilterValue; label: string }> = [
-  { value: "all", label: "All levels" },
-  { value: "beginner", label: "Beginner" },
-  { value: "intermediate", label: "Intermediate" },
-  { value: "advanced", label: "Advanced" },
-];
+const SORT_LABELS: Record<ResourceSort, string> = {
+  popular: "Popular",
+  newest: "Newest",
+};
+const LEVEL_LABELS: Record<LevelFilterValue, string> = {
+  all: "All levels",
+  beginner: "Beginner",
+  intermediate: "Intermediate",
+  advanced: "Advanced",
+};
 
 export default function SkillDetailScreen() {
   const { category, skill, level: initialLevel } = useLocalSearchParams<{
@@ -40,6 +41,8 @@ export default function SkillDetailScreen() {
       : "all",
   );
   const [sort, setSort] = useState<ResourceSort>("popular");
+  const [menuVisible, setMenuVisible] = useState(false);
+
   const query = useQuery({
     queryKey: ["skill", categorySlug, skillSlug, sort],
     queryFn: async () => {
@@ -55,59 +58,10 @@ export default function SkillDetailScreen() {
     return level === "all" ? items : items.filter((item) => item.skill_level === level);
   }, [level, query.data?.resources]);
 
-  const openSortSheet = useCallback(() => {
-    const labels = SORTS.map((option) => (option.value === sort ? `${option.label}  ✓` : option.label));
-    const options = [...labels, "Cancel"];
-    const cancelIndex = options.length - 1;
-    ActionSheetIOS.showActionSheetWithOptions(
-      { options, cancelButtonIndex: cancelIndex, title: "Sort" },
-      (selected) => {
-        if (selected === undefined || selected === cancelIndex) return;
-        const next = SORTS[selected];
-        if (next) setSort(next.value);
-      },
-    );
-  }, [sort]);
-
-  const openLevelSheet = useCallback(() => {
-    const labels = LEVELS.map((option) => (option.value === level ? `${option.label}  ✓` : option.label));
-    const options = [...labels, "Cancel"];
-    const cancelIndex = options.length - 1;
-    ActionSheetIOS.showActionSheetWithOptions(
-      { options, cancelButtonIndex: cancelIndex, title: "Filter by level" },
-      (selected) => {
-        if (selected === undefined || selected === cancelIndex) return;
-        const next = LEVELS[selected];
-        if (next) setLevel(next.value);
-      },
-    );
-  }, [level]);
-
-  const handleMenuPress = useCallback(() => {
-    if (Platform.OS !== "ios") {
-      // Minimal Android fallback — Apple-style action sheets aren't available.
-      Alert.alert("Options", "Choose a section", [
-        { text: "Sort", onPress: openSortSheet },
-        { text: "Filter by level", onPress: openLevelSheet },
-        { text: "Cancel", style: "cancel" },
-      ]);
-      return;
-    }
-    const options = ["Sort", "Filter by level", "Cancel"];
-    ActionSheetIOS.showActionSheetWithOptions(
-      { options, cancelButtonIndex: 2 },
-      (selected) => {
-        if (selected === 0) openSortSheet();
-        if (selected === 1) openLevelSheet();
-      },
-    );
-  }, [openSortSheet, openLevelSheet]);
-
   const headerSubtitle = useMemo(() => {
-    const parts: string[] = [];
-    parts.push(SORTS.find((option) => option.value === sort)?.label ?? "Popular");
-    if (level !== "all") parts.push(LEVELS.find((option) => option.value === level)?.label ?? "");
-    return parts.filter(Boolean).join(" · ");
+    const parts: string[] = [SORT_LABELS[sort]];
+    if (level !== "all") parts.push(LEVEL_LABELS[level]);
+    return parts.join(" · ");
   }, [sort, level]);
 
   return (
@@ -118,7 +72,7 @@ export default function SkillDetailScreen() {
           subtitle={headerSubtitle}
           showBack
           showMenu
-          onMenuPress={handleMenuPress}
+          onMenuPress={() => setMenuVisible(true)}
         />
       </View>
       {query.isLoading ? (
@@ -156,6 +110,14 @@ export default function SkillDetailScreen() {
           showsVerticalScrollIndicator={false}
         />
       )}
+      <SortFilterSheet
+        visible={menuVisible}
+        sort={sort}
+        level={level}
+        onChangeSort={setSort}
+        onChangeLevel={setLevel}
+        onClose={() => setMenuVisible(false)}
+      />
     </Screen>
   );
 }

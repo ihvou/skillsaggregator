@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Linking, Pressable, StyleSheet, Text, View } from "react-native";
 import { Image } from "expo-image";
 import * as Haptics from "expo-haptics";
@@ -20,6 +20,12 @@ interface ResourceCardProps {
 
 type SwipeDirection = "left" | "right";
 
+/**
+ * Row height is fixed so the thumbnail (16:9) lines up exactly with the
+ * four-row right column (date+pill • title line 1 • title line 2 • domain+icons).
+ */
+const ROW_HEIGHT = 96;
+
 function triggerSelectionHaptic() {
   Haptics.selectionAsync().catch(() => undefined);
 }
@@ -38,11 +44,22 @@ function capitalize(value: string) {
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
+function formatCount(value: number): string {
+  if (!Number.isFinite(value)) return "0";
+  const abs = Math.abs(value);
+  if (abs >= 1000) {
+    const rounded = (abs / 1000).toFixed(abs >= 10000 ? 0 : 1);
+    return `${value < 0 ? "-" : ""}${rounded}k`;
+  }
+  return String(value);
+}
+
 /**
  * Skill-screen resource row.
- *  - Native-proportion rectangular thumbnail on the left
- *  - Right column: top meta row (date + level pill), bold 2-line title,
- *    bottom meta row (domain + check/bookmark/thumbs-up/thumbs-down icons)
+ *  - 16/9 thumbnail on the left at row-height (so its bottom aligns with
+ *    the bottom of the actions row)
+ *  - Right column: top meta row (date + level pill), 2-line title,
+ *    bottom row (domain + check/bookmark/thumbs-up + count + thumbs-down)
  *  - Tap opens the URL; swipe right to save, swipe left to mark complete
  */
 export function ResourceCard({ resource }: ResourceCardProps) {
@@ -114,6 +131,14 @@ export function ResourceCard({ resource }: ResourceCardProps) {
   const dateLabel = formatDate(resource.created_at);
   const SavedIcon = isSaved ? BookmarkCheck : Bookmark;
 
+  // Reddit-style net score: server upvote_count + local vote delta.
+  const ratingCount = useMemo(() => {
+    const base = Number.isFinite(resource.upvote_count) ? resource.upvote_count : 0;
+    return base + (upvoted ? 1 : 0) - (downvoted ? 1 : 0);
+  }, [resource.upvote_count, upvoted, downvoted]);
+
+  const ratingColor = upvoted ? colors.accent : downvoted ? colors.ink : colors.muted;
+
   return (
     <Swipeable
       containerStyle={styles.swipeContainer}
@@ -167,7 +192,7 @@ export function ResourceCard({ resource }: ResourceCardProps) {
                 accessibilityLabel={isCompleted ? "Mark not completed" : "Mark completed"}
               >
                 <CircleCheck
-                  size={20}
+                  size={18}
                   color={isCompleted ? colors.accent : colors.muted}
                   fill={isCompleted ? colors.accent : "transparent"}
                   stroke={isCompleted ? colors.surface : colors.muted}
@@ -182,40 +207,45 @@ export function ResourceCard({ resource }: ResourceCardProps) {
                 accessibilityLabel={isSaved ? "Unsave resource" : "Save resource"}
               >
                 <SavedIcon
-                  size={20}
+                  size={18}
                   color={isSaved ? colors.accent : colors.muted}
                   fill={isSaved ? colors.accent : "transparent"}
                   strokeWidth={2}
                 />
               </Pressable>
-              <Pressable
-                onPress={toggleUpvote}
-                hitSlop={{ top: 8, right: 6, bottom: 8, left: 6 }}
-                style={styles.iconTap}
-                accessibilityRole="button"
-                accessibilityLabel={upvoted ? "Remove upvote" : "Upvote"}
-              >
-                <ThumbsUp
-                  size={20}
-                  color={upvoted ? colors.accent : colors.muted}
-                  fill={upvoted ? colors.accent : "transparent"}
-                  strokeWidth={2}
-                />
-              </Pressable>
-              <Pressable
-                onPress={toggleDownvote}
-                hitSlop={{ top: 8, right: 6, bottom: 8, left: 6 }}
-                style={styles.iconTap}
-                accessibilityRole="button"
-                accessibilityLabel={downvoted ? "Remove downvote" : "Downvote"}
-              >
-                <ThumbsDown
-                  size={20}
-                  color={downvoted ? colors.ink : colors.muted}
-                  fill={downvoted ? colors.ink : "transparent"}
-                  strokeWidth={2}
-                />
-              </Pressable>
+              <View style={styles.ratingGroup}>
+                <Pressable
+                  onPress={toggleUpvote}
+                  hitSlop={{ top: 8, right: 4, bottom: 8, left: 4 }}
+                  style={styles.ratingTap}
+                  accessibilityRole="button"
+                  accessibilityLabel={upvoted ? "Remove upvote" : "Upvote"}
+                >
+                  <ThumbsUp
+                    size={18}
+                    color={upvoted ? colors.accent : colors.muted}
+                    fill={upvoted ? colors.accent : "transparent"}
+                    strokeWidth={2}
+                  />
+                </Pressable>
+                <Text style={[styles.ratingCount, { color: ratingColor }]}>
+                  {formatCount(ratingCount)}
+                </Text>
+                <Pressable
+                  onPress={toggleDownvote}
+                  hitSlop={{ top: 8, right: 4, bottom: 8, left: 4 }}
+                  style={styles.ratingTap}
+                  accessibilityRole="button"
+                  accessibilityLabel={downvoted ? "Remove downvote" : "Downvote"}
+                >
+                  <ThumbsDown
+                    size={18}
+                    color={downvoted ? colors.ink : colors.muted}
+                    fill={downvoted ? colors.ink : "transparent"}
+                    strokeWidth={2}
+                  />
+                </Pressable>
+              </View>
             </View>
           </View>
         </View>
@@ -248,15 +278,17 @@ const styles = StyleSheet.create({
   },
   row: {
     flexDirection: "row",
+    alignItems: "stretch",
     gap: spacing.sm,
+    height: ROW_HEIGHT,
     paddingVertical: spacing.md,
   },
   pressed: {
     opacity: 0.6,
   },
   thumbWrap: {
-    width: 112,
-    aspectRatio: 16 / 11,
+    height: "100%",
+    aspectRatio: 16 / 9,
     overflow: "hidden",
     borderRadius: radius.md,
     backgroundColor: colors.bgGroup,
@@ -272,58 +304,75 @@ const styles = StyleSheet.create({
   },
   body: {
     flex: 1,
+    height: "100%",
     justifyContent: "space-between",
-    gap: 4,
-    paddingVertical: 2,
   },
   topRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    gap: spacing.xs,
+    minHeight: 18,
   },
   date: {
     ...typography.date,
-    fontSize: 13,
+    fontSize: 12,
     color: colors.muted,
   },
   levelPill: {
-    paddingHorizontal: 10,
-    paddingVertical: 3,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
     borderRadius: radius.pill,
     backgroundColor: colors.muted,
   },
   levelText: {
     color: colors.surface,
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: "700",
   },
   title: {
     ...typography.rowTitle,
-    fontSize: 18,
-    lineHeight: 23,
+    fontSize: 15,
+    lineHeight: 19,
     fontWeight: "700",
   },
   bottomRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.xs,
+    minHeight: 20,
   },
   domain: {
     ...typography.meta,
-    fontSize: 13,
+    fontSize: 12,
     color: colors.faint,
     flex: 1,
   },
   actions: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 14,
+    gap: 10,
   },
   iconTap: {
-    minWidth: 24,
-    minHeight: 24,
+    minWidth: 22,
+    minHeight: 22,
     alignItems: "center",
     justifyContent: "center",
+  },
+  ratingGroup: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  ratingTap: {
+    minWidth: 22,
+    minHeight: 22,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  ratingCount: {
+    minWidth: 16,
+    textAlign: "center",
+    fontSize: 12,
+    fontWeight: "700",
   },
 });

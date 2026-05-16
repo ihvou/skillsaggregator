@@ -4,21 +4,11 @@ import {
   fallbackResources,
   fallbackSkills,
   type CategorySummary,
-  type LinkResource,
   type ResourceSort,
   type SkillResource,
   type SkillSummary,
 } from "@skillsaggregator/shared";
 import { getSupabase } from "./supabase";
-
-export type SavedLinkResource = LinkResource & {
-  primary_skill: {
-    name: string;
-    slug: string;
-    category_name: string;
-    category_slug: string;
-  } | null;
-};
 
 export type SkillSection = {
   skill: SkillSummary;
@@ -324,60 +314,63 @@ export async function getCategoryWithSkillResources(
   return { category, sections: sectionsRaw.filter((section) => section.resources.length > 0) };
 }
 
-export async function getLinksByIds(ids: string[]): Promise<SavedLinkResource[]> {
-  if (ids.length === 0) return [];
+/**
+ * For the Saved screen — returns full `SkillResource` rows so the same
+ * `ResourceCard` component used on the Skill screen renders them. The
+ * "primary" relation per link is the highest-upvoted one (matching the
+ * sort the user sees on the skill page).
+ */
+export async function getSavedResources(linkIds: string[]): Promise<SkillResource[]> {
+  if (linkIds.length === 0) return [];
   const supabase = getSupabase();
+
   if (!supabase) {
-    return fallbackResourceRows()
-      .map((resource) => ({
-        ...resource.link,
-        primary_skill: resource.skill
-          ? {
-              name: resource.skill.name,
-              slug: resource.skill.slug,
-              category_name: resource.skill.category_name ?? resource.skill.category_slug,
-              category_slug: resource.skill.category_slug,
-            }
-          : null,
-      }))
-      .filter((link) => ids.includes(link.id));
+    return fallbackResourceRows().filter((resource) => linkIds.includes(resource.link.id));
   }
 
-  const { data: links } = await supabase
-    .from("links")
-    .select("id, url, canonical_url, domain, title, description, thumbnail_url, content_type")
-    .in("id", ids)
-    .eq("is_active", true);
+  const { data: relations } = await supabase
+    .from("link_skill_relations")
+    .select(
+      "id, public_note, skill_level, upvote_count, created_at, link_id, links!inner(id, url, canonical_url, domain, title, description, thumbnail_url, content_type, created_at), skills!inner(id, slug, name, categories!inner(slug, name))",
+    )
+    .in("link_id", linkIds)
+    .eq("is_active", true)
+    .eq("links.is_active", true)
+    .order("upvote_count", { ascending: false });
 
-  const { data: relations } = links?.length
-    ? await supabase
-        .from("link_skill_relations")
-        .select("link_id, skills!inner(slug, name, categories!inner(slug, name))")
-        .in("link_id", ids)
-        .eq("is_active", true)
-        .order("upvote_count", { ascending: false })
-    : { data: [] };
-
-  const primaryByLinkId = new Map<string, SavedLinkResource["primary_skill"]>();
+  const byLink = new Map<string, SkillResource>();
   for (const relation of relations ?? []) {
-    if (primaryByLinkId.has(relation.link_id)) continue;
+    if (byLink.has(relation.link_id)) continue;
+    const link = Array.isArray(relation.links) ? relation.links[0] : relation.links;
+    if (!link) continue;
     const skill = Array.isArray(relation.skills) ? relation.skills[0] : relation.skills;
     const category = skill
       ? Array.isArray(skill.categories)
         ? skill.categories[0]
         : skill.categories
       : null;
-    if (!skill || !category) continue;
-    primaryByLinkId.set(relation.link_id, {
-      name: skill.name,
-      slug: skill.slug,
-      category_name: category.name,
-      category_slug: category.slug,
-    });
+    const resource: SkillResource = {
+      id: relation.id,
+      public_note: relation.public_note,
+      skill_level: relation.skill_level,
+      upvote_count: relation.upvote_count ?? 0,
+      created_at: relation.created_at ?? link.created_at ?? null,
+      link,
+    };
+    if (skill) {
+      resource.skill = {
+        id: skill.id,
+        slug: skill.slug,
+        name: skill.name,
+        category_slug: category?.slug ?? "",
+        category_name: category?.name ?? null,
+      };
+    }
+    byLink.set(relation.link_id, resource);
   }
 
-  return (links ?? []).map((link) => ({
-    ...link,
-    primary_skill: primaryByLinkId.get(link.id) ?? null,
-  }));
+  // Preserve caller order (Saved is "most recently saved first" from local state).
+  return linkIds
+    .map((id) => byLink.get(id))
+    .filter((resource): resource is SkillResource => Boolean(resource));
 }

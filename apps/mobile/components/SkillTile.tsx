@@ -7,24 +7,24 @@ import { colors, radius, shadows } from "@/lib/theme";
 interface SkillTileProps {
   skill: SkillSummary;
   thumbnailUrl: string | null;
-  /** Square (180) by default, "wide" uses 16/11 ratio. */
-  shape?: "square" | "wide";
+  /** Pixel width override. Default matches the shared 16/9 thumbnail size. */
+  width?: number;
 }
 
 /**
  * Home-screen tile representing a SKILL.
  *  - Uses the latest resource's thumbnail as background
- *  - Tints with a dark scrim so the skill name reads on top
- *  - Tap navigates to the skill page
+ *  - Native 16/9 proportions (same as ResourceCard/ResourceTile)
+ *  - Dark scrim + centered white skill name overlay
  */
-export function SkillTile({ skill, thumbnailUrl, shape = "square" }: SkillTileProps) {
-  const dims = shape === "wide" ? styles.wide : styles.square;
+export function SkillTile({ skill, thumbnailUrl, width = 170 }: SkillTileProps) {
+  const height = Math.round((width * 9) / 16);
 
   return (
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     <Link href={`/${skill.category_slug}/${skill.slug}` as any} asChild>
       <Pressable style={({ pressed }) => [styles.wrap, pressed && styles.pressed]}>
-        <View style={[styles.thumb, dims]}>
+        <View style={[styles.thumb, { width, height }]}>
           {thumbnailUrl ? (
             <Image
               source={thumbnailUrl}
@@ -49,24 +49,16 @@ export function SkillTile({ skill, thumbnailUrl, shape = "square" }: SkillTilePr
 
 const styles = StyleSheet.create({
   wrap: {
-    // shape determines inner thumb size
+    // sized by inner thumb
   },
   pressed: {
     opacity: 0.85,
   },
   thumb: {
     overflow: "hidden",
-    borderRadius: radius.lg,
+    borderRadius: radius.md,
     backgroundColor: colors.bgGroup,
     ...shadows.thumbnail,
-  },
-  square: {
-    width: 156,
-    height: 156,
-  },
-  wide: {
-    width: 200,
-    height: 138,
   },
   image: {
     width: "100%",
@@ -78,23 +70,24 @@ const styles = StyleSheet.create({
   },
   scrim: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0, 0, 0, 0.32)",
+    backgroundColor: "rgba(0, 0, 0, 0.38)",
   },
   labelWrap: {
     position: "absolute",
-    left: 12,
-    right: 12,
-    top: "50%",
-    transform: [{ translateY: -16 }],
+    left: 10,
+    right: 10,
+    top: 0,
+    bottom: 0,
     alignItems: "center",
+    justifyContent: "center",
   },
   label: {
     color: "#ffffff",
-    fontSize: 18,
+    fontSize: 15,
     fontWeight: "800",
     letterSpacing: -0.2,
     textAlign: "center",
-    textShadowColor: "rgba(0,0,0,0.35)",
+    textShadowColor: "rgba(0,0,0,0.4)",
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 4,
   },

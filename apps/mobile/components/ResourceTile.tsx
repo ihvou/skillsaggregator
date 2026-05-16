@@ -7,18 +7,19 @@ import { colors, radius, shadows } from "@/lib/theme";
 
 interface ResourceTileProps {
   resource: SkillResource;
-  /** Optional pixel width override. Defaults to a fixed 180. */
+  /** Pixel width override. Default matches the Skill-screen card thumbnail. */
   width?: number;
 }
 
 /**
  * Pure thumbnail tile used inside horizontal-scrolling rows on the Category
- * screen. Native 16/11 proportions, rounded, with the standard thumbnail
- * shadow + a small saved-state badge in the top-right.
+ * screen. 16/9 native YouTube proportions, same radius/shadow as the
+ * Skill-screen card thumbnail.
  */
-export function ResourceTile({ resource, width = 180 }: ResourceTileProps) {
+export function ResourceTile({ resource, width = 170 }: ResourceTileProps) {
   const isSaved = getFlag(`saved:${resource.link.id}`);
-  const style = [styles.thumbnail, { width, height: Math.round((width * 11) / 16) }];
+  const height = Math.round((width * 9) / 16);
+  const style = [styles.thumbnail, { width, height }];
 
   return (
     <Pressable
@@ -57,7 +58,7 @@ const styles = StyleSheet.create({
   },
   thumbnail: {
     overflow: "hidden",
-    borderRadius: radius.lg,
+    borderRadius: radius.md,
     backgroundColor: colors.bgGroup,
     ...shadows.thumbnail,
   },
