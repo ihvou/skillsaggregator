@@ -71,6 +71,7 @@ const config = {
   ytdlpTranscriptTimeoutMs: Number(process.env.COLLECT_YTDLP_TRANSCRIPT_TIMEOUT_MS ?? 60_000),
   ollamaTimeoutMs: Number(process.env.COLLECT_OLLAMA_TIMEOUT_MS ?? 90_000),
   submitTimeoutMs: Number(process.env.COLLECT_SUBMIT_TIMEOUT_MS ?? 15_000),
+  submit503CircuitThreshold: Number(process.env.COLLECT_SUBMIT_503_CIRCUIT_THRESHOLD ?? 5),
   preflightTimeoutMs: Number(process.env.COLLECT_PREFLIGHT_TIMEOUT_MS ?? 15_000),
   dbQueryTimeoutMs: Number(process.env.COLLECT_DB_TIMEOUT_MS ?? 30_000),
   rateLimitWindowSize: Number(process.env.COLLECT_RATE_LIMIT_WINDOW_SIZE ?? 10),
@@ -111,8 +112,21 @@ class SkillAbortError extends Error {
   }
 }
 
+class InfrastructureError extends Error {
+  constructor(code, message = code, metadata = {}) {
+    super(message);
+    this.name = "InfrastructureError";
+    this.code = code;
+    this.metadata = metadata;
+  }
+}
+
 function errorMessage(error) {
   return error instanceof Error ? error.message : String(error);
+}
+
+function errorMetadata(error) {
+  return error instanceof InfrastructureError || error instanceof SkillAbortError ? error.metadata : {};
 }
 
 function enqueueAgentRunEvent(level, event, message, metadata) {
@@ -720,6 +734,50 @@ async function fetchWithTimeout(url, options, timeoutMs, label) {
   }
 }
 
+function functionUrl(path) {
+  return `${config.supabaseUrl.replace(/\/+$/, "")}/functions/v1/${path.replace(/^\/+/, "")}`;
+}
+
+function submitFailureStatus(error) {
+  const message = errorMessage(error);
+  const status = message.match(/submit-(?:suggestion|secondary)\s+(\d{3})/)?.[1];
+  return status ? Number(status) : null;
+}
+
+async function assertFunctionRuntimeHealthy() {
+  const healthUrl = functionUrl("submit-suggestion");
+  let response;
+  try {
+    response = await fetchWithTimeout(healthUrl, {
+      method: "OPTIONS",
+      headers: {
+        apikey: config.serviceRoleKey,
+        Authorization: `Bearer ${config.serviceRoleKey}`,
+      },
+    }, config.preflightTimeoutMs, "preflight_edge_runtime");
+  } catch (error) {
+    throw new InfrastructureError("edge_runtime_down", "edge_runtime_down", {
+      health_url: healthUrl,
+      method: "OPTIONS",
+      cause: errorMessage(error),
+    });
+  }
+
+  const text = await response.text();
+  if (response.status === 503) {
+    throw new InfrastructureError("edge_runtime_down", "edge_runtime_down", {
+      health_url: healthUrl,
+      method: "OPTIONS",
+      status: response.status,
+      body: text.slice(0, 500),
+    });
+  }
+  if (!response.ok) {
+    throw new Error(`preflight_edge_runtime_${response.status}: ${text.slice(0, 500)}`);
+  }
+  return { status: response.status, body: text.slice(0, 500) };
+}
+
 async function scoreWithOllama(skill, candidate, transcript) {
   const body = {
     model: config.ollamaModel,
@@ -955,6 +1013,8 @@ async function preflightCheck() {
     throw new Error(`preflight_supabase_${supabaseResponse.status}`);
   }
 
+  const edgeRuntime = await assertFunctionRuntimeHealthy();
+
   const ollamaResponse = await fetchWithTimeout(`${config.ollamaUrl}/api/tags`, {}, config.preflightTimeoutMs, "preflight_ollama");
   if (!ollamaResponse.ok) {
     throw new Error(`preflight_ollama_${ollamaResponse.status}`);
@@ -970,6 +1030,7 @@ async function preflightCheck() {
 
   log("info", "preflight_completed", "Preflight checks completed", {
     supabase_status: supabaseResponse.status,
+    edge_runtime_status: edgeRuntime.status,
     yt_dlp_sample_video: stdout.trim().split("\n")[0],
   });
 }
@@ -979,13 +1040,15 @@ async function persistPreflightFailure(error) {
     const runId = await startAgentRun();
     activeRunId = runId;
     activeRunState = { runId, phase: "preflight", suggestionsCreated: 0, finalized: false };
-    log("error", "preflight_failed", errorMessage(error), {
+    const message = error instanceof InfrastructureError ? error.code : errorMessage(error);
+    log("error", "preflight_failed", message, {
       run_id: runId,
       supabase_url: config.supabaseUrl,
       ollama_url: config.ollamaUrl,
       preflight_channel_id: config.preflightChannelId,
+      ...errorMetadata(error),
     });
-    await finishAgentRun(runId, { status: "failed", suggestionsCreated: 0, errorMessage: errorMessage(error) });
+    await finishAgentRun(runId, { status: "failed", suggestionsCreated: 0, errorMessage: message });
     activeRunState.finalized = true;
     await flushAgentRunEvents();
   } catch (persistError) {
@@ -1035,6 +1098,7 @@ async function processSkill(skill, summary) {
   let submitted = 0;
   let primarySubmitted = 0;
   let secondarySubmitted = 0;
+  let consecutiveSubmit503 = 0;
   const transcriptRateWindow = [];
   activeRunId = runId;
   activeRunState = { runId, skill, suggestionsCreated: 0, finalized: false };
@@ -1146,6 +1210,7 @@ async function processSkill(skill, summary) {
 
       try {
         const result = await postSuggestion(skill, candidate, transcript, score, candidate.view_count);
+        consecutiveSubmit503 = 0;
         if (!result.duplicate) {
           submitted += 1;
           primarySubmitted += 1;
@@ -1155,7 +1220,26 @@ async function processSkill(skill, summary) {
           suggestion_id: result.suggestion_id, duplicate: Boolean(result.duplicate),
         });
       } catch (error) {
-        log("error", "submit_failed", errorMessage(error), { video_id: candidate.video_id });
+        const httpStatus = submitFailureStatus(error);
+        consecutiveSubmit503 = httpStatus === 503 ? consecutiveSubmit503 + 1 : 0;
+        log("error", "submit_failed", errorMessage(error), {
+          video_id: candidate.video_id,
+          http_status: httpStatus,
+          consecutive_submit_503: consecutiveSubmit503,
+        });
+        if (consecutiveSubmit503 >= config.submit503CircuitThreshold) {
+          log("error", "submit_503_circuit_open", "Submit 503 circuit opened for skill", {
+            skill: skill.slug,
+            video_id: candidate.video_id,
+            consecutive_submit_503: consecutiveSubmit503,
+            threshold: config.submit503CircuitThreshold,
+          });
+          throw new SkillAbortError("circuit_open:edge_runtime_503", "circuit_open:edge_runtime_503", {
+            consecutive_submit_503: consecutiveSubmit503,
+            threshold: config.submit503CircuitThreshold,
+            last_video_id: candidate.video_id,
+          });
+        }
         continue;
       }
 
@@ -1181,6 +1265,7 @@ async function processSkill(skill, summary) {
         for (const secondary of acceptedSecondaries) {
           try {
             const result = await postAttachSuggestion(skill, secondary, candidate, transcript, score, linkId);
+            consecutiveSubmit503 = 0;
             if (!result.duplicate) {
               submitted += 1;
               secondarySubmitted += 1;
@@ -1196,14 +1281,35 @@ async function processSkill(skill, summary) {
               relevance: secondary.relevance,
             });
           } catch (error) {
+            const httpStatus = submitFailureStatus(error);
+            consecutiveSubmit503 = httpStatus === 503 ? consecutiveSubmit503 + 1 : 0;
             log("error", "secondary_submit_failed", errorMessage(error), {
               video_id: candidate.video_id,
               primary_skill: skill.slug,
               secondary_skill: secondary.skill.slug,
+              http_status: httpStatus,
+              consecutive_submit_503: consecutiveSubmit503,
             });
+            if (consecutiveSubmit503 >= config.submit503CircuitThreshold) {
+              log("error", "submit_503_circuit_open", "Submit 503 circuit opened for skill", {
+                skill: skill.slug,
+                video_id: candidate.video_id,
+                primary_skill: skill.slug,
+                secondary_skill: secondary.skill.slug,
+                consecutive_submit_503: consecutiveSubmit503,
+                threshold: config.submit503CircuitThreshold,
+              });
+              throw new SkillAbortError("circuit_open:edge_runtime_503", "circuit_open:edge_runtime_503", {
+                consecutive_submit_503: consecutiveSubmit503,
+                threshold: config.submit503CircuitThreshold,
+                last_video_id: candidate.video_id,
+                secondary_skill: secondary.skill.slug,
+              });
+            }
           }
         }
       } catch (error) {
+        if (error instanceof SkillAbortError) throw error;
         log("warn", "secondary_score_failed", errorMessage(error), {
           video_id: candidate.video_id,
           primary_skill: skill.slug,

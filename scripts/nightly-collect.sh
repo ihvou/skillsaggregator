@@ -44,6 +44,7 @@ stamp="$(date +%Y%m%dT%H%M%S%z)"
 log_file=".collection/logs/nightly-${stamp}.log"
 
 echo "[$(date +%Y-%m-%dT%H:%M:%S%z)] nightly-collect starting (timeout ${hard_timeout}s)" | tee -a "$log_file"
+scripts/ensure-supabase-health.sh 2>&1 | tee -a "$log_file"
 
 "$timeout_bin" --signal=TERM --kill-after=30s "$hard_timeout" \
   node scripts/run-collection.mjs --all "$@" 2>&1 | tee -a "$log_file"
