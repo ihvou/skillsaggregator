@@ -20,14 +20,19 @@ export type SavedLinkResource = LinkResource & {
   } | null;
 };
 
-export type CategoryWithPreview = CategorySummary & {
-  resource_count: number;
-  preview_thumbnail: string | null;
-};
-
 export type SkillSection = {
   skill: SkillSummary;
   resources: SkillResource[];
+};
+
+export type DiscoverSkillTile = {
+  skill: SkillSummary;
+  latest_thumbnail: string | null;
+};
+
+export type DiscoverCategorySection = {
+  category: CategorySummary;
+  skills: DiscoverSkillTile[];
 };
 
 function fallbackSkillsForCategory(categorySlug: string) {
@@ -164,17 +169,6 @@ export async function getSkillsForCategory(categorySlug: string): Promise<{
   };
 }
 
-export async function getAllSkills(): Promise<SkillSummary[]> {
-  const categories = await getCategories();
-  const batches = await Promise.all(categories.map((category) => getSkillsForCategory(category.slug)));
-  return batches.flatMap((batch) => batch.skills);
-}
-
-export async function getSkills(): Promise<SkillSummary[]> {
-  const { skills } = await getSkillsForCategory(badmintonCategory.slug);
-  return skills;
-}
-
 export async function getSkillResources(categorySlug: string, skillSlug: string, sortInput?: ResourceSort): Promise<{
   category: CategorySummary | null;
   skill: SkillSummary | null;
@@ -256,68 +250,59 @@ export async function getSkillResources(categorySlug: string, skillSlug: string,
   };
 }
 
-export async function getCategoriesWithPreviews(): Promise<CategoryWithPreview[]> {
-  const categories = await getCategories();
+export async function getDiscoverSections(perCategorySkills = 12): Promise<DiscoverCategorySection[]> {
   const supabase = getSupabase();
+  const categories = await getCategories();
 
   if (!supabase) {
-    // Fallback: build previews from in-memory sample resources.
     return categories.map((category) => {
       const skills = fallbackSkillsForCategory(category.slug);
-      const resources = skills.flatMap((skill) => fallbackResources[skill.slug] ?? []);
-      const preview = resources.find((resource) => resource.link.thumbnail_url)?.link.thumbnail_url ?? null;
-      return { ...category, resource_count: resources.length, preview_thumbnail: preview };
+      return {
+        category,
+        skills: skills.slice(0, perCategorySkills).map((skill) => {
+          const resources = fallbackResources[skill.slug] ?? [];
+          const latest = resources.find((resource) => resource.link.thumbnail_url)?.link.thumbnail_url ?? null;
+          return { skill, latest_thumbnail: latest };
+        }),
+      };
     });
   }
 
-  // Live: pull link counts + a single preview thumbnail per category.
-  const categoryIds = categories.map((category) => category.id);
-  if (categoryIds.length === 0) return [];
+  // For each category we want active skills and their latest resource thumbnail.
+  const sections = await Promise.all(
+    categories.map(async (category) => {
+      const { skills } = await getSkillsForCategory(category.slug);
+      const skillsWithResources = skills.filter((skill) => skill.resource_count > 0).slice(0, perCategorySkills);
+      if (skillsWithResources.length === 0) {
+        return { category, skills: [] as DiscoverSkillTile[] };
+      }
 
-  const { data: skills } = await supabase
-    .from("skills")
-    .select("id, category_id")
-    .in("category_id", categoryIds)
-    .eq("is_active", true);
-
-  const skillIdsByCategory = new Map<string, string[]>();
-  for (const skill of skills ?? []) {
-    const bucket = skillIdsByCategory.get(skill.category_id) ?? [];
-    bucket.push(skill.id);
-    skillIdsByCategory.set(skill.category_id, bucket);
-  }
-
-  const allSkillIds = (skills ?? []).map((skill) => skill.id);
-  const { data: relations } = allSkillIds.length
-    ? await supabase
+      const { data: relations } = await supabase
         .from("link_skill_relations")
-        .select("skill_id, links!inner(thumbnail_url)")
-        .in("skill_id", allSkillIds)
+        .select("skill_id, created_at, links!inner(thumbnail_url)")
+        .in("skill_id", skillsWithResources.map((skill) => skill.id))
         .eq("is_active", true)
         .eq("links.is_active", true)
-        .order("upvote_count", { ascending: false })
-    : { data: [] };
+        .order("created_at", { ascending: false });
 
-  const countsBySkill = new Map<string, number>();
-  const thumbBySkill = new Map<string, string | null>();
-  for (const relation of relations ?? []) {
-    countsBySkill.set(relation.skill_id, (countsBySkill.get(relation.skill_id) ?? 0) + 1);
-    if (!thumbBySkill.has(relation.skill_id)) {
-      const link = Array.isArray(relation.links) ? relation.links[0] : relation.links;
-      thumbBySkill.set(relation.skill_id, link?.thumbnail_url ?? null);
-    }
-  }
+      const latestThumbBySkill = new Map<string, string | null>();
+      for (const relation of relations ?? []) {
+        if (latestThumbBySkill.has(relation.skill_id)) continue;
+        const link = Array.isArray(relation.links) ? relation.links[0] : relation.links;
+        latestThumbBySkill.set(relation.skill_id, link?.thumbnail_url ?? null);
+      }
 
-  return categories.map((category) => {
-    const skillIds = skillIdsByCategory.get(category.id) ?? [];
-    let resourceCount = 0;
-    let preview: string | null = null;
-    for (const skillId of skillIds) {
-      resourceCount += countsBySkill.get(skillId) ?? 0;
-      if (!preview) preview = thumbBySkill.get(skillId) ?? null;
-    }
-    return { ...category, resource_count: resourceCount, preview_thumbnail: preview };
-  });
+      return {
+        category,
+        skills: skillsWithResources.map((skill) => ({
+          skill,
+          latest_thumbnail: latestThumbBySkill.get(skill.id) ?? null,
+        })),
+      };
+    }),
+  );
+
+  return sections.filter((section) => section.skills.length > 0);
 }
 
 export async function getCategoryWithSkillResources(

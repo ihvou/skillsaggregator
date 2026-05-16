@@ -1,7 +1,7 @@
 import { Stack } from "expo-router";
 import { colors } from "@/lib/theme";
 
-export default function CategoryStackLayout() {
+export default function LibraryStackLayout() {
   return (
     <Stack
       screenOptions={{

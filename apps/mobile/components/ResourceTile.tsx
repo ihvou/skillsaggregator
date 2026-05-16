@@ -1,27 +1,33 @@
-import { Linking, Pressable, StyleSheet, Text, View } from "react-native";
+import { Linking, Pressable, StyleSheet, View } from "react-native";
 import { Image } from "expo-image";
 import { BookmarkCheck } from "lucide-react-native";
 import type { SkillResource } from "@skillsaggregator/shared";
 import { getFlag } from "@/lib/localState";
-import { colors, radius, shadows, spacing, typography } from "@/lib/theme";
+import { colors, radius, shadows } from "@/lib/theme";
 
 interface ResourceTileProps {
   resource: SkillResource;
+  /** Optional pixel width override. Defaults to a fixed 180. */
+  width?: number;
 }
 
 /**
- * Compact rectangular tile for use in horizontal-scrolling rows
- * ("Apple Podcasts" style horizontal carousel inside a category).
+ * Pure thumbnail tile used inside horizontal-scrolling rows on the Category
+ * screen. Native 16/11 proportions, rounded, with the standard thumbnail
+ * shadow + a small saved-state badge in the top-right.
  */
-export function ResourceTile({ resource }: ResourceTileProps) {
+export function ResourceTile({ resource, width = 180 }: ResourceTileProps) {
   const isSaved = getFlag(`saved:${resource.link.id}`);
+  const style = [styles.thumbnail, { width, height: Math.round((width * 11) / 16) }];
 
   return (
     <Pressable
       onPress={() => Linking.openURL(resource.link.url)}
       style={({ pressed }) => [styles.wrap, pressed && styles.pressed]}
+      accessibilityRole="button"
+      accessibilityLabel={resource.link.title ?? "Open resource"}
     >
-      <View style={styles.thumbnail}>
+      <View style={style}>
         {resource.link.thumbnail_url ? (
           <Image
             source={resource.link.thumbnail_url}
@@ -38,30 +44,18 @@ export function ResourceTile({ resource }: ResourceTileProps) {
           </View>
         ) : null}
       </View>
-      <Text style={styles.title} numberOfLines={2}>
-        {resource.link.title ?? resource.link.url}
-      </Text>
-      <Text style={styles.meta} numberOfLines={1}>
-        {resource.skill_level ? `${capitalize(resource.skill_level)} · ${resource.link.domain}` : resource.link.domain}
-      </Text>
     </Pressable>
   );
 }
 
-function capitalize(value: string) {
-  return value.charAt(0).toUpperCase() + value.slice(1);
-}
-
 const styles = StyleSheet.create({
   wrap: {
-    width: 168,
+    // sized by inner thumbnail; no extra width
   },
   pressed: {
     opacity: 0.7,
   },
   thumbnail: {
-    width: 168,
-    aspectRatio: 16 / 11,
     overflow: "hidden",
     borderRadius: radius.lg,
     backgroundColor: colors.bgGroup,
@@ -85,16 +79,5 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     borderRadius: 11,
     backgroundColor: colors.accent,
-  },
-  title: {
-    marginTop: spacing.sm,
-    ...typography.rowTitle,
-    fontSize: 14,
-    lineHeight: 19,
-  },
-  meta: {
-    marginTop: 2,
-    ...typography.meta,
-    fontSize: 12,
   },
 });

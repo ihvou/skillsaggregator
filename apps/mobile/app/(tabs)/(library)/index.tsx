@@ -36,7 +36,7 @@ export default function SavedTab() {
   return (
     <Screen edges={["top"]} padded={false}>
       <View style={styles.headerWrap}>
-        <PageHeader title="Saved" subtitle="Your library" showMenu />
+        <PageHeader title="Saved" subtitle="Your library" />
       </View>
       {query.isLoading ? (
         <View style={styles.skeletonWrap}>
@@ -133,14 +133,14 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.sm,
-    paddingVertical: spacing.sm,
+    paddingVertical: spacing.md,
     paddingHorizontal: spacing.page,
   },
   pressed: {
     opacity: 0.6,
   },
   thumbWrap: {
-    width: 96,
+    width: 112,
     aspectRatio: 16 / 11,
     overflow: "hidden",
     borderRadius: radius.md,
@@ -162,7 +162,7 @@ const styles = StyleSheet.create({
   },
   title: {
     ...typography.rowTitle,
-    fontSize: 15,
+    fontSize: 16,
   },
   context: {
     marginTop: 2,
@@ -188,8 +188,7 @@ const styles = StyleSheet.create({
   },
   divider: {
     height: StyleSheet.hairlineWidth,
-    marginLeft: spacing.page + 96 + spacing.sm,
-    marginRight: spacing.page,
+    marginHorizontal: spacing.page,
     backgroundColor: colors.divider,
   },
   skeletonWrap: {

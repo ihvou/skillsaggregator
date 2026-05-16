@@ -1,4 +1,4 @@
-import { RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { RefreshControl, ScrollView, StyleSheet, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 import { Search } from "lucide-react-native";
@@ -38,12 +38,7 @@ export default function CategoryScreen() {
         }
       >
         <View style={styles.headerWrap}>
-          <PageHeader
-            title={categoryData?.name ?? "Category"}
-            subtitle={categoryData?.description ?? undefined}
-            showBack
-            showMenu
-          />
+          <PageHeader title={categoryData?.name ?? "Category"} showBack />
         </View>
 
         {query.isLoading ? (
@@ -60,14 +55,12 @@ export default function CategoryScreen() {
           </View>
         ) : (
           sections.map((section, index) => (
-            <View key={section.skill.id} style={index === 0 ? styles.firstSection : styles.section}>
+            <View
+              key={section.skill.id}
+              style={[styles.section, index === 0 ? styles.firstSection : null]}
+            >
               <SectionHeader
                 title={section.skill.name}
-                subtitle={
-                  section.skill.resource_count
-                    ? `${section.skill.resource_count} ${section.skill.resource_count === 1 ? "resource" : "resources"}`
-                    : undefined
-                }
                 onPress={() => router.push(`/${categorySlug}/${section.skill.slug}`)}
               />
               <ScrollView
@@ -79,11 +72,7 @@ export default function CategoryScreen() {
                   <ResourceTile key={resource.id} resource={resource} />
                 ))}
               </ScrollView>
-              {section.skill.description ? (
-                <Text style={styles.skillDescription} numberOfLines={2}>
-                  {section.skill.description}
-                </Text>
-              ) : null}
+              <View style={styles.divider} />
             </View>
           ))
         )}
@@ -110,12 +99,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.page,
     gap: spacing.md,
   },
-  skillDescription: {
-    marginTop: spacing.sm,
-    paddingHorizontal: spacing.page,
-    color: colors.muted,
-    fontSize: 13,
-    lineHeight: 18,
+  divider: {
+    height: StyleSheet.hairlineWidth,
+    marginTop: spacing.lg,
+    marginHorizontal: spacing.page,
+    backgroundColor: colors.divider,
   },
   skeletonWrap: {
     paddingHorizontal: spacing.page,

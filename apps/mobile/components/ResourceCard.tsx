@@ -2,7 +2,13 @@ import { useState } from "react";
 import { Linking, Pressable, StyleSheet, Text, View } from "react-native";
 import { Image } from "expo-image";
 import * as Haptics from "expo-haptics";
-import { Bookmark, BookmarkCheck, Check, CheckCircle2, MoreHorizontal } from "lucide-react-native";
+import {
+  Bookmark,
+  BookmarkCheck,
+  CircleCheck,
+  ThumbsDown,
+  ThumbsUp,
+} from "lucide-react-native";
 import { Swipeable } from "react-native-gesture-handler";
 import type { SkillResource } from "@skillsaggregator/shared";
 import { getFlag, setFlag } from "@/lib/localState";
@@ -10,38 +16,40 @@ import { colors, radius, shadows, spacing, typography } from "@/lib/theme";
 
 interface ResourceCardProps {
   resource: SkillResource;
-  /** Optional label to render above the title (e.g. a date or breadcrumb). */
-  topLabel?: string;
-  /** Show category/skill breadcrumb instead of plain domain in meta row. */
-  showContext?: boolean;
 }
 
 type SwipeDirection = "left" | "right";
-
-const MONTHS_SHORT = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
 
 function triggerSelectionHaptic() {
   Haptics.selectionAsync().catch(() => undefined);
 }
 
-function formatTopDate(iso?: string | null) {
+function formatDate(iso?: string | null) {
   if (!iso) return undefined;
   const parsed = Date.parse(iso);
   if (Number.isNaN(parsed)) return undefined;
   const date = new Date(parsed);
-  return `${MONTHS_SHORT[date.getMonth()]} ${date.getDate()}`;
+  const dd = String(date.getDate()).padStart(2, "0");
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  return `${dd}.${mm}.${date.getFullYear()}`;
+}
+
+function capitalize(value: string) {
+  return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
 /**
- * Apple Podcasts "Saved" / episode row.
- *  - Rectangular rounded thumbnail on the left with subtle shadow
- *  - Right column: optional small label, 2-line bold title, meta line
- *  - Far-right column of small action icons (save / complete / more)
+ * Skill-screen resource row.
+ *  - Native-proportion rectangular thumbnail on the left
+ *  - Right column: top meta row (date + level pill), bold 2-line title,
+ *    bottom meta row (domain + check/bookmark/thumbs-up/thumbs-down icons)
  *  - Tap opens the URL; swipe right to save, swipe left to mark complete
  */
-export function ResourceCard({ resource, topLabel, showContext = false }: ResourceCardProps) {
+export function ResourceCard({ resource }: ResourceCardProps) {
   const [isSaved, setIsSaved] = useState(() => getFlag(`saved:${resource.link.id}`));
   const [isCompleted, setIsCompleted] = useState(() => getFlag(`completed:${resource.link.id}`));
+  const [upvoted, setUpvoted] = useState(() => getFlag(`upvote:${resource.link.id}`));
+  const [downvoted, setDownvoted] = useState(() => getFlag(`downvote:${resource.link.id}`));
 
   function toggleSaved() {
     const next = !isSaved;
@@ -57,6 +65,28 @@ export function ResourceCard({ resource, topLabel, showContext = false }: Resour
     triggerSelectionHaptic();
   }
 
+  function toggleUpvote() {
+    const next = !upvoted;
+    setUpvoted(next);
+    setFlag(`upvote:${resource.link.id}`, next);
+    if (next && downvoted) {
+      setDownvoted(false);
+      setFlag(`downvote:${resource.link.id}`, false);
+    }
+    triggerSelectionHaptic();
+  }
+
+  function toggleDownvote() {
+    const next = !downvoted;
+    setDownvoted(next);
+    setFlag(`downvote:${resource.link.id}`, next);
+    if (next && upvoted) {
+      setUpvoted(false);
+      setFlag(`upvote:${resource.link.id}`, false);
+    }
+    triggerSelectionHaptic();
+  }
+
   function handleSwipeOpen(direction: SwipeDirection, swipeable: Swipeable) {
     if (direction === "right") toggleSaved();
     if (direction === "left") toggleCompleted();
@@ -66,7 +96,7 @@ export function ResourceCard({ resource, topLabel, showContext = false }: Resour
   function renderLeftActions() {
     return (
       <View style={[styles.swipeAction, styles.completeAction]}>
-        <CheckCircle2 size={22} color={colors.surface} />
+        <CircleCheck size={22} color={colors.surface} />
         <Text style={styles.swipeActionText}>{isCompleted ? "Undo" : "Done"}</Text>
       </View>
     );
@@ -81,12 +111,8 @@ export function ResourceCard({ resource, topLabel, showContext = false }: Resour
     );
   }
 
+  const dateLabel = formatDate(resource.created_at);
   const SavedIcon = isSaved ? BookmarkCheck : Bookmark;
-  const breadcrumb = resource.skill?.category_name && resource.skill?.name
-    ? `${resource.skill.category_name} · ${resource.skill.name}`
-    : resource.link.domain;
-  const metaText = showContext ? breadcrumb : resource.link.domain;
-  const resolvedTopLabel = topLabel ?? formatTopDate(resource.created_at);
 
   return (
     <Swipeable
@@ -117,59 +143,85 @@ export function ResourceCard({ resource, topLabel, showContext = false }: Resour
           )}
         </View>
         <View style={styles.body}>
-          {resolvedTopLabel ? <Text style={styles.topLabel}>{resolvedTopLabel}</Text> : null}
+          <View style={styles.topRow}>
+            {dateLabel ? <Text style={styles.date}>{dateLabel}</Text> : <View />}
+            {resource.skill_level ? (
+              <View style={styles.levelPill}>
+                <Text style={styles.levelText}>{capitalize(resource.skill_level)}</Text>
+              </View>
+            ) : null}
+          </View>
           <Text style={styles.title} numberOfLines={2}>
             {resource.link.title ?? resource.link.url}
           </Text>
-          <Text style={styles.meta} numberOfLines={1}>
-            {resource.skill_level ? `${capitalize(resource.skill_level)} · ${metaText}` : metaText}
-          </Text>
-        </View>
-        <View style={styles.actions}>
-          <Pressable
-            onPress={toggleSaved}
-            hitSlop={{ top: 10, right: 8, bottom: 10, left: 8 }}
-            style={styles.iconTap}
-            accessibilityRole="button"
-            accessibilityLabel={isSaved ? "Unsave resource" : "Save resource"}
-          >
-            <SavedIcon
-              size={20}
-              color={isSaved ? colors.accent : colors.muted}
-              fill={isSaved ? colors.accent : "transparent"}
-              strokeWidth={2}
-            />
-          </Pressable>
-          <Pressable
-            onPress={toggleCompleted}
-            hitSlop={{ top: 10, right: 8, bottom: 10, left: 8 }}
-            style={styles.iconTap}
-            accessibilityRole="button"
-            accessibilityLabel={isCompleted ? "Mark not completed" : "Mark completed"}
-          >
-            {isCompleted ? (
-              <CheckCircle2 size={20} color={colors.accent} fill={colors.accent} stroke={colors.surface} strokeWidth={2} />
-            ) : (
-              <Check size={20} color={colors.muted} strokeWidth={2} />
-            )}
-          </Pressable>
-          <Pressable
-            onPress={() => Linking.openURL(resource.link.url)}
-            hitSlop={{ top: 10, right: 8, bottom: 10, left: 8 }}
-            style={styles.iconTap}
-            accessibilityRole="button"
-            accessibilityLabel="Open resource"
-          >
-            <MoreHorizontal size={20} color={colors.muted} />
-          </Pressable>
+          <View style={styles.bottomRow}>
+            <Text style={styles.domain} numberOfLines={1}>
+              {resource.link.domain}
+            </Text>
+            <View style={styles.actions}>
+              <Pressable
+                onPress={toggleCompleted}
+                hitSlop={{ top: 8, right: 6, bottom: 8, left: 6 }}
+                style={styles.iconTap}
+                accessibilityRole="button"
+                accessibilityLabel={isCompleted ? "Mark not completed" : "Mark completed"}
+              >
+                <CircleCheck
+                  size={20}
+                  color={isCompleted ? colors.accent : colors.muted}
+                  fill={isCompleted ? colors.accent : "transparent"}
+                  stroke={isCompleted ? colors.surface : colors.muted}
+                  strokeWidth={2}
+                />
+              </Pressable>
+              <Pressable
+                onPress={toggleSaved}
+                hitSlop={{ top: 8, right: 6, bottom: 8, left: 6 }}
+                style={styles.iconTap}
+                accessibilityRole="button"
+                accessibilityLabel={isSaved ? "Unsave resource" : "Save resource"}
+              >
+                <SavedIcon
+                  size={20}
+                  color={isSaved ? colors.accent : colors.muted}
+                  fill={isSaved ? colors.accent : "transparent"}
+                  strokeWidth={2}
+                />
+              </Pressable>
+              <Pressable
+                onPress={toggleUpvote}
+                hitSlop={{ top: 8, right: 6, bottom: 8, left: 6 }}
+                style={styles.iconTap}
+                accessibilityRole="button"
+                accessibilityLabel={upvoted ? "Remove upvote" : "Upvote"}
+              >
+                <ThumbsUp
+                  size={20}
+                  color={upvoted ? colors.accent : colors.muted}
+                  fill={upvoted ? colors.accent : "transparent"}
+                  strokeWidth={2}
+                />
+              </Pressable>
+              <Pressable
+                onPress={toggleDownvote}
+                hitSlop={{ top: 8, right: 6, bottom: 8, left: 6 }}
+                style={styles.iconTap}
+                accessibilityRole="button"
+                accessibilityLabel={downvoted ? "Remove downvote" : "Downvote"}
+              >
+                <ThumbsDown
+                  size={20}
+                  color={downvoted ? colors.ink : colors.muted}
+                  fill={downvoted ? colors.ink : "transparent"}
+                  strokeWidth={2}
+                />
+              </Pressable>
+            </View>
+          </View>
         </View>
       </Pressable>
     </Swipeable>
   );
-}
-
-function capitalize(value: string) {
-  return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
 const styles = StyleSheet.create({
@@ -196,15 +248,14 @@ const styles = StyleSheet.create({
   },
   row: {
     flexDirection: "row",
-    alignItems: "center",
     gap: spacing.sm,
-    paddingVertical: spacing.sm,
+    paddingVertical: spacing.md,
   },
   pressed: {
     opacity: 0.6,
   },
   thumbWrap: {
-    width: 96,
+    width: 112,
     aspectRatio: 16 / 11,
     overflow: "hidden",
     borderRadius: radius.md,
@@ -221,28 +272,53 @@ const styles = StyleSheet.create({
   },
   body: {
     flex: 1,
-    justifyContent: "center",
-    gap: 2,
+    justifyContent: "space-between",
+    gap: 4,
+    paddingVertical: 2,
   },
-  topLabel: {
+  topRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: spacing.xs,
+  },
+  date: {
     ...typography.date,
-    fontSize: 11,
-    fontWeight: "600",
-    letterSpacing: 0.4,
-    textTransform: "uppercase",
+    fontSize: 13,
+    color: colors.muted,
+  },
+  levelPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: radius.pill,
+    backgroundColor: colors.muted,
+  },
+  levelText: {
+    color: colors.surface,
+    fontSize: 12,
+    fontWeight: "700",
   },
   title: {
     ...typography.rowTitle,
+    fontSize: 18,
+    lineHeight: 23,
+    fontWeight: "700",
   },
-  meta: {
-    marginTop: 2,
+  bottomRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+  },
+  domain: {
     ...typography.meta,
-    fontSize: 12,
+    fontSize: 13,
+    color: colors.faint,
+    flex: 1,
   },
   actions: {
+    flexDirection: "row",
     alignItems: "center",
     gap: 14,
-    paddingLeft: spacing.xs,
   },
   iconTap: {
     minWidth: 24,

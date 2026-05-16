@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useCallback, useMemo, useState } from "react";
+import { ActionSheetIOS, Alert, Platform, RefreshControl, StyleSheet, View } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import { FlashList } from "@shopify/flash-list";
 import { useQuery } from "@tanstack/react-query";
@@ -13,12 +13,17 @@ import { Screen } from "@/components/Screen";
 import { SkeletonList } from "@/components/SkeletonList";
 import { getSkillResources } from "@/lib/data";
 import { setLastSeenSkill } from "@/lib/localState";
-import { colors, spacing, typography } from "@/lib/theme";
+import { colors, spacing } from "@/lib/theme";
 
-const levels: LevelFilterValue[] = ["all", "beginner", "intermediate", "advanced"];
-const sorts: Array<{ value: ResourceSort; label: string }> = [
+const SORTS: Array<{ value: ResourceSort; label: string }> = [
   { value: "popular", label: "Popular" },
   { value: "newest", label: "Newest" },
+];
+const LEVELS: Array<{ value: LevelFilterValue; label: string }> = [
+  { value: "all", label: "All levels" },
+  { value: "beginner", label: "Beginner" },
+  { value: "intermediate", label: "Intermediate" },
+  { value: "advanced", label: "Advanced" },
 ];
 
 export default function SkillDetailScreen() {
@@ -50,18 +55,71 @@ export default function SkillDetailScreen() {
     return level === "all" ? items : items.filter((item) => item.skill_level === level);
   }, [level, query.data?.resources]);
 
+  const openSortSheet = useCallback(() => {
+    const labels = SORTS.map((option) => (option.value === sort ? `${option.label}  ✓` : option.label));
+    const options = [...labels, "Cancel"];
+    const cancelIndex = options.length - 1;
+    ActionSheetIOS.showActionSheetWithOptions(
+      { options, cancelButtonIndex: cancelIndex, title: "Sort" },
+      (selected) => {
+        if (selected === undefined || selected === cancelIndex) return;
+        const next = SORTS[selected];
+        if (next) setSort(next.value);
+      },
+    );
+  }, [sort]);
+
+  const openLevelSheet = useCallback(() => {
+    const labels = LEVELS.map((option) => (option.value === level ? `${option.label}  ✓` : option.label));
+    const options = [...labels, "Cancel"];
+    const cancelIndex = options.length - 1;
+    ActionSheetIOS.showActionSheetWithOptions(
+      { options, cancelButtonIndex: cancelIndex, title: "Filter by level" },
+      (selected) => {
+        if (selected === undefined || selected === cancelIndex) return;
+        const next = LEVELS[selected];
+        if (next) setLevel(next.value);
+      },
+    );
+  }, [level]);
+
+  const handleMenuPress = useCallback(() => {
+    if (Platform.OS !== "ios") {
+      // Minimal Android fallback — Apple-style action sheets aren't available.
+      Alert.alert("Options", "Choose a section", [
+        { text: "Sort", onPress: openSortSheet },
+        { text: "Filter by level", onPress: openLevelSheet },
+        { text: "Cancel", style: "cancel" },
+      ]);
+      return;
+    }
+    const options = ["Sort", "Filter by level", "Cancel"];
+    ActionSheetIOS.showActionSheetWithOptions(
+      { options, cancelButtonIndex: 2 },
+      (selected) => {
+        if (selected === 0) openSortSheet();
+        if (selected === 1) openLevelSheet();
+      },
+    );
+  }, [openSortSheet, openLevelSheet]);
+
+  const headerSubtitle = useMemo(() => {
+    const parts: string[] = [];
+    parts.push(SORTS.find((option) => option.value === sort)?.label ?? "Popular");
+    if (level !== "all") parts.push(LEVELS.find((option) => option.value === level)?.label ?? "");
+    return parts.filter(Boolean).join(" · ");
+  }, [sort, level]);
+
   return (
     <Screen edges={["top"]} padded={false}>
       <View style={styles.headerWrap}>
         <PageHeader
           title={query.data?.skill?.name ?? "Skill"}
-          subtitle={query.data?.category?.name ?? undefined}
+          subtitle={headerSubtitle}
           showBack
           showMenu
+          onMenuPress={handleMenuPress}
         />
-        {query.data?.skill?.description ? (
-          <Text style={styles.description}>{query.data.skill.description}</Text>
-        ) : null}
       </View>
       {query.isLoading ? (
         <View style={styles.skeletonWrap}>
@@ -72,51 +130,12 @@ export default function SkillDetailScreen() {
           data={resources}
           style={styles.list}
           keyExtractor={(item) => item.id}
-          ListHeaderComponent={
-            <View style={styles.filterBarWrap}>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.filterBar}
-              >
-                {levels.map((option) => {
-                  const selected = level === option;
-                  return (
-                    <Pressable
-                      key={option}
-                      onPress={() => setLevel(option)}
-                      style={[styles.filterChip, selected && styles.filterChipActive]}
-                    >
-                      <Text style={[styles.filterChipText, selected && styles.filterChipTextActive]}>
-                        {option === "all" ? "All" : option}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-                <View style={styles.filterDivider} />
-                {sorts.map((option) => {
-                  const selected = sort === option.value;
-                  return (
-                    <Pressable
-                      key={option.value}
-                      onPress={() => setSort(option.value)}
-                      style={[styles.filterChip, selected && styles.filterChipActive]}
-                    >
-                      <Text style={[styles.filterChipText, selected && styles.filterChipTextActive]}>
-                        {option.label}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </ScrollView>
-            </View>
-          }
           ListEmptyComponent={
             <View style={styles.emptyWrap}>
               <EmptyState
                 icon={Search}
-                title="No matches for this level"
-                subtitle="Try All, switch the sort, or check back after moderation."
+                title="No matches for this filter"
+                subtitle="Open the menu (…) to change sort or level."
               />
             </View>
           }
@@ -146,47 +165,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.page,
     paddingTop: spacing.md,
   },
-  description: {
-    marginTop: spacing.sm,
-    ...typography.body,
-  },
-  filterBarWrap: {
-    paddingHorizontal: spacing.page,
-    paddingTop: spacing.md,
-    paddingBottom: spacing.sm,
-    backgroundColor: colors.bgGroup,
-  },
-  filterBar: {
-    alignItems: "center",
-    gap: 6,
-    paddingBottom: 2,
-  },
-  filterChip: {
-    minHeight: 32,
-    justifyContent: "center",
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    backgroundColor: colors.surface,
-  },
-  filterChipActive: {
-    backgroundColor: colors.ink,
-  },
-  filterChipText: {
-    color: colors.muted,
-    fontSize: 13,
-    fontWeight: "600",
-    textTransform: "capitalize",
-  },
-  filterChipTextActive: {
-    color: colors.surface,
-    fontWeight: "700",
-  },
-  filterDivider: {
-    width: 1,
-    height: 18,
-    marginHorizontal: 4,
-    backgroundColor: colors.divider,
-  },
   list: {
     flex: 1,
   },
@@ -195,8 +173,7 @@ const styles = StyleSheet.create({
   },
   divider: {
     height: StyleSheet.hairlineWidth,
-    marginLeft: spacing.page + 96 + spacing.sm,
-    marginRight: spacing.page,
+    marginHorizontal: spacing.page,
     backgroundColor: colors.divider,
   },
   skeletonWrap: {
