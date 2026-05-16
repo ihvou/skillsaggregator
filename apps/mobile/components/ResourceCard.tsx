@@ -21,10 +21,11 @@ interface ResourceCardProps {
 type SwipeDirection = "left" | "right";
 
 /**
- * Row height is fixed so the thumbnail (16:9) lines up exactly with the
- * four-row right column (date+pill • title line 1 • title line 2 • domain+icons).
+ * The right-hand metadata column owns this height (4 visual rows: date+pill,
+ * title line 1, title line 2, domain+actions). The 16/9 thumbnail then
+ * stretches to match it via `alignSelf: "stretch"` + `aspectRatio`.
  */
-const ROW_HEIGHT = 96;
+const BODY_HEIGHT = 96;
 
 function triggerSelectionHaptic() {
   Haptics.selectionAsync().catch(() => undefined);
@@ -280,14 +281,12 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "stretch",
     gap: spacing.sm,
-    height: ROW_HEIGHT,
-    paddingVertical: spacing.md,
   },
   pressed: {
     opacity: 0.6,
   },
   thumbWrap: {
-    height: "100%",
+    alignSelf: "stretch",
     aspectRatio: 16 / 9,
     overflow: "hidden",
     borderRadius: radius.md,
@@ -304,14 +303,14 @@ const styles = StyleSheet.create({
   },
   body: {
     flex: 1,
-    height: "100%",
+    height: BODY_HEIGHT,
     justifyContent: "space-between",
   },
   topRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    minHeight: 18,
+    minHeight: 22,
   },
   date: {
     ...typography.date,
@@ -332,14 +331,14 @@ const styles = StyleSheet.create({
   title: {
     ...typography.rowTitle,
     fontSize: 15,
-    lineHeight: 19,
+    lineHeight: 22,
     fontWeight: "700",
   },
   bottomRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.xs,
-    minHeight: 20,
+    minHeight: 22,
   },
   domain: {
     ...typography.meta,

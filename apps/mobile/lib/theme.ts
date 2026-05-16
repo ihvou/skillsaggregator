@@ -4,7 +4,7 @@ export const colors = {
   bg: "#ffffff",
   bgGroup: "#f2f1ec",   // slight cream behind cards
   surface: "#ffffff",   // card surface
-  divider: "rgba(0, 0, 0, 0.08)",
+  divider: "rgba(0, 0, 0, 0.14)",
 
   // Text
   ink: "#000000",       // primary
@@ -22,8 +22,8 @@ export const colors = {
   shuttle: "#f2f1ec",
   amber: "#a855f7",
   graphite: "#8a898e",
-  line: "rgba(0, 0, 0, 0.08)",
-  lineSoft: "rgba(0, 0, 0, 0.05)",
+  line: "rgba(0, 0, 0, 0.14)",
+  lineSoft: "rgba(0, 0, 0, 0.08)",
   tint: "rgba(168, 85, 247, 0.10)",
   tintStrong: "rgba(168, 85, 247, 0.18)",
   white: "#ffffff",

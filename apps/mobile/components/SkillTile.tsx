@@ -83,12 +83,13 @@ const styles = StyleSheet.create({
   },
   label: {
     color: "#ffffff",
-    fontSize: 15,
+    fontSize: 17,
     fontWeight: "800",
     letterSpacing: -0.2,
     textAlign: "center",
-    textShadowColor: "rgba(0,0,0,0.4)",
+    lineHeight: 21,
+    textShadowColor: "rgba(0,0,0,0.45)",
     textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 4,
+    textShadowRadius: 5,
   },
 });

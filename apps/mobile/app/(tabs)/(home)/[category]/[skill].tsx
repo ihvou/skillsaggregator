@@ -132,6 +132,7 @@ const styles = StyleSheet.create({
   },
   rowWrap: {
     paddingHorizontal: spacing.page,
+    paddingVertical: spacing.lg,
   },
   divider: {
     height: StyleSheet.hairlineWidth,
