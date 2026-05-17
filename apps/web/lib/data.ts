@@ -5,7 +5,6 @@ import {
   fallbackResources,
   fallbackSkills,
   type CategorySummary,
-  type SkillLevel,
   type SkillResource,
   type SkillSummary,
 } from "@skillsaggregator/shared";
@@ -18,98 +17,8 @@ export interface CatalogData {
 
 export type ResourceSort = "newest" | "popular";
 
-export interface ResourceListingFilters {
-  categorySlug?: string;
-  level?: SkillLevel | null;
-  sort?: ResourceSort;
-  page?: number;
-  pageSize?: number;
-}
-
-export interface ResourceListingData {
-  categories: CategorySummary[];
-  category: CategorySummary | null;
-  skills: SkillSummary[];
-  resources: SkillResource[];
-  totalCount: number;
-  page: number;
-  pageSize: number;
-  pageCount: number;
-  level: SkillLevel | null;
-  sort: ResourceSort;
-}
-
-const DEFAULT_PAGE_SIZE = 20;
-
-function normalizeSort(sort: ResourceSort | undefined): ResourceSort {
-  return sort === "popular" ? "popular" : "newest";
-}
-
-function normalizePage(page: number | undefined) {
-  return Number.isFinite(page) && page && page > 0 ? Math.floor(page) : 1;
-}
-
 function categorySkills(categorySlug: string) {
   return fallbackSkills.filter((skill) => skill.category_slug === categorySlug);
-}
-
-function fallbackResourceRows() {
-  const skillBySlug = new Map(fallbackSkills.map((skill) => [skill.slug, skill]));
-  return Object.entries(fallbackResources).flatMap(([skillSlug, resources]) => {
-    const skill = skillBySlug.get(skillSlug);
-    const category = skill
-      ? fallbackCategories.find((item) => item.slug === skill.category_slug) ?? null
-      : null;
-    return resources.map((resource) => {
-      if (!skill) return resource;
-      return {
-        ...resource,
-        skill: {
-          id: skill.id,
-          slug: skill.slug,
-          name: skill.name,
-          category_slug: skill.category_slug,
-          category_name: category?.name ?? null,
-        },
-      };
-    });
-  });
-}
-
-function resourceSorter(sort: ResourceSort) {
-  return (a: SkillResource, b: SkillResource) => {
-    if (sort === "popular") return b.upvote_count - a.upvote_count;
-    return Date.parse(b.created_at ?? "") - Date.parse(a.created_at ?? "");
-  };
-}
-
-function fallbackListing(filters: ResourceListingFilters): ResourceListingData {
-  const sort = normalizeSort(filters.sort);
-  const page = normalizePage(filters.page);
-  const pageSize = filters.pageSize ?? DEFAULT_PAGE_SIZE;
-  const category = filters.categorySlug
-    ? fallbackCategories.find((item) => item.slug === filters.categorySlug) ?? null
-    : null;
-  const skills = category ? categorySkills(category.slug) : fallbackSkills;
-  const skillIds = new Set(skills.map((skill) => skill.id));
-  const filtered = fallbackResourceRows()
-    .filter((resource) => !filters.categorySlug || (resource.skill && skillIds.has(resource.skill.id)))
-    .filter((resource) => !filters.level || resource.skill_level === filters.level)
-    .sort(resourceSorter(sort));
-  const offset = (page - 1) * pageSize;
-
-  return {
-    categories: fallbackCategories,
-    category,
-    skills,
-    resources: filtered.slice(offset, offset + pageSize),
-    totalCount: filtered.length,
-    page,
-    pageSize,
-    pageCount: Math.max(1, Math.ceil(filtered.length / pageSize)),
-    level: filters.level ?? null,
-    sort,
-  };
 }
 
 export async function getCategories(): Promise<CategorySummary[]> {
@@ -199,109 +108,6 @@ export async function getAllCatalogs(): Promise<Array<CatalogData>> {
     category,
     skills: skillsByCategory.get(category.id) ?? [],
   }));
-}
-
-export async function getResourceListing(
-  filters: ResourceListingFilters = {},
-): Promise<ResourceListingData> {
-  const supabase = getPublicSupabase();
-  if (!supabase) return fallbackListing(filters);
-
-  const sort = normalizeSort(filters.sort);
-  const page = normalizePage(filters.page);
-  const pageSize = filters.pageSize ?? DEFAULT_PAGE_SIZE;
-  const categories = await getCategories();
-  const category = filters.categorySlug
-    ? categories.find((item) => item.slug === filters.categorySlug) ?? null
-    : null;
-  if (filters.categorySlug && !category) return fallbackListing(filters);
-
-  let skillQuery = supabase
-    .from("skills")
-    .select("id, category_id, slug, name, description, updated_at")
-    .eq("is_active", true)
-    .order("name");
-
-  if (category) skillQuery = skillQuery.eq("category_id", category.id);
-  const { data: skillRows } = await skillQuery;
-  const categoryById = new Map(categories.map((item) => [item.id, item]));
-  const skills = (skillRows ?? []).flatMap((skill) => {
-    const skillCategory = categoryById.get(skill.category_id);
-    if (!skillCategory) return [];
-    return [{
-      ...skill,
-      category_slug: skillCategory.slug,
-      resource_count: 0,
-    }];
-  });
-  const skillById = new Map(skills.map((skill) => [skill.id, skill]));
-  const skillIds = skills.map((skill) => skill.id);
-  if (!skillIds.length) {
-    return {
-      categories,
-      category,
-      skills,
-      resources: [],
-      totalCount: 0,
-      page,
-      pageSize,
-      pageCount: 1,
-      level: filters.level ?? null,
-      sort,
-    };
-  }
-
-  const offset = (page - 1) * pageSize;
-  let relationQuery = supabase
-    .from("link_skill_relations")
-    .select(
-      "id, skill_id, public_note, skill_level, upvote_count, created_at, links!inner(id, url, canonical_url, domain, title, description, thumbnail_url, content_type)",
-      { count: "exact" },
-    )
-    .in("skill_id", skillIds)
-    .eq("is_active", true)
-    .eq("links.is_active", true);
-
-  if (filters.level) relationQuery = relationQuery.eq("skill_level", filters.level);
-  relationQuery = sort === "popular"
-    ? relationQuery.order("upvote_count", { ascending: false })
-    : relationQuery.order("created_at", { ascending: false });
-
-  const { data: relations, count } = await relationQuery.range(offset, offset + pageSize - 1);
-  const resources: SkillResource[] = (relations ?? []).flatMap((relation) => {
-    const link = Array.isArray(relation.links) ? relation.links[0] : relation.links;
-    const skill = skillById.get(relation.skill_id);
-    if (!link || !skill) return [];
-    const relationCategory = categoryById.get(skill.category_id);
-    return [{
-      id: relation.id,
-      public_note: relation.public_note,
-      skill_level: relation.skill_level,
-      upvote_count: relation.upvote_count,
-      created_at: relation.created_at,
-      link,
-      skill: {
-        id: skill.id,
-        slug: skill.slug,
-        name: skill.name,
-        category_slug: skill.category_slug,
-        category_name: relationCategory?.name ?? null,
-      },
-    }];
-  });
-
-  return {
-    categories,
-    category,
-    skills,
-    resources,
-    totalCount: count ?? resources.length,
-    page,
-    pageSize,
-    pageCount: Math.max(1, Math.ceil((count ?? resources.length) / pageSize)),
-    level: filters.level ?? null,
-    sort,
-  };
 }
 
 export async function getSkillPage(categorySlug: string, skillSlug: string) {
@@ -396,6 +202,158 @@ export async function getSkillPage(categorySlug: string, skillSlug: string) {
       resource_count: 0,
     })),
   };
+}
+
+export interface DiscoverSkillTile {
+  skill: SkillSummary;
+  latest_thumbnail: string | null;
+}
+
+export interface DiscoverCategorySection {
+  category: CategorySummary;
+  skills: DiscoverSkillTile[];
+}
+
+export interface SkillSection {
+  skill: SkillSummary;
+  resources: SkillResource[];
+}
+
+/**
+ * Home-page rollup: each active category with up to N most-popular skills
+ * and the latest resource thumbnail per skill (used as the tile artwork).
+ */
+export async function getDiscoverSections(perCategorySkills = 12): Promise<DiscoverCategorySection[]> {
+  const supabase = getPublicSupabase();
+  const categories = await getCategories();
+
+  if (!supabase) {
+    return categories.map((category) => {
+      const skills = categorySkills(category.slug);
+      return {
+        category,
+        skills: skills.slice(0, perCategorySkills).map((skill) => {
+          const resources = fallbackResources[skill.slug] ?? [];
+          const latest = resources.find((resource) => resource.link.thumbnail_url)?.link.thumbnail_url ?? null;
+          return { skill, latest_thumbnail: latest };
+        }),
+      };
+    });
+  }
+
+  const sections = await Promise.all(
+    categories.map(async (category): Promise<DiscoverCategorySection> => {
+      const { skills } = await getCatalog(category.slug);
+      const skillsWithResources = skills
+        .filter((skill) => skill.resource_count > 0)
+        .slice(0, perCategorySkills);
+      if (skillsWithResources.length === 0) {
+        return { category, skills: [] };
+      }
+      const { data: relations } = await supabase
+        .from("link_skill_relations")
+        .select("skill_id, created_at, links!inner(thumbnail_url)")
+        .in("skill_id", skillsWithResources.map((skill) => skill.id))
+        .eq("is_active", true)
+        .eq("links.is_active", true)
+        .order("created_at", { ascending: false });
+
+      const latestThumbBySkill = new Map<string, string | null>();
+      for (const relation of relations ?? []) {
+        if (latestThumbBySkill.has(relation.skill_id)) continue;
+        const link = Array.isArray(relation.links) ? relation.links[0] : relation.links;
+        latestThumbBySkill.set(relation.skill_id, link?.thumbnail_url ?? null);
+      }
+
+      return {
+        category,
+        skills: skillsWithResources.map((skill) => ({
+          skill,
+          latest_thumbnail: latestThumbBySkill.get(skill.id) ?? null,
+        })),
+      };
+    }),
+  );
+
+  return sections.filter((section) => section.skills.length > 0);
+}
+
+/**
+ * Category-page rollup: each skill with up to N top resources for the
+ * horizontal-scroll thumbnail rail.
+ */
+export async function getCategoryWithSkillResources(
+  categorySlug: string,
+  perSkill = 12,
+): Promise<{ category: CategorySummary | null; sections: SkillSection[] }> {
+  const supabase = getPublicSupabase();
+  const { category, skills } = await getCatalog(categorySlug);
+  if (!category) return { category: null, sections: [] };
+
+  if (!supabase) {
+    const sections = skills
+      .filter((skill) => skill.resource_count > 0)
+      .map((skill) => {
+        const resources = (fallbackResources[skill.slug] ?? []).map((resource) => ({
+          ...resource,
+          skill: {
+            id: skill.id,
+            slug: skill.slug,
+            name: skill.name,
+            category_slug: skill.category_slug,
+            category_name: category.name,
+          },
+        }));
+        return { skill, resources: resources.slice(0, perSkill) };
+      })
+      .filter((section) => section.resources.length > 0);
+    return { category, sections };
+  }
+
+  const skillsWithResources = skills.filter((skill) => skill.resource_count > 0);
+  if (skillsWithResources.length === 0) return { category, sections: [] };
+
+  const { data: relations } = await supabase
+    .from("link_skill_relations")
+    .select(
+      "id, skill_id, public_note, skill_level, upvote_count, created_at, links!inner(id, url, canonical_url, domain, title, description, thumbnail_url, content_type, created_at)",
+    )
+    .in("skill_id", skillsWithResources.map((skill) => skill.id))
+    .eq("is_active", true)
+    .eq("links.is_active", true)
+    .order("upvote_count", { ascending: false });
+
+  const bySkill = new Map<string, SkillResource[]>();
+  for (const relation of relations ?? []) {
+    const link = Array.isArray(relation.links) ? relation.links[0] : relation.links;
+    if (!link) continue;
+    const skill = skillsWithResources.find((item) => item.id === relation.skill_id);
+    if (!skill) continue;
+    const bucket = bySkill.get(skill.id) ?? [];
+    if (bucket.length >= perSkill) continue;
+    bucket.push({
+      id: relation.id,
+      public_note: relation.public_note,
+      skill_level: relation.skill_level,
+      upvote_count: relation.upvote_count ?? 0,
+      created_at: relation.created_at ?? link.created_at ?? null,
+      link,
+      skill: {
+        id: skill.id,
+        slug: skill.slug,
+        name: skill.name,
+        category_slug: skill.category_slug,
+        category_name: category.name,
+      },
+    });
+    bySkill.set(skill.id, bucket);
+  }
+
+  const sections = skillsWithResources
+    .map((skill) => ({ skill, resources: bySkill.get(skill.id) ?? [] }))
+    .filter((section) => section.resources.length > 0);
+
+  return { category, sections };
 }
 
 export interface AdminSuggestion {

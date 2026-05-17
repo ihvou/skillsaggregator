@@ -1,20 +1,10 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { notFound } from "next/navigation";
-import {
-  LevelFilterChips,
-  SkillFilterChips,
-  SortChips,
-} from "@/components/ResourceFilters";
-import { ResourceList } from "@/components/ResourceList";
-import { getAllCatalogs, getResourceListing } from "@/lib/data";
+import { PageHeader } from "@/components/PageHeader";
+import { ResourceTile } from "@/components/ResourceTile";
+import { SectionHeader } from "@/components/SectionHeader";
+import { getAllCatalogs, getCategoryWithSkillResources } from "@/lib/data";
 import { getBaseUrl } from "@/lib/env";
-import {
-  type PageSearchParams,
-  parseLevel,
-  parsePage,
-  parseSort,
-} from "@/lib/listing-params";
 
 export const revalidate = 3600;
 
@@ -29,83 +19,65 @@ export async function generateMetadata({
   params: Promise<{ category: string }>;
 }): Promise<Metadata> {
   const { category: slug } = await params;
-  const listing = await getResourceListing({ categorySlug: slug, pageSize: 1 });
-  if (!listing.category) return {};
+  const { category } = await getCategoryWithSkillResources(slug);
+  if (!category) return {};
   return {
-    title: `${listing.category.name} resources | Skills Aggregator`,
-    description: listing.category.description ?? `Curated resources for ${listing.category.name}.`,
-    alternates: { canonical: `${getBaseUrl()}/${listing.category.slug}` },
+    title: `${category.name} resources | Skills Aggregator`,
+    description: category.description ?? `Curated resources for ${category.name}.`,
+    alternates: { canonical: `${getBaseUrl()}/${category.slug}` },
   };
 }
 
 export default async function CategoryPage({
   params,
-  searchParams,
 }: {
   params: Promise<{ category: string }>;
-  searchParams?: Promise<PageSearchParams>;
 }) {
   const { category: slug } = await params;
-  const resolvedSearchParams = (await searchParams) ?? {};
-  const level = parseLevel(resolvedSearchParams);
-  const sort = parseSort(resolvedSearchParams);
-  const page = parsePage(resolvedSearchParams);
-  const listing = await getResourceListing({ categorySlug: slug, level, sort, page });
-  if (!listing.category) notFound();
-
-  const pathname = `/${listing.category.slug}`;
+  const { category, sections } = await getCategoryWithSkillResources(slug);
+  if (!category) notFound();
 
   return (
-    <main className="mx-auto max-w-6xl px-4 py-12">
-      <nav className="text-sm text-graphite">
-        <Link className="focus-ring hover:text-court" href="/">
-          Home
-        </Link>
-        <span className="px-2">/</span>
-        <span>{listing.category.name}</span>
-      </nav>
+    <div className="pb-20">
+      <PageHeader
+        title={category.name}
+        subtitle={category.description ?? undefined}
+        backHref="/"
+      />
 
-      <header className="mt-8 max-w-3xl">
-        <p className="text-sm font-semibold uppercase tracking-wide text-court">Category</p>
-        <h1 className="mt-3 text-4xl font-bold text-ink">{listing.category.name}</h1>
-        <p className="mt-4 text-lg leading-8 text-graphite">{listing.category.description}</p>
-      </header>
-
-      <section className="mt-8 grid gap-4 rounded-lg border border-ink/10 bg-white/80 p-4">
-        <div>
-          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-graphite">
-            Skills
-          </p>
-          <SkillFilterChips categorySlug={listing.category.slug} skills={listing.skills} />
-        </div>
-        <div>
-          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-graphite">
-            Level
-          </p>
-          <LevelFilterChips
-            pathname={pathname}
-            searchParams={resolvedSearchParams}
-            currentLevel={listing.level}
-          />
-        </div>
-        <div>
-          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-graphite">
-            Sort
-          </p>
-          <SortChips pathname={pathname} searchParams={resolvedSearchParams} currentSort={listing.sort} />
-        </div>
-      </section>
-
-      <section className="mt-8">
-        <ResourceList
-          resources={listing.resources}
-          totalCount={listing.totalCount}
-          page={listing.page}
-          pageCount={listing.pageCount}
-          pathname={pathname}
-          searchParams={resolvedSearchParams}
-        />
-      </section>
-    </main>
+      <div className="mt-12 space-y-14">
+        {sections.map((section) => (
+          <section key={section.skill.id} aria-labelledby={`skill-${section.skill.slug}`}>
+            <div className="mx-auto max-w-5xl px-4">
+              <SectionHeader
+                title={section.skill.name}
+                href={`/${category.slug}/${section.skill.slug}`}
+                subtitle={
+                  section.skill.resource_count
+                    ? `${section.skill.resource_count} ${section.skill.resource_count === 1 ? "resource" : "resources"}`
+                    : undefined
+                }
+              />
+            </div>
+            <div className="mt-5 overflow-x-auto no-scrollbar">
+              <div className="mx-auto flex max-w-5xl gap-4 px-4 pb-2">
+                {section.resources.map((resource) => (
+                  <ResourceTile key={resource.id} resource={resource} />
+                ))}
+              </div>
+            </div>
+            <div className="mx-auto mt-6 max-w-5xl px-4">
+              <div className="h-px bg-divider" />
+            </div>
+          </section>
+        ))}
+        {sections.length === 0 ? (
+          <div className="mx-auto max-w-5xl px-4 text-sm text-muted">
+            No approved resources for this category yet. Check back soon — the agent pulls new
+            resources every night.
+          </div>
+        ) : null}
+      </div>
+    </div>
   );
 }

@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
   makeCanonical,
@@ -7,9 +6,16 @@ import {
   type SkillResource,
 } from "@skillsaggregator/shared";
 import { JsonLd } from "@/components/JsonLd";
-import { ResourceGroups } from "@/components/ResourceGroups";
+import { PageHeader } from "@/components/PageHeader";
+import { ResourceCard } from "@/components/ResourceCard";
+import { SortFilterMenu } from "@/components/SortFilterMenu";
 import { getAllCatalogs, getSkillPage } from "@/lib/data";
 import { getBaseUrl } from "@/lib/env";
+import {
+  type PageSearchParams,
+  parseLevel,
+  parseSort,
+} from "@/lib/listing-params";
 
 export const revalidate = 3600;
 
@@ -77,68 +83,95 @@ function learningResourceJsonLd(resources: SkillResource[], pageUrl: string) {
   };
 }
 
+const LEVEL_LABELS = {
+  all: "All levels",
+  beginner: "Beginner",
+  intermediate: "Intermediate",
+  advanced: "Advanced",
+} as const;
+const SORT_LABELS = { popular: "Popular", newest: "Newest" } as const;
+
 export default async function SkillPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ category: string; skill: string }>;
+  searchParams?: Promise<PageSearchParams>;
 }) {
   const { category: categorySlug, skill: skillSlug } = await params;
-  const { category, skill, resources, relatedSkills } = await getSkillPage(categorySlug, skillSlug);
+  const resolvedSearchParams = (await searchParams) ?? {};
+  const level = parseLevel(resolvedSearchParams);
+  const sort = parseSort(resolvedSearchParams);
+  const { category, skill, resources } = await getSkillPage(categorySlug, skillSlug);
   if (!category || !skill) notFound();
 
+  // Re-sort + filter client-side because getSkillPage doesn't accept them yet
+  // (avoids touching the broader data layer for this redesign).
+  const sortedResources = [...resources].sort((a, b) =>
+    sort === "popular"
+      ? b.upvote_count - a.upvote_count
+      : Date.parse(b.created_at ?? "") - Date.parse(a.created_at ?? ""),
+  );
+  const filteredResources = level
+    ? sortedResources.filter((resource) => resource.skill_level === level)
+    : sortedResources;
+
   const pageUrl = makeCanonical(getBaseUrl(), category.slug, skill.slug);
+  const pathname = `/${category.slug}/${skill.slug}`;
+  const subtitleParts: string[] = [`${category.name}`, SORT_LABELS[sort]];
+  if (level) subtitleParts.push(LEVEL_LABELS[level]);
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-12">
-      <JsonLd data={learningResourceJsonLd(resources, pageUrl)} />
+    <div className="pb-20">
+      <JsonLd data={learningResourceJsonLd(filteredResources, pageUrl)} />
       <JsonLd
         data={{
           "@context": "https://schema.org",
           "@type": "BreadcrumbList",
           itemListElement: [
             { "@type": "ListItem", position: 1, name: "Home", item: getBaseUrl() },
-            { "@type": "ListItem", position: 2, name: category.name, item: `${getBaseUrl()}/${category.slug}` },
+            {
+              "@type": "ListItem",
+              position: 2,
+              name: category.name,
+              item: `${getBaseUrl()}/${category.slug}`,
+            },
             { "@type": "ListItem", position: 3, name: skill.name, item: pageUrl },
           ],
         }}
       />
-      <nav className="text-sm text-graphite">
-        <Link className="focus-ring hover:text-court" href="/">
-          Home
-        </Link>
-        <span className="px-2">/</span>
-        <Link className="focus-ring hover:text-court" href={`/${category.slug}`}>
-          {category.name}
-        </Link>
-        <span className="px-2">/</span>
-        <span>{skill.name}</span>
-      </nav>
+      <PageHeader
+        title={skill.name}
+        subtitle={subtitleParts.join(" · ")}
+        backHref={`/${category.slug}`}
+        rightAccessory={
+          <SortFilterMenu pathname={pathname} currentLevel={level} currentSort={sort} />
+        }
+      />
 
-      <header className="mt-8 max-w-3xl">
-        <p className="text-sm font-semibold uppercase tracking-wide text-court">
-          {category.name} skill
-        </p>
-        <h1 className="mt-3 text-4xl font-bold text-ink">{skill.name}</h1>
-        <p className="mt-4 text-lg leading-8 text-graphite">{skill.description}</p>
-      </header>
+      {skill.description ? (
+        <section className="mx-auto mt-6 max-w-5xl px-4">
+          <p className="max-w-3xl text-base leading-7 text-muted md:text-lg">
+            {skill.description}
+          </p>
+        </section>
+      ) : null}
 
-      <div className="mt-10 grid gap-10 lg:grid-cols-[1fr_280px]">
-        <ResourceGroups resources={resources} />
-        <aside className="lg:sticky lg:top-6 lg:self-start">
-          <h2 className="text-base font-semibold text-ink">Related skills</h2>
-          <div className="mt-3 grid gap-2">
-            {relatedSkills.map((related) => (
-              <Link
-                key={related.id}
-                href={`/${category.slug}/${related.slug}`}
-                className="focus-ring rounded-md border border-ink/10 bg-white px-3 py-2 text-sm font-medium text-ink hover:border-court/40 hover:text-court"
-              >
-                {related.name}
-              </Link>
+      <section className="mx-auto mt-10 max-w-5xl px-4">
+        {filteredResources.length === 0 ? (
+          <p className="text-sm text-muted">
+            No matches for this filter. Open the menu (…) to change sort or level.
+          </p>
+        ) : (
+          <div className="divide-y divide-divider">
+            {filteredResources.map((resource) => (
+              <div key={resource.id} className="py-5">
+                <ResourceCard resource={resource} />
+              </div>
             ))}
           </div>
-        </aside>
-      </div>
+        )}
+      </section>
     </div>
   );
 }

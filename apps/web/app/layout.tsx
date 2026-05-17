@@ -7,24 +7,25 @@ export const metadata: Metadata = {
     default: "Skills Aggregator",
     template: "%s | Skills Aggregator",
   },
-  description: "Find the best free tutorials for any skill you want to learn, across sports and training.",
+  description:
+    "Find the best free tutorials for any skill you want to learn, across sports and training.",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
-      <body>
-        <header className="border-b border-ink/10 bg-white/70 backdrop-blur">
-          <nav className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4">
-            <Link href="/" className="focus-ring text-sm font-bold uppercase tracking-wide text-ink">
+      <body className="bg-bgGroup text-text">
+        <header className="bg-bgGroup">
+          <nav className="mx-auto flex max-w-5xl items-center justify-between px-4 py-5">
+            <Link
+              href="/"
+              className="focus-ring text-base font-extrabold tracking-tight text-ink"
+            >
               Skills Aggregator
             </Link>
-            <div className="flex items-center gap-4 text-sm font-medium text-graphite">
-              <Link className="focus-ring hover:text-court" href="/admin">
+            <div className="flex items-center gap-4 text-sm font-medium text-muted">
+              <Link className="focus-ring transition hover:text-ink" href="/admin">
                 Admin
-              </Link>
-              <Link className="focus-ring hover:text-court" href="/sitemap.xml">
-                Sitemap
               </Link>
             </div>
           </nav>
