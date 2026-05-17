@@ -149,7 +149,9 @@ export async function getSkillPage(categorySlug: string, skillSlug: string) {
 
   const { data: resources } = await supabase
     .from("link_skill_relations")
-    .select("id, public_note, skill_level, upvote_count, links(id, url, canonical_url, domain, title, description, thumbnail_url, content_type)")
+    .select(
+      "id, public_note, skill_level, upvote_count, created_at, links(id, url, canonical_url, domain, title, description, thumbnail_url, content_type, created_at)",
+    )
     .eq("skill_id", skillRow.id)
     .eq("is_active", true)
     .order("upvote_count", { ascending: false });
@@ -171,6 +173,7 @@ export async function getSkillPage(categorySlug: string, skillSlug: string) {
         public_note: relation.public_note,
         skill_level: relation.skill_level,
         upvote_count: relation.upvote_count,
+        created_at: relation.created_at ?? link.created_at ?? null,
         skill: {
           id: skillRow.id,
           slug: skillRow.slug,
