@@ -8,6 +8,28 @@ An MVP learning-resource aggregator for sport and training skills. It includes:
 - Public link suggestions with contributor attribution across web and mobile.
 - Shared Zod schemas, prompt templates, and tests for the suggestion pipeline.
 
+## ⚠️ Destructive operations — read before applying migrations
+
+The local Postgres volume carries **all agent-collected content** (currently ~70 links / ~160 link-skill relations across all categories). It is NOT a clean repro from `seed.sql` — that file only seeds categories, skills, and trusted_sources. If you wipe the DB you lose everything the nightly collection has gathered.
+
+**Before running any of the following, dump first:**
+
+- `npx supabase db reset`
+- `supabase db reset`
+- `docker volume rm supabase_db_skillsaggregator`
+- `docker compose down -v` against the supabase stack
+- Any new migration that `drop`s tables, columns, or constraints carrying live data
+
+**Backup command** (always safe to run, fast, idempotent):
+
+```bash
+mkdir -p .collection/backups
+docker exec supabase_db_skillsaggregator pg_dump -U postgres -Fc -f /tmp/db.dump
+docker cp supabase_db_skillsaggregator:/tmp/db.dump .collection/backups/db-$(date -u +%Y%m%dT%H%M%SZ).dump
+```
+
+**If the catalog gets wiped anyway**, the `.collection/logs/nightly-*.log` files preserve every `candidate_scored` + `suggestion_submitted` event from past nightly runs (R20 design). Run `node scripts/replay-from-logs.mjs` to rebuild — takes ~5 seconds, idempotent, no LLM/YouTube calls needed. R26 (open) tracks productizing the backup-before-migration wrapper.
+
 ## Architecture
 
 The default MVP workflow is local collection plus human moderation:
