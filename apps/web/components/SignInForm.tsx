@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { Mail } from "lucide-react";
 import { getBrowserSupabase } from "@/lib/browserSupabase";
 
@@ -19,7 +19,7 @@ export function SignInForm({ nextPath = "/contributors/me" }: SignInFormProps) {
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const supabase = useMemo(() => getBrowserSupabase(), []);
+  const supabase = getBrowserSupabase();
 
   async function sendMagicLink(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();

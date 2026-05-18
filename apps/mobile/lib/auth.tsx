@@ -1,10 +1,9 @@
-import { createContext, PropsWithChildren, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, PropsWithChildren, useContext, useEffect, useState } from "react";
 import { Linking } from "react-native";
 import * as ExpoLinking from "expo-linking";
 import type { Session, User } from "@supabase/supabase-js";
-import { MMKV } from "react-native-mmkv";
 import { getKeys } from "./localState";
-import { getSupabase, setSupabaseAuthStorage } from "./supabase";
+import { getSupabase } from "./supabase";
 
 export interface ContributorProfile {
   id: string;
@@ -27,40 +26,37 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 const ACTION_PREFIXES = ["saved", "completed", "upvote", "downvote"] as const;
-const memory = new Map<string, string>();
-
-let storage: MMKV | null = null;
-try {
-  storage = new MMKV({ id: "skillsaggregator-auth" });
-} catch (_error) {
-  storage = null;
-}
-
-setSupabaseAuthStorage({
-  getItem(key: string) {
-    return storage ? (storage.getString(key) ?? null) : (memory.get(key) ?? null);
-  },
-  setItem(key: string, value: string) {
-    if (storage) storage.set(key, value);
-    else memory.set(key, value);
-  },
-  removeItem(key: string) {
-    if (storage) storage.delete(key);
-    else memory.delete(key);
-  },
-});
+const supabase = getSupabase();
+type ActionType = (typeof ACTION_PREFIXES)[number];
 
 function redirectTo() {
   return ExpoLinking.createURL("auth/callback");
 }
 
+function parseActionKey(key: string): { actionType: ActionType; linkId: string; linkSkillRelationId: string | null } | null {
+  const [actionType, linkId, linkSkillRelationId] = key.split(":");
+  if (!actionType || !linkId) return null;
+  if (!ACTION_PREFIXES.includes(actionType as ActionType)) return null;
+  return { actionType: actionType as ActionType, linkId, linkSkillRelationId: linkSkillRelationId ?? null };
+}
+
+function needsRelation(actionType: ActionType) {
+  return actionType === "upvote" || actionType === "downvote";
+}
+
 function actionRowsForUser(userId: string) {
   return ACTION_PREFIXES.flatMap((prefix) =>
-    getKeys(`${prefix}:`).map((key) => ({
-      user_id: userId,
-      link_id: key.slice(prefix.length + 1),
-      action_type: prefix,
-    })),
+    getKeys(`${prefix}:`).flatMap((key) => {
+      const parsed = parseActionKey(key);
+      if (!parsed) return [];
+      if (needsRelation(parsed.actionType) && !parsed.linkSkillRelationId) return [];
+      return [{
+        user_id: userId,
+        link_id: parsed.linkId,
+        action_type: parsed.actionType,
+        link_skill_relation_id: parsed.linkSkillRelationId,
+      }];
+    }),
   );
 }
 
@@ -68,7 +64,6 @@ export function AuthProvider({ children }: PropsWithChildren) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<ContributorProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const supabase = useMemo(() => getSupabase(), []);
 
   async function refreshProfileForSession(nextSession: Session | null) {
     if (!supabase || !nextSession?.user) {
@@ -94,7 +89,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
     if (rows.length === 0) return;
     const { error } = await supabase
       .from("user_actions")
-      .upsert(rows, { onConflict: "user_id,link_id,action_type", ignoreDuplicates: true });
+      .upsert(rows, { onConflict: "user_id,link_id,action_type,action_context_id", ignoreDuplicates: true });
     if (error) console.warn("mobile_action_sync_failed", error.message);
   }
 
@@ -139,7 +134,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
       listener.subscription.unsubscribe();
       subscription.remove();
     };
-  }, [supabase]);
+  }, []);
 
   const value: AuthContextValue = {
     session,

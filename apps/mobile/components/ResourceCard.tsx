@@ -65,10 +65,11 @@ function formatCount(value: number): string {
  *  - Tap opens the URL; swipe right to save, swipe left to mark complete
  */
 export function ResourceCard({ resource }: ResourceCardProps) {
+  const relationId = resource.id;
   const [isSaved, setIsSaved] = useState(() => getFlag(`saved:${resource.link.id}`));
   const [isCompleted, setIsCompleted] = useState(() => getFlag(`completed:${resource.link.id}`));
-  const [upvoted, setUpvoted] = useState(() => getFlag(`upvote:${resource.link.id}`));
-  const [downvoted, setDownvoted] = useState(() => getFlag(`downvote:${resource.link.id}`));
+  const [upvoted, setUpvoted] = useState(() => getFlag(`upvote:${resource.link.id}:${relationId}`));
+  const [downvoted, setDownvoted] = useState(() => getFlag(`downvote:${resource.link.id}:${relationId}`));
 
   function toggleSaved() {
     const next = !isSaved;
@@ -87,10 +88,10 @@ export function ResourceCard({ resource }: ResourceCardProps) {
   function toggleUpvote() {
     const next = !upvoted;
     setUpvoted(next);
-    setFlag(`upvote:${resource.link.id}`, next);
+    setFlag(`upvote:${resource.link.id}:${relationId}`, next);
     if (next && downvoted) {
       setDownvoted(false);
-      setFlag(`downvote:${resource.link.id}`, false);
+      setFlag(`downvote:${resource.link.id}:${relationId}`, false);
     }
     triggerSelectionHaptic();
   }
@@ -98,10 +99,10 @@ export function ResourceCard({ resource }: ResourceCardProps) {
   function toggleDownvote() {
     const next = !downvoted;
     setDownvoted(next);
-    setFlag(`downvote:${resource.link.id}`, next);
+    setFlag(`downvote:${resource.link.id}:${relationId}`, next);
     if (next && upvoted) {
       setUpvoted(false);
-      setFlag(`upvote:${resource.link.id}`, false);
+      setFlag(`upvote:${resource.link.id}:${relationId}`, false);
     }
     triggerSelectionHaptic();
   }
@@ -134,11 +135,15 @@ export function ResourceCard({ resource }: ResourceCardProps) {
   const SavedIcon = isSaved ? BookmarkCheck : Bookmark;
   const contributor = resource.link.contributor_profile;
 
-  // Reddit-style net score: server upvote_count + local vote delta.
+  // Reddit-style net score: server vote_score + local vote delta.
   const ratingCount = useMemo(() => {
-    const base = Number.isFinite(resource.upvote_count) ? resource.upvote_count : 0;
-    return base + (upvoted ? 1 : 0) - (downvoted ? 1 : 0);
-  }, [resource.upvote_count, upvoted, downvoted]);
+    const upvoteCount = Number.isFinite(resource.upvote_count) ? resource.upvote_count : 0;
+    const downvoteCount = Number.isFinite(resource.downvote_count) ? (resource.downvote_count ?? 0) : 0;
+    const base = Number.isFinite(resource.vote_score)
+      ? (resource.vote_score ?? 0)
+      : Math.max(0, upvoteCount - downvoteCount);
+    return Math.max(0, base + (upvoted ? 1 : 0) - (downvoted ? 1 : 0));
+  }, [resource.upvote_count, resource.downvote_count, resource.vote_score, upvoted, downvoted]);
 
   const ratingColor = upvoted ? colors.accent : downvoted ? colors.ink : colors.muted;
 

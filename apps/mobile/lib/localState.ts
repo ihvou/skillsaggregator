@@ -21,7 +21,7 @@ export function getFlag(key: string) {
 
 export function getKeys(prefix: string) {
   const keys = storage ? storage.getAllKeys() : [...memory.keys()];
-  return keys.filter((key) => key.startsWith(prefix));
+  return keys.filter((key) => key.startsWith(prefix) && getFlag(key));
 }
 
 export function setLastSeenSkill(skillId: string) {

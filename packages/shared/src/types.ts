@@ -52,6 +52,8 @@ export interface SkillResource {
   public_note: string | null;
   skill_level: SkillLevel | null;
   upvote_count: number;
+  downvote_count?: number;
+  vote_score?: number;
   created_at?: string | null;
   link: LinkResource;
   skill?: Pick<SkillSummary, "id" | "slug" | "name" | "category_slug"> & {

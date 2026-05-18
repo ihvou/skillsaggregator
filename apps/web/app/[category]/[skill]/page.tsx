@@ -110,7 +110,7 @@ export default async function SkillPage({
   // (avoids touching the broader data layer for this redesign).
   const sortedResources = [...resources].sort((a, b) =>
     sort === "popular"
-      ? b.upvote_count - a.upvote_count
+      ? (b.vote_score ?? b.upvote_count) - (a.vote_score ?? a.upvote_count)
       : Date.parse(b.created_at ?? "") - Date.parse(a.created_at ?? ""),
   );
   const filteredResources = level

@@ -153,19 +153,43 @@ create trigger on_auth_user_create_contributor_profile
 after insert on auth.users
 for each row execute function public.create_contributor_profile_for_user();
 
+with user_display_names as (
+  select
+    users.id,
+    coalesce(
+      nullif(trim(users.raw_user_meta_data ->> 'full_name'), ''),
+      nullif(trim(users.raw_user_meta_data ->> 'name'), ''),
+      nullif(trim(split_part(users.email, '@', 1)), ''),
+      'Contributor'
+    ) as display_name,
+    nullif(users.raw_user_meta_data ->> 'avatar_url', '') as avatar_url
+  from auth.users as users
+),
+prepared_slugs as (
+  select
+    id,
+    display_name,
+    avatar_url,
+    coalesce(
+      nullif(public.slugify(display_name), ''),
+      'contributor-' || left(replace(id::text, '-', ''), 8)
+    ) as base_slug
+  from user_display_names
+),
+numbered_slugs as (
+  select
+    *,
+    row_number() over (partition by base_slug order by id) as slug_number
+  from prepared_slugs
+)
 insert into public.contributor_profiles (user_id, display_name, slug, avatar_url)
 select
-  users.id,
-  coalesce(
-    nullif(users.raw_user_meta_data ->> 'full_name', ''),
-    nullif(users.raw_user_meta_data ->> 'name', ''),
-    nullif(split_part(users.email, '@', 1), ''),
-    'Contributor'
-  ),
-  'contributor-' || left(replace(users.id::text, '-', ''), 8),
-  nullif(users.raw_user_meta_data ->> 'avatar_url', '')
-from auth.users as users
-on conflict (user_id) do nothing;
+  id,
+  display_name,
+  case when slug_number = 1 then base_slug else base_slug || '-' || slug_number::text end,
+  avatar_url
+from numbered_slugs
+on conflict do nothing;
 
 create or replace function public.sync_contributor_accepted_count()
 returns trigger

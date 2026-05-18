@@ -1,17 +1,39 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 let client: SupabaseClient | null = null;
-type SupabaseStorage = {
-  getItem: (key: string) => string | null | Promise<string | null>;
-  setItem: (key: string, value: string) => void | Promise<void>;
-  removeItem: (key: string) => void | Promise<void>;
+const memory = new Map<string, string>();
+
+type NativeAuthStorage = {
+  getString: (key: string) => string | undefined;
+  set: (key: string, value: string) => void;
+  delete: (key: string) => void;
 };
 
-let authStorage: SupabaseStorage | undefined;
+declare const require: (id: string) => {
+  MMKV: new (options: { id: string }) => NativeAuthStorage;
+};
 
-export function setSupabaseAuthStorage(storage: SupabaseStorage) {
-  if (!client) authStorage = storage;
+let storage: NativeAuthStorage | null = null;
+try {
+  const { MMKV } = require("react-native-mmkv");
+  storage = new MMKV({ id: "skillsaggregator-auth" });
+} catch (_error) {
+  storage = null;
 }
+
+const authStorage = {
+  getItem(key: string) {
+    return storage ? (storage.getString(key) ?? null) : (memory.get(key) ?? null);
+  },
+  setItem(key: string, value: string) {
+    if (storage) storage.set(key, value);
+    else memory.set(key, value);
+  },
+  removeItem(key: string) {
+    if (storage) storage.delete(key);
+    else memory.delete(key);
+  },
+};
 
 export function getSupabase() {
   const url = process.env.EXPO_PUBLIC_SUPABASE_URL;

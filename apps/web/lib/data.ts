@@ -20,6 +20,7 @@ export type ResourceSort = "newest" | "popular";
 
 const RESOURCE_LINK_SELECT =
   "id, url, canonical_url, domain, title, description, thumbnail_url, content_type, created_at, contributor_profile:contributor_profiles(id, slug, display_name, avatar_url, accepted_count)";
+const RELATION_VOTE_SELECT = "upvote_count, downvote_count, vote_score";
 
 function shapeLinkWithContributor<TLink extends { contributor_profile?: unknown }>(link: TLink) {
   const contributor = Array.isArray(link.contributor_profile)
@@ -28,6 +29,20 @@ function shapeLinkWithContributor<TLink extends { contributor_profile?: unknown 
   return {
     ...link,
     contributor_profile: contributor ?? null,
+  };
+}
+
+function relationVotes(relation: {
+  upvote_count?: number | null;
+  downvote_count?: number | null;
+  vote_score?: number | null;
+}) {
+  const upvoteCount = relation.upvote_count ?? 0;
+  const downvoteCount = relation.downvote_count ?? 0;
+  return {
+    upvote_count: upvoteCount,
+    downvote_count: downvoteCount,
+    vote_score: relation.vote_score ?? Math.max(0, upvoteCount - downvoteCount),
   };
 }
 
@@ -164,11 +179,11 @@ export async function getSkillPage(categorySlug: string, skillSlug: string) {
   const { data: resources } = await supabase
     .from("link_skill_relations")
     .select(
-      `id, public_note, skill_level, upvote_count, created_at, links(${RESOURCE_LINK_SELECT})`,
+      `id, public_note, skill_level, ${RELATION_VOTE_SELECT}, created_at, links(${RESOURCE_LINK_SELECT})`,
     )
     .eq("skill_id", skillRow.id)
     .eq("is_active", true)
-    .order("upvote_count", { ascending: false });
+    .order("vote_score", { ascending: false });
 
   const { data: siblings } = await supabase
     .from("skills")
@@ -186,7 +201,7 @@ export async function getSkillPage(categorySlug: string, skillSlug: string) {
         id: relation.id,
         public_note: relation.public_note,
         skill_level: relation.skill_level,
-        upvote_count: relation.upvote_count,
+        ...relationVotes(relation),
         created_at: relation.created_at ?? link.created_at ?? null,
         skill: {
           id: skillRow.id,
@@ -333,12 +348,12 @@ export async function getCategoryWithSkillResources(
   const { data: relations } = await supabase
     .from("link_skill_relations")
     .select(
-      `id, skill_id, public_note, skill_level, upvote_count, created_at, links!inner(${RESOURCE_LINK_SELECT})`,
+      `id, skill_id, public_note, skill_level, ${RELATION_VOTE_SELECT}, created_at, links!inner(${RESOURCE_LINK_SELECT})`,
     )
     .in("skill_id", skillsWithResources.map((skill) => skill.id))
     .eq("is_active", true)
     .eq("links.is_active", true)
-    .order("upvote_count", { ascending: false });
+    .order("vote_score", { ascending: false });
 
   const bySkill = new Map<string, SkillResource[]>();
   for (const relation of relations ?? []) {
@@ -352,7 +367,7 @@ export async function getCategoryWithSkillResources(
       id: relation.id,
       public_note: relation.public_note,
       skill_level: relation.skill_level,
-      upvote_count: relation.upvote_count ?? 0,
+      ...relationVotes(relation),
       created_at: relation.created_at ?? link.created_at ?? null,
       link: shapeLinkWithContributor(link),
       skill: {
@@ -433,7 +448,7 @@ export async function getContributorProfileBySlug(slug: string): Promise<{
   const { data: relations, error: relationsError } = await supabase
     .from("link_skill_relations")
     .select(
-      `id, public_note, skill_level, upvote_count, created_at, links!inner(${RESOURCE_LINK_SELECT}), skills!inner(id, slug, name, categories!inner(slug, name))`,
+      `id, public_note, skill_level, ${RELATION_VOTE_SELECT}, created_at, links!inner(${RESOURCE_LINK_SELECT}), skills!inner(id, slug, name, categories!inner(slug, name))`,
     )
     .eq("is_active", true)
     .eq("links.is_active", true)
@@ -458,7 +473,7 @@ export async function getContributorProfileBySlug(slug: string): Promise<{
       id: relation.id,
       public_note: relation.public_note,
       skill_level: relation.skill_level,
-      upvote_count: relation.upvote_count ?? 0,
+      ...relationVotes(relation),
       created_at: relation.created_at ?? link.created_at ?? null,
       link: shapeLinkWithContributor(link),
     };

@@ -3,9 +3,10 @@ import { getDomain, normalizeCanonicalUrl } from "../_shared/normalization.ts";
 import { corsForbiddenResponse, errorResponse, isAllowedCorsOrigin, jsonResponse, optionsResponse, readJson } from "../_shared/responses.ts";
 import { submitSuggestionSchema, suggestionPayloadByType } from "../_shared/schemas.ts";
 import { chooseInternalAuthor } from "../_shared/database.ts";
-import { getServiceClient } from "../_shared/supabase.ts";
+import { callFunction, getServiceClient } from "../_shared/supabase.ts";
+import { finalSuggestionStatus, isInternalRequest, resolveSubmittedByUserId } from "./security.ts";
 
-const HUMAN_RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;
+const HUMAN_RATE_LIMIT_WINDOW_SECONDS = 60 * 60;
 const HUMAN_RATE_LIMIT_MAX = 10;
 const RECENT_DUPLICATE_WINDOW_MS = 24 * 60 * 60 * 1000;
 const STATIC_SPAM_DOMAINS = new Set([
@@ -25,10 +26,6 @@ const STATIC_SPAM_DOMAINS = new Set([
   "ouo.io",
   "sh.st",
   "trafficmonsoon.com",
-  "free-money.example",
-  "casino.example",
-  "porn.example",
-  "phishing.example",
 ]);
 
 function clientIp(request: Request) {
@@ -105,32 +102,24 @@ async function enforceHumanRateLimit(
   supabase: ReturnType<typeof getServiceClient>,
   ip: string,
 ) {
-  const now = new Date();
-  const windowStart = new Date(now.getTime() - HUMAN_RATE_LIMIT_WINDOW_MS).toISOString();
-  const { data: existing, error: readError } = await supabase
-    .from("suggest_rate_limits")
-    .select("ip, window_start, count")
-    .eq("ip", ip)
-    .maybeSingle();
-  if (readError) throw readError;
+  const { data, error } = await supabase.rpc("check_suggest_rate_limit", {
+    p_ip: ip,
+    p_limit: HUMAN_RATE_LIMIT_MAX,
+    p_window_seconds: HUMAN_RATE_LIMIT_WINDOW_SECONDS,
+  }).single();
+  if (error) throw error;
+  if (!data) throw new Error("Rate limit check returned no result.");
 
-  if (!existing || Date.parse(existing.window_start) < Date.parse(windowStart)) {
-    const { error } = await supabase
-      .from("suggest_rate_limits")
-      .upsert({ ip, window_start: now.toISOString(), count: 1, updated_at: now.toISOString() });
-    if (error) throw error;
-    return;
-  }
+  console.info("submit_suggestion_rate_limit_checked", {
+    ip,
+    allowed: data.allowed,
+    count: data.request_count,
+    window_start: data.window_start,
+  });
 
-  if (existing.count >= HUMAN_RATE_LIMIT_MAX) {
+  if (!data.allowed) {
     throw Object.assign(new Error("Slow down. Please try again in about an hour."), { status: 429 });
   }
-
-  const { error } = await supabase
-    .from("suggest_rate_limits")
-    .update({ count: existing.count + 1, updated_at: now.toISOString() })
-    .eq("ip", ip);
-  if (error) throw error;
 }
 
 async function submittedUserIdFromAuthorization(
@@ -158,7 +147,8 @@ Deno.serve(async (request) => {
     const input = submitSuggestionSchema.parse(await readJson(request));
     const ip = clientIp(request);
     const requestedStatus = input.requested_status ?? input.status;
-    const finalStatus = "pending";
+    const internalRequest = isInternalRequest(request);
+    const finalStatus = finalSuggestionStatus(internalRequest, requestedStatus);
     const payload = suggestionPayloadByType[input.type].parse(input.payload_json) as Record<string, unknown>;
     const isHuman = input.origin_type === "human";
 
@@ -166,6 +156,9 @@ Deno.serve(async (request) => {
       type: input.type,
       origin_type: input.origin_type,
       origin_name: input.origin_name,
+      requested_status: requestedStatus,
+      final_status: finalStatus,
+      internal_request: internalRequest,
       ip,
     });
 
@@ -248,9 +241,20 @@ Deno.serve(async (request) => {
       }
     }
 
-    const submittedByUserId = isHuman
-      ? await submittedUserIdFromAuthorization(supabase, request)
-      : input.submitted_by_user_id ?? null;
+    const bearerUserId = await submittedUserIdFromAuthorization(supabase, request);
+    const submittedByUserId = resolveSubmittedByUserId({
+      bearerUserId,
+      bodySubmittedByUserId: input.submitted_by_user_id ?? null,
+      internalRequest,
+    });
+
+    if (!internalRequest && input.submitted_by_user_id && input.submitted_by_user_id !== submittedByUserId) {
+      console.warn("submit_suggestion_body_attribution_ignored", {
+        origin_type: input.origin_type,
+        body_submitted_by_user_id: input.submitted_by_user_id,
+        bearer_user_id: bearerUserId,
+      });
+    }
 
     const { data: inserted, error: insertError } = await supabase
       .from("suggestions")
@@ -281,6 +285,26 @@ Deno.serve(async (request) => {
       submitted_by_user_id: submittedByUserId,
       dedupe_key: dedupeKey,
     });
+
+    if (finalStatus === "auto_approved") {
+      console.info("submit_suggestion_auto_apply_started", {
+        suggestion_id: inserted.id,
+        requested_status: requestedStatus,
+      });
+      const applied = await callFunction("apply-suggestion", {
+        suggestion_id: inserted.id,
+        moderator_user_id: null,
+      });
+      console.info("submit_suggestion_auto_apply_completed", {
+        suggestion_id: inserted.id,
+      });
+      return jsonResponse({
+        suggestion_id: inserted.id,
+        status: "auto_approved",
+        requested_status: requestedStatus,
+        applied,
+      }, 200, request);
+    }
 
     return jsonResponse({
       suggestion_id: inserted.id,

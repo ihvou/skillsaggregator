@@ -27,6 +27,7 @@ export type DiscoverCategorySection = {
 
 const RESOURCE_LINK_SELECT =
   "id, url, canonical_url, domain, title, description, thumbnail_url, content_type, created_at, contributor_profile:contributor_profiles(id, slug, display_name, avatar_url, accepted_count)";
+const RELATION_VOTE_SELECT = "upvote_count, downvote_count, vote_score";
 
 function shapeLinkWithContributor<TLink extends { contributor_profile?: unknown }>(link: TLink) {
   const contributor = Array.isArray(link.contributor_profile)
@@ -35,6 +36,20 @@ function shapeLinkWithContributor<TLink extends { contributor_profile?: unknown 
   return {
     ...link,
     contributor_profile: contributor ?? null,
+  };
+}
+
+function relationVotes(relation: {
+  upvote_count?: number | null;
+  downvote_count?: number | null;
+  vote_score?: number | null;
+}) {
+  const upvoteCount = relation.upvote_count ?? 0;
+  const downvoteCount = relation.downvote_count ?? 0;
+  return {
+    upvote_count: upvoteCount,
+    downvote_count: downvoteCount,
+    vote_score: relation.vote_score ?? Math.max(0, upvoteCount - downvoteCount),
   };
 }
 
@@ -65,7 +80,7 @@ function normalizeSort(sort: ResourceSort | undefined): ResourceSort {
 
 function resourceSorter(sort: ResourceSort) {
   return (a: SkillResource, b: SkillResource) => {
-    if (sort === "popular") return b.upvote_count - a.upvote_count;
+    if (sort === "popular") return (b.vote_score ?? b.upvote_count) - (a.vote_score ?? a.upvote_count);
     return Date.parse(b.created_at ?? "") - Date.parse(a.created_at ?? "");
   };
 }
@@ -142,11 +157,11 @@ export async function getSkillsForCategory(categorySlug: string): Promise<{
   const { data: relations } = skillIds.length
     ? await supabase
         .from("link_skill_relations")
-        .select("skill_id, upvote_count, links!inner(thumbnail_url)")
+        .select("skill_id, vote_score, links!inner(thumbnail_url)")
         .in("skill_id", skillIds)
         .eq("is_active", true)
         .eq("links.is_active", true)
-        .order("upvote_count", { ascending: false })
+        .order("vote_score", { ascending: false })
     : { data: [] };
 
   const counts = new Map<string, number>();
@@ -212,10 +227,10 @@ export async function getSkillResources(categorySlug: string, skillSlug: string,
 
   const { data: relations } = await supabase
     .from("link_skill_relations")
-    .select(`id, public_note, skill_level, upvote_count, created_at, links(${RESOURCE_LINK_SELECT})`)
+    .select(`id, public_note, skill_level, ${RELATION_VOTE_SELECT}, created_at, links(${RESOURCE_LINK_SELECT})`)
     .eq("skill_id", skill.id)
     .eq("is_active", true)
-    .order(sort === "newest" ? "created_at" : "upvote_count", { ascending: false });
+    .order(sort === "newest" ? "created_at" : "vote_score", { ascending: false });
 
   return {
     category,
@@ -237,7 +252,7 @@ export async function getSkillResources(categorySlug: string, skillSlug: string,
           id: relation.id,
           public_note: relation.public_note,
           skill_level: relation.skill_level,
-          upvote_count: relation.upvote_count,
+          ...relationVotes(relation),
           created_at: relation.created_at,
           link: shapeLinkWithContributor(link),
           skill: {
@@ -344,12 +359,12 @@ export async function getSavedResources(linkIds: string[]): Promise<SkillResourc
   const { data: relations } = await supabase
     .from("link_skill_relations")
     .select(
-      `id, public_note, skill_level, upvote_count, created_at, link_id, links!inner(${RESOURCE_LINK_SELECT}), skills!inner(id, slug, name, categories!inner(slug, name))`,
+      `id, public_note, skill_level, ${RELATION_VOTE_SELECT}, created_at, link_id, links!inner(${RESOURCE_LINK_SELECT}), skills!inner(id, slug, name, categories!inner(slug, name))`,
     )
     .in("link_id", linkIds)
     .eq("is_active", true)
     .eq("links.is_active", true)
-    .order("upvote_count", { ascending: false });
+    .order("vote_score", { ascending: false });
 
   const byLink = new Map<string, SkillResource>();
   for (const relation of relations ?? []) {
@@ -366,7 +381,7 @@ export async function getSavedResources(linkIds: string[]): Promise<SkillResourc
       id: relation.id,
       public_note: relation.public_note,
       skill_level: relation.skill_level,
-      upvote_count: relation.upvote_count ?? 0,
+      ...relationVotes(relation),
       created_at: relation.created_at ?? link.created_at ?? null,
       link: shapeLinkWithContributor(link),
     };

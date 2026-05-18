@@ -13,7 +13,7 @@ An MVP learning-resource aggregator for sport and training skills. It includes:
 The default MVP workflow is local collection plus human moderation:
 
 - Local collection scripts gather resources and POST them to `submit-suggestion` with `requested_status: "pending"`.
-- `submit-suggestion` stores every suggestion as `pending`, even if a caller asks for `auto_approved`.
+- `submit-suggestion` stores public and unauthenticated requests as `pending`; `auto_approved` is honored only for internal requests carrying `x-internal-token` that matches `INTERNAL_FUNCTION_TOKEN`.
 - Moderators apply accepted suggestions through `apply-suggestion`, which writes links and relations in Postgres.
 - The `notify_revalidation()` trigger posts directly to the Vercel `/api/revalidate` route using Vault `revalidate_url` and `revalidate_secret`; there is no separate `revalidate-web` Edge Function.
 - Cloud collection functions `link-searcher`, `link-checker`, and `triangulate` are dormant for this phase. They stay in the repo for a future deployed-agent mode, but migration `0006_disable_cron.sql` unschedules their automatic cron jobs.
@@ -43,6 +43,7 @@ Copy `.env.example` values into the relevant app and Supabase environments.
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 - `SUPABASE_SERVICE_ROLE_KEY`
+- `INTERNAL_FUNCTION_TOKEN` (optional; enables internal `auto_approved` submit-suggestion calls)
 - `NEXT_PUBLIC_BASE_URL`
 - `BASE_URL`
 - `ALLOWED_ORIGINS`

@@ -54,10 +54,11 @@ function formatCount(value: number): string {
  */
 export function ResourceCard({ resource }: ResourceCardProps) {
   const linkId = resource.link.id;
+  const relationId = resource.id;
   const [isSaved, toggleSaved] = useLocalFlag(`saved:${linkId}`);
   const [isCompleted, toggleCompleted] = useLocalFlag(`completed:${linkId}`);
-  const [upvoted, , setUpvoted] = useLocalFlag(`upvote:${linkId}`);
-  const [downvoted, , setDownvoted] = useLocalFlag(`downvote:${linkId}`);
+  const [upvoted, , setUpvoted] = useLocalFlag(`upvote:${linkId}:${relationId}`);
+  const [downvoted, , setDownvoted] = useLocalFlag(`downvote:${linkId}:${relationId}`);
 
   const dateLabel = formatDate(resource.created_at);
   const thumbnail = resource.link.thumbnail_url;
@@ -76,9 +77,13 @@ export function ResourceCard({ resource }: ResourceCardProps) {
   }
 
   const ratingCount = useMemo(() => {
-    const base = Number.isFinite(resource.upvote_count) ? resource.upvote_count : 0;
-    return base + (upvoted ? 1 : 0) - (downvoted ? 1 : 0);
-  }, [resource.upvote_count, upvoted, downvoted]);
+    const upvoteCount = Number.isFinite(resource.upvote_count) ? resource.upvote_count : 0;
+    const downvoteCount = Number.isFinite(resource.downvote_count) ? (resource.downvote_count ?? 0) : 0;
+    const base = Number.isFinite(resource.vote_score)
+      ? (resource.vote_score ?? 0)
+      : Math.max(0, upvoteCount - downvoteCount);
+    return Math.max(0, base + (upvoted ? 1 : 0) - (downvoted ? 1 : 0));
+  }, [resource.upvote_count, resource.downvote_count, resource.vote_score, upvoted, downvoted]);
 
   const SavedIcon = isSaved ? BookmarkCheck : Bookmark;
   const ratingColor = upvoted
