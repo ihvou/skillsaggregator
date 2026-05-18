@@ -27,6 +27,17 @@ describe("dedupe helpers", () => {
     ).toThrow("resolved author");
   });
 
+  it("builds SOURCE_ADD keys from the source and category", () => {
+    expect(
+      buildDedupeKey("SOURCE_ADD", {
+        source_type: "youtube_channel",
+        identifier: "UCExample",
+        display_name: "Example Coach",
+        category_id: "00000000-0000-4000-8000-000000000001",
+      }),
+    ).toBe("SOURCE_ADD:youtube_channel:ucexample:00000000-0000-4000-8000-000000000001");
+  });
+
   it("slugifies skill names", () => {
     expect(slugify("Serve (low)")).toBe("serve-low");
   });

@@ -14,6 +14,18 @@ interface ModerationQueueProps {
 
 function getPreview(suggestion: AdminSuggestion) {
   const payload = suggestion.payload_json;
+  if (suggestion.type === "SOURCE_ADD") {
+    return {
+      title: typeof payload.display_name === "string" ? payload.display_name : "New source",
+      thumbnail: null,
+      url: typeof payload.identifier === "string" ? payload.identifier : null,
+      note:
+        typeof payload.source_type === "string"
+          ? `Source candidate: ${payload.source_type}`
+          : "Source candidate",
+      level: null,
+    };
+  }
   return {
     title:
       suggestion.link?.title ??

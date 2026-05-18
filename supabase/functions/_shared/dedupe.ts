@@ -86,6 +86,13 @@ export function buildDedupeKey(
         authorInternalUserId,
         "upvote",
       ].join(":");
+    case "SOURCE_ADD":
+      return [
+        "SOURCE_ADD",
+        requireValue("source_type"),
+        requireValue("identifier").toLowerCase(),
+        parsed.category_id ?? "global",
+      ].join(":");
     case "SKILL_CREATE":
       return ["SKILL_CREATE", requireValue("category_id"), normalizeSkillName(requireValue("name"))].join(":");
     case "SKILL_DELETE":

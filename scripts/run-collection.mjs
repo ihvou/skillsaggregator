@@ -24,6 +24,10 @@
  *   COLLECT_MIN_DURATION_SEC      default 60
  *   COLLECT_MAX_DURATION_SEC      default 2700  (45 min)
  *   COLLECT_MAX_VIDEO_AGE_DAYS    default 1825 (5 years)
+ *   COLLECT_SEARCH_RESULTS_PER_CHANNEL default 25
+ *   COLLECT_FRESH_UPLOAD_AGE_DAYS default 30
+ *   COLLECT_LEVEL_TARGET_PER_SKILL default 3
+ *   COLLECT_SATURATION_COOLDOWN_DAYS default 7
  *   COLLECT_SECONDARY_RELEVANCE_THRESHOLD default 0.6
  *   COLLECT_MAX_SECONDARY_SKILLS   default 4
  *   COLLECT_TRANSCRIPT_TMP_DIR    default .collection/transcripts
@@ -66,7 +70,11 @@ const config = {
   ytdlpSleepRequests: Number(process.env.YTDLP_SLEEP_REQUESTS ?? 3),
   ytdlpSleepSubtitles: Number(process.env.YTDLP_SLEEP_SUBTITLES ?? 5),
   candidatesToScorePerSkill: Number(process.env.COLLECT_CANDIDATES_TO_SCORE ?? 30),
-  searchResultsPerChannel: Number(process.env.COLLECT_SEARCH_RESULTS_PER_CHANNEL ?? 10),
+  searchResultsPerChannel: Number(process.env.COLLECT_SEARCH_RESULTS_PER_CHANNEL ?? 25),
+  freshUploadAgeDays: Number(process.env.COLLECT_FRESH_UPLOAD_AGE_DAYS ?? 30),
+  levelTargetPerSkill: Number(process.env.COLLECT_LEVEL_TARGET_PER_SKILL ?? 3),
+  saturationDuplicateThreshold: Number(process.env.COLLECT_SATURATION_DUPLICATE_THRESHOLD ?? 0.9),
+  saturationCooldownDays: Number(process.env.COLLECT_SATURATION_COOLDOWN_DAYS ?? 7),
   ytdlpListTimeoutMs: Number(process.env.COLLECT_YTDLP_LIST_TIMEOUT_MS ?? 60_000),
   ytdlpTranscriptTimeoutMs: Number(process.env.COLLECT_YTDLP_TRANSCRIPT_TIMEOUT_MS ?? 60_000),
   ollamaTimeoutMs: Number(process.env.COLLECT_OLLAMA_TIMEOUT_MS ?? 90_000),
@@ -127,6 +135,20 @@ function errorMessage(error) {
 
 function errorMetadata(error) {
   return error instanceof InfrastructureError || error instanceof SkillAbortError ? error.metadata : {};
+}
+
+function dateAfterDays(days) {
+  const date = new Date(Date.now() - days * 86_400_000);
+  return [
+    date.getUTCFullYear(),
+    String(date.getUTCMonth() + 1).padStart(2, "0"),
+    String(date.getUTCDate()).padStart(2, "0"),
+  ].join("");
+}
+
+function clampFinite(value, fallback = 0) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
 }
 
 function enqueueAgentRunEvent(level, event, message, metadata) {
@@ -205,8 +227,37 @@ async function loadSkills(slug) {
   if (slug) {
     const params = categorySlugFilter ? [slug, categorySlugFilter] : [slug];
     const rows = await dbQuery(
-      `select s.id, s.slug, s.name, coalesce(s.description, ''), s.category_id, c.slug
-       from public.skills s join public.categories c on c.id = s.category_id
+      `with relation_counts as (
+         select
+           s.id as skill_id,
+           count(lsr.id) filter (where lsr.is_active and l.is_active)::integer as link_count,
+           count(lsr.id) filter (where lsr.is_active and l.is_active and lsr.skill_level = 'beginner')::integer as beginner_count,
+           count(lsr.id) filter (where lsr.is_active and l.is_active and lsr.skill_level = 'intermediate')::integer as intermediate_count,
+           count(lsr.id) filter (where lsr.is_active and l.is_active and lsr.skill_level = 'advanced')::integer as advanced_count,
+           count(lsr.id) filter (where lsr.is_active and l.is_active and lsr.skill_level is null)::integer as unknown_count
+         from public.skills s
+         left join public.link_skill_relations lsr on lsr.skill_id = s.id
+         left join public.links l on l.id = lsr.link_id
+         group by s.id
+       ),
+       last_runs as (
+         select target_id as skill_id, max(started_at) as last_run_at
+         from public.agent_runs
+         where target_type = 'skill'
+         group by target_id
+       )
+       select
+         s.id, s.slug, s.name, coalesce(s.description, ''), s.category_id, c.slug, c.name,
+         coalesce(rc.link_count, 0),
+         coalesce(rc.beginner_count, 0),
+         coalesce(rc.intermediate_count, 0),
+         coalesce(rc.advanced_count, 0),
+         coalesce(rc.unknown_count, 0),
+         lr.last_run_at
+       from public.skills s
+       join public.categories c on c.id = s.category_id
+       left join relation_counts rc on rc.skill_id = s.id
+       left join last_runs lr on lr.skill_id = s.id
        where s.is_active and s.slug = $1
          ${categorySlugFilter ? "and c.slug = $2" : ""}`,
       params,
@@ -215,22 +266,94 @@ async function loadSkills(slug) {
     if (rows.length > 1) {
       throw new Error(`Skill slug "${slug}" exists in multiple categories; rerun with --category <slug>.`);
     }
-    return rows.map(([id, slug, name, description, categoryId, categorySlug]) => ({
-      id, slug, name, description, category_id: categoryId, category_slug: categorySlug,
-    }));
+    return rows.map(shapeSkillRow);
   }
   const params = categorySlugFilter ? [categorySlugFilter] : [];
   const rows = await dbQuery(
-    `select s.id, s.slug, s.name, coalesce(s.description, ''), s.category_id, c.slug
-     from public.skills s join public.categories c on c.id = s.category_id
+    `with relation_counts as (
+       select
+         s.id as skill_id,
+         count(lsr.id) filter (where lsr.is_active and l.is_active)::integer as link_count,
+         count(lsr.id) filter (where lsr.is_active and l.is_active and lsr.skill_level = 'beginner')::integer as beginner_count,
+         count(lsr.id) filter (where lsr.is_active and l.is_active and lsr.skill_level = 'intermediate')::integer as intermediate_count,
+         count(lsr.id) filter (where lsr.is_active and l.is_active and lsr.skill_level = 'advanced')::integer as advanced_count,
+         count(lsr.id) filter (where lsr.is_active and l.is_active and lsr.skill_level is null)::integer as unknown_count
+       from public.skills s
+       left join public.link_skill_relations lsr on lsr.skill_id = s.id
+       left join public.links l on l.id = lsr.link_id
+       group by s.id
+     ),
+     last_runs as (
+       select target_id as skill_id, max(started_at) as last_run_at
+       from public.agent_runs
+       where target_type = 'skill'
+       group by target_id
+     ),
+     recent_saturation as (
+       select distinct ar.target_id as skill_id
+       from public.agent_runs ar
+       join public.agent_run_events e on e.run_id = ar.id
+       where ar.target_type = 'skill'
+         and e.event_type = 'skill_saturated'
+         and e.created_at >= now() - (${config.saturationCooldownDays}::text || ' days')::interval
+     )
+     select
+       s.id, s.slug, s.name, coalesce(s.description, ''), s.category_id, c.slug, c.name,
+       coalesce(rc.link_count, 0),
+       coalesce(rc.beginner_count, 0),
+       coalesce(rc.intermediate_count, 0),
+       coalesce(rc.advanced_count, 0),
+       coalesce(rc.unknown_count, 0),
+       lr.last_run_at
+     from public.skills s
+     join public.categories c on c.id = s.category_id
+     left join relation_counts rc on rc.skill_id = s.id
+     left join last_runs lr on lr.skill_id = s.id
+     left join recent_saturation rs on rs.skill_id = s.id
      where s.is_active
+       and rs.skill_id is null
        ${categorySlugFilter ? "and c.slug = $1" : ""}
-     order by c.slug, s.name`,
+     order by coalesce(rc.link_count, 0) asc, lr.last_run_at asc nulls first, c.slug, s.name`,
     params,
   );
-  return rows.map(([id, slug, name, description, categoryId, categorySlug]) => ({
-    id, slug, name, description, category_id: categoryId, category_slug: categorySlug,
-  }));
+  return rows.map(shapeSkillRow);
+}
+
+function shapeSkillRow([
+  id,
+  slug,
+  name,
+  description,
+  categoryId,
+  categorySlug,
+  categoryName,
+  linkCount,
+  beginnerCount,
+  intermediateCount,
+  advancedCount,
+  unknownCount,
+  lastRunAt,
+]) {
+  const levelCounts = {
+    beginner: clampFinite(beginnerCount),
+    intermediate: clampFinite(intermediateCount),
+    advanced: clampFinite(advancedCount),
+    unknown: clampFinite(unknownCount),
+  };
+  const link_count = clampFinite(linkCount);
+  return {
+    id,
+    slug,
+    name,
+    description,
+    category_id: categoryId,
+    category_slug: categorySlug,
+    category_name: categoryName,
+    link_count,
+    level_counts: levelCounts,
+    last_run_at: lastRunAt || null,
+    next_skill_priority_score: link_count,
+  };
 }
 
 async function loadCategorySkills(categoryId) {
@@ -256,6 +379,59 @@ async function loadChannels(categoryId) {
   return rows.map(([identifier, display_name]) => ({ identifier, display_name }));
 }
 
+async function loadKnownCanonicalUrls(skillId) {
+  const rows = await dbQuery(
+    `select l.canonical_url
+     from public.links l
+     join public.link_skill_relations lsr on lsr.link_id = l.id
+     where lsr.skill_id = $1
+     union
+     select payload_json ->> 'canonical_url'
+     from public.suggestions
+     where type = 'LINK_ADD'
+       and coalesce(skill_id, (payload_json ->> 'target_skill_id')::uuid) = $1
+       and payload_json ? 'canonical_url'`,
+    [skillId],
+  );
+  return new Set(rows.map(([canonicalUrl]) => canonicalUrl).filter(Boolean));
+}
+
+function levelGaps(skill) {
+  const counts = skill.level_counts ?? {};
+  return Object.fromEntries(
+    ["beginner", "intermediate", "advanced"].map((level) => [
+      level,
+      Math.max(0, config.levelTargetPerSkill - clampFinite(counts[level])),
+    ]),
+  );
+}
+
+function searchQueriesForSkill(skill) {
+  const gaps = levelGaps(skill);
+  const neededLevels = Object.entries(gaps)
+    .filter(([, gap]) => gap > 0)
+    .sort(([, a], [, b]) => b - a)
+    .map(([level]) => level);
+  const categoryPrefix = skill.category_name ? `${skill.category_name} ` : "";
+  return [
+    skill.name,
+    ...neededLevels.map((level) => `${level} ${categoryPrefix}${skill.name}`),
+  ];
+}
+
+function acceptsLevelForSkill(skill, level) {
+  if (!level || !["beginner", "intermediate", "advanced"].includes(level)) return true;
+  const count = clampFinite(skill.level_counts?.[level]);
+  return count < config.levelTargetPerSkill;
+}
+
+function rememberAcceptedLevel(skill, level) {
+  if (!level || !["beginner", "intermediate", "advanced"].includes(level)) return;
+  skill.level_counts ??= {};
+  skill.level_counts[level] = clampFinite(skill.level_counts[level]) + 1;
+  skill.link_count = clampFinite(skill.link_count) + 1;
+}
+
 async function persistAgentRunEvent(runId, level, eventType, message, metadata) {
   await dbQuery(
     `insert into public.agent_run_events (run_id, level, event_type, message, metadata_json)
@@ -266,10 +442,10 @@ async function persistAgentRunEvent(runId, level, eventType, message, metadata) 
 
 async function startAgentRun(skill = null) {
   const rows = await dbQuery(
-    `insert into public.agent_runs (agent_type, agent_version, target_type, target_id)
-     values ('link_searcher', 'local-v1', ${skill ? "'skill'" : "null"}, ${skill ? "$1" : "null"})
+    `insert into public.agent_runs (agent_type, agent_version, target_type, target_id, next_skill_priority_score)
+     values ('link_searcher', 'local-v1', ${skill ? "'skill'" : "null"}, ${skill ? "$1" : "null"}, ${skill ? "$2" : "null"})
      returning id`,
-    skill ? [skill.id] : [],
+    skill ? [skill.id, skill.next_skill_priority_score ?? skill.link_count ?? 0] : [],
   );
   return rows[0][0];
 }
@@ -320,12 +496,14 @@ async function ytdlp(args, { timeoutMs = config.ytdlpListTimeoutMs, label = "ytd
   });
 }
 
-async function listChannelUploads(channelId) {
+async function listChannelUploads(channelId, { dateAfter = null, source = "recent_uploads" } = {}) {
   const url = `https://www.youtube.com/channel/${channelId}/videos`;
   const printFmt = "%(id)s\t%(title)s\t%(duration)s\t%(upload_date)s\t%(view_count)s";
+  const dateArgs = dateAfter ? ["--dateafter", dateAfter] : [];
   const { stdout } = await ytdlp([
     "--flat-playlist", "--skip-download",
     "--playlist-end", String(config.maxVideosPerChannel),
+    ...dateArgs,
     "--sleep-requests", String(config.ytdlpSleepRequests),
     "--print", printFmt,
     url,
@@ -341,6 +519,7 @@ async function listChannelUploads(channelId) {
       channel_id: channelId,
       url: `https://www.youtube.com/watch?v=${id}`,
       canonical_url: `https://www.youtube.com/watch?v=${id}`,
+      source,
     };
   });
 }
@@ -1098,6 +1277,8 @@ async function processSkill(skill, summary) {
   let submitted = 0;
   let primarySubmitted = 0;
   let secondarySubmitted = 0;
+  let scoredCount = 0;
+  let duplicateCount = 0;
   let consecutiveSubmit503 = 0;
   const transcriptRateWindow = [];
   activeRunId = runId;
@@ -1109,34 +1290,90 @@ async function processSkill(skill, summary) {
 
     const channels = await loadChannels(skill.category_id);
     const categorySkills = await loadCategorySkills(skill.category_id);
+    const knownCanonicalUrls = await loadKnownCanonicalUrls(skill.id);
+    const queries = searchQueriesForSkill(skill);
+    const gaps = levelGaps(skill);
     const terms = termsForSkill(skill);
     const allCandidates = [];
     const seenVideoIds = new Set();
+    log("info", "skill_collection_strategy", "Loaded coverage and level-balance inputs", {
+      skill: skill.slug,
+      current_link_count: skill.link_count ?? 0,
+      level_counts: skill.level_counts ?? {},
+      level_gaps: gaps,
+      known_canonical_urls: knownCanonicalUrls.size,
+      search_queries: queries,
+      channels: channels.length,
+      priority_score: skill.next_skill_priority_score ?? skill.link_count ?? 0,
+    });
 
     // Channel search by skill name returns videos in-channel matching the skill — far
     // better signal density than the recent-uploads playlist, which is contaminated by
     // tournaments and vlogs.
     for (const channel of channels) {
+      for (const query of queries) {
+        try {
+          const searchResults = await searchChannel(channel.identifier, query, config.searchResultsPerChannel);
+          log("info", "channel_search_completed", "Searched channel for skill", {
+            channel: channel.display_name,
+            query,
+            count: searchResults.length,
+            playlist_end: config.searchResultsPerChannel,
+          });
+          for (const candidate of searchResults) {
+            if (seenVideoIds.has(candidate.video_id)) continue;
+            seenVideoIds.add(candidate.video_id);
+            if (knownCanonicalUrls.has(candidate.canonical_url)) {
+              log("debug", "candidate_skipped_known_url", "Candidate already exists for this skill", {
+                video_id: candidate.video_id,
+                source: candidate.source,
+              });
+              continue;
+            }
+            const soft = passesSoftFilters(candidate);
+            if (!soft.ok) {
+              log("debug", "candidate_rejected_soft", "Candidate rejected by soft filter", {
+                video_id: candidate.video_id, reason: soft.reason,
+              });
+              continue;
+            }
+            candidate.title_relevance = relevanceForQuery(candidate, terms);
+            allCandidates.push(candidate);
+          }
+        } catch (error) {
+          log("warn", "channel_search_failed", errorMessage(error), { channel: channel.display_name, query });
+        }
+      }
+
       try {
-        const searchResults = await searchChannel(channel.identifier, skill.name, config.searchResultsPerChannel);
-        log("info", "channel_search_completed", "Searched channel for skill", {
-          channel: channel.display_name, query: skill.name, count: searchResults.length,
+        const freshResults = await listChannelUploads(channel.identifier, {
+          dateAfter: dateAfterDays(config.freshUploadAgeDays),
+          source: "fresh_uploads",
         });
-        for (const candidate of searchResults) {
+        log("info", "channel_fresh_uploads_completed", "Loaded fresh channel uploads", {
+          channel: channel.display_name,
+          date_after_days: config.freshUploadAgeDays,
+          count: freshResults.length,
+          playlist_end: config.maxVideosPerChannel,
+        });
+        for (const candidate of freshResults) {
           if (seenVideoIds.has(candidate.video_id)) continue;
           seenVideoIds.add(candidate.video_id);
-          const soft = passesSoftFilters(candidate);
-          if (!soft.ok) {
-            log("debug", "candidate_rejected_soft", "Candidate rejected by soft filter", {
-              video_id: candidate.video_id, reason: soft.reason,
+          if (knownCanonicalUrls.has(candidate.canonical_url)) {
+            log("debug", "candidate_skipped_known_url", "Fresh upload already exists for this skill", {
+              video_id: candidate.video_id,
+              source: candidate.source,
             });
             continue;
           }
+          const soft = passesSoftFilters(candidate);
+          if (!soft.ok) continue;
           candidate.title_relevance = relevanceForQuery(candidate, terms);
+          if (candidate.title_relevance <= 0) continue;
           allCandidates.push(candidate);
         }
       } catch (error) {
-        log("warn", "channel_search_failed", errorMessage(error), { channel: channel.display_name });
+        log("warn", "channel_fresh_uploads_failed", errorMessage(error), { channel: channel.display_name });
       }
     }
 
@@ -1203,8 +1440,20 @@ async function processSkill(skill, summary) {
         skill_level: score.level,
         title_relevance: candidate.title_relevance,
       });
+      scoredCount += 1;
 
       if (score.relevance < config.relevanceThreshold || score.teaching_quality < config.qualityThreshold) {
+        continue;
+      }
+
+      if (!acceptsLevelForSkill(skill, score.level)) {
+        log("info", "candidate_rejected_level_quota", "Candidate level already has enough resources for this skill", {
+          video_id: candidate.video_id,
+          skill: skill.slug,
+          skill_level: score.level,
+          level_counts: skill.level_counts ?? {},
+          target_per_level: config.levelTargetPerSkill,
+        });
         continue;
       }
 
@@ -1215,6 +1464,10 @@ async function processSkill(skill, summary) {
           submitted += 1;
           primarySubmitted += 1;
           activeRunState.suggestionsCreated = submitted;
+          knownCanonicalUrls.add(candidate.canonical_url);
+          rememberAcceptedLevel(skill, score.level);
+        } else {
+          duplicateCount += 1;
         }
         log("info", "suggestion_submitted", "Suggestion submitted to local DB", {
           suggestion_id: result.suggestion_id, duplicate: Boolean(result.duplicate),
@@ -1270,6 +1523,8 @@ async function processSkill(skill, summary) {
               submitted += 1;
               secondarySubmitted += 1;
               activeRunState.suggestionsCreated = submitted;
+            } else {
+              duplicateCount += 1;
             }
             log("info", "secondary_suggestion_submitted", "Secondary skill attach submitted", {
               suggestion_id: result.suggestion_id,
@@ -1317,6 +1572,17 @@ async function processSkill(skill, summary) {
       }
     }
 
+    const duplicateRatio = scoredCount ? duplicateCount / scoredCount : 0;
+    if (scoredCount > 0 && duplicateRatio >= config.saturationDuplicateThreshold) {
+      log("warn", "skill_saturated", "Most scored candidates were duplicate submissions; cooling this skill down", {
+        skill: skill.slug,
+        scored_count: scoredCount,
+        duplicate_count: duplicateCount,
+        duplicate_ratio: Number(duplicateRatio.toFixed(3)),
+        cooldown_days: config.saturationCooldownDays,
+      });
+    }
+
     await finishAgentRun(runId, { suggestionsCreated: submitted });
     activeRunState.finalized = true;
     log("info", "skill_run_completed", "Skill run complete", {
@@ -1324,6 +1590,9 @@ async function processSkill(skill, summary) {
       submitted,
       primary_submitted: primarySubmitted,
       secondary_submitted: secondarySubmitted,
+      scored_count: scoredCount,
+      duplicate_count: duplicateCount,
+      duplicate_ratio: Number(duplicateRatio.toFixed(3)),
     });
     const item = {
       skill: skill.slug,
@@ -1331,6 +1600,9 @@ async function processSkill(skill, summary) {
       submitted,
       primary_submitted: primarySubmitted,
       secondary_submitted: secondarySubmitted,
+      scored_count: scoredCount,
+      duplicate_count: duplicateCount,
+      duplicate_ratio: Number(duplicateRatio.toFixed(3)),
     };
     summary.push(item);
     await flushAgentRunEvents();

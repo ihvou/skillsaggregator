@@ -1,6 +1,15 @@
 import { corsForbiddenResponse, errorResponse, isAllowedCorsOrigin, jsonResponse, optionsResponse, readJson } from "../_shared/responses.ts";
 import { getServiceClient } from "../_shared/supabase.ts";
 
+type SourceAddPayload = {
+  source_type?: "youtube_channel" | "domain" | "rss";
+  identifier?: string;
+  display_name?: string;
+  category_id?: string | null;
+  discovery_score?: number | null;
+  discovery_evidence_json?: Record<string, unknown> | null;
+};
+
 async function cacheThumbnailIfNeeded(suggestionId: string) {
   const supabase = getServiceClient();
   const { data: suggestion, error } = await supabase
@@ -58,6 +67,76 @@ async function cacheThumbnailIfNeeded(suggestionId: string) {
   }
 }
 
+async function applySourceAddIfNeeded(
+  suggestionId: string,
+  moderatorUserId: string | null,
+) {
+  const supabase = getServiceClient();
+  const { data: suggestion, error } = await supabase
+    .from("suggestions")
+    .select("id, type, status, payload_json")
+    .eq("id", suggestionId)
+    .single();
+  if (error) throw error;
+  if (suggestion.type !== "SOURCE_ADD") return null;
+
+  if (!["pending", "auto_approved"].includes(suggestion.status)) {
+    return {
+      ok: true,
+      already_decided: true,
+      status: suggestion.status,
+    };
+  }
+
+  const payload = suggestion.payload_json as SourceAddPayload;
+  if (!payload.source_type || !payload.identifier || !payload.display_name) {
+    return { ok: false, error: "SOURCE_ADD payload is missing source_type, identifier, or display_name" };
+  }
+
+  const finalStatus = suggestion.status === "auto_approved" ? "auto_approved" : "approved";
+  const now = new Date().toISOString();
+  const { data: source, error: upsertError } = await supabase
+    .from("trusted_sources")
+    .upsert(
+      {
+        source_type: payload.source_type,
+        identifier: payload.identifier,
+        display_name: payload.display_name,
+        category_id: payload.category_id ?? null,
+        is_active: true,
+        origin_type: "agent",
+        discovered_at: now,
+        discovery_score: payload.discovery_score ?? null,
+        discovery_evidence_json: payload.discovery_evidence_json ?? null,
+        last_validated_at: now,
+        last_seen_activity_at:
+          typeof payload.discovery_evidence_json?.latest_upload_date === "string"
+            ? payload.discovery_evidence_json.latest_upload_date
+            : null,
+      },
+      { onConflict: "source_type,identifier" },
+    )
+    .select("id")
+    .single();
+  if (upsertError) throw upsertError;
+
+  const { error: updateError } = await supabase
+    .from("suggestions")
+    .update({
+      status: finalStatus,
+      decided_at: now,
+      moderator_user_id: moderatorUserId,
+    })
+    .eq("id", suggestionId);
+  if (updateError) throw updateError;
+
+  return {
+    ok: true,
+    applied_changes: ["source_upserted"],
+    trusted_source_id: source.id,
+  };
+}
+
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") return optionsResponse(request);
   if (!isAllowedCorsOrigin(request)) return corsForbiddenResponse(request);
@@ -66,6 +145,12 @@ Deno.serve(async (request) => {
   try {
     const body = await readJson<{ suggestion_id: string; moderator_user_id?: string | null }>(request);
     if (!body.suggestion_id) return jsonResponse({ error: "suggestion_id is required" }, 400, request);
+
+    const sourceResult = await applySourceAddIfNeeded(
+      body.suggestion_id,
+      body.moderator_user_id ?? null,
+    );
+    if (sourceResult) return jsonResponse(sourceResult, 200, request);
 
     const supabase = getServiceClient();
     const { data, error } = await supabase.rpc("apply_suggestion_transaction", {

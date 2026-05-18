@@ -203,6 +203,17 @@ node scripts/run-collection.mjs --category padel --all
 node scripts/run-collection.mjs --category surfing --skill pop-up
 ```
 
+Weekly source discovery expands the trusted source graph before nightly collection:
+
+```bash
+npm run discover:sources -- --category padel
+npm run discover:sources
+```
+
+It uses `PERPLEXITY_API_KEY` for candidate discovery, validates YouTube channels with
+`yt-dlp`, auto-trusts high-confidence sources, and sends borderline `SOURCE_ADD`
+suggestions to the moderation queue.
+
 ## Demo Flow
 
 1. Open `/admin/login` and authenticate with an allowlisted moderator email.

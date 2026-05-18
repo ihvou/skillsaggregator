@@ -17,6 +17,7 @@
     "sync:edge-shared": "node scripts/check-edge-shared-sync.mjs --write",
     "add:moderator": "node scripts/add-moderator.mjs",
     "collect:articles": "node scripts/run-article-collection.mjs",
+    "discover:sources": "node scripts/discover-sources.mjs",
     "collect:health": "node scripts/check-supabase-health.mjs",
     "collect:report": "node scripts/nightly-report.mjs",
     "h1": "node scripts/h1_youtube_density.mjs",

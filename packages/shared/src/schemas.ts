@@ -7,6 +7,7 @@ export const suggestionTypeSchema = z.enum([
   "LINK_ATTACH_SKILL",
   "LINK_DETACH_SKILL",
   "LINK_UPVOTE_SKILL",
+  "SOURCE_ADD",
   "SKILL_CREATE",
   "SKILL_DELETE",
 ]);
@@ -61,6 +62,15 @@ export const skillCreatePayloadSchema = z.object({
   description: z.string().max(1000).nullable().optional(),
 });
 
+export const sourceAddPayloadSchema = z.object({
+  source_type: z.enum(["youtube_channel", "domain", "rss"]),
+  identifier: z.string().min(1).max(500),
+  display_name: z.string().min(1).max(200),
+  category_id: uuidish.nullable().optional(),
+  discovery_score: z.number().min(0).max(20).nullable().optional(),
+  discovery_evidence_json: z.record(z.unknown()).nullable().optional(),
+});
+
 export const skillDeletePayloadSchema = z.object({
   skill_id: uuidish,
   reason: z.string().min(1).max(600),
@@ -71,6 +81,7 @@ export const suggestionPayloadByType = {
   LINK_ATTACH_SKILL: linkAttachSkillPayloadSchema,
   LINK_DETACH_SKILL: linkDetachSkillPayloadSchema,
   LINK_UPVOTE_SKILL: linkUpvoteSkillPayloadSchema,
+  SOURCE_ADD: sourceAddPayloadSchema,
   SKILL_CREATE: skillCreatePayloadSchema,
   SKILL_DELETE: skillDeletePayloadSchema,
 } as const;
@@ -113,3 +124,4 @@ export type LinkAddPayload = z.infer<typeof linkAddPayloadSchema>;
 export type LinkAttachSkillPayload = z.infer<typeof linkAttachSkillPayloadSchema>;
 export type LinkDetachSkillPayload = z.infer<typeof linkDetachSkillPayloadSchema>;
 export type LinkUpvoteSkillPayload = z.infer<typeof linkUpvoteSkillPayloadSchema>;
+export type SourceAddPayload = z.infer<typeof sourceAddPayloadSchema>;
