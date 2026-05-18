@@ -1,10 +1,10 @@
 import { useMemo, useState } from "react";
-import { RefreshControl, StyleSheet, View } from "react-native";
-import { useLocalSearchParams } from "expo-router";
+import { Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { FlashList } from "@shopify/flash-list";
 import { useQuery } from "@tanstack/react-query";
 import type { ResourceSort, SkillResource } from "@skillsaggregator/shared";
-import { Search } from "lucide-react-native";
+import { PlusCircle, Search } from "lucide-react-native";
 import { EmptyState } from "@/components/EmptyState";
 import type { LevelFilterValue } from "@/components/LevelFilter";
 import { PageHeader } from "@/components/PageHeader";
@@ -28,6 +28,7 @@ const LEVEL_LABELS: Record<LevelFilterValue, string> = {
 };
 
 export default function SkillDetailScreen() {
+  const router = useRouter();
   const { category, skill, level: initialLevel } = useLocalSearchParams<{
     category: string;
     skill: string;
@@ -73,6 +74,17 @@ export default function SkillDetailScreen() {
           showBack
           showMenu
           onMenuPress={() => setMenuVisible(true)}
+          rightAccessory={
+            <Pressable
+              onPress={() => router.push({ pathname: "/suggest", params: { category: categorySlug, skill: skillSlug } })}
+              style={({ pressed }) => [styles.suggestButton, pressed && styles.pressed]}
+              accessibilityRole="button"
+              accessibilityLabel="Suggest a link"
+            >
+              <PlusCircle size={18} color={colors.surface} />
+              <Text style={styles.suggestButtonText}>Suggest</Text>
+            </Pressable>
+          }
         />
       </View>
       {query.isLoading ? (
@@ -145,5 +157,23 @@ const styles = StyleSheet.create({
   },
   emptyWrap: {
     paddingHorizontal: spacing.page,
+  },
+  suggestButton: {
+    minHeight: 36,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 5,
+    paddingHorizontal: spacing.sm,
+    borderRadius: 999,
+    backgroundColor: colors.ink,
+  },
+  suggestButtonText: {
+    color: colors.surface,
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  pressed: {
+    opacity: 0.7,
   },
 });

@@ -5,6 +5,7 @@ import {
   fallbackResources,
   fallbackSkills,
   type CategorySummary,
+  type ContributorProfileSummary,
   type SkillResource,
   type SkillSummary,
 } from "@skillsaggregator/shared";
@@ -16,6 +17,19 @@ export interface CatalogData {
 }
 
 export type ResourceSort = "newest" | "popular";
+
+const RESOURCE_LINK_SELECT =
+  "id, url, canonical_url, domain, title, description, thumbnail_url, content_type, created_at, contributor_profile:contributor_profiles(id, slug, display_name, avatar_url, accepted_count)";
+
+function shapeLinkWithContributor<TLink extends { contributor_profile?: unknown }>(link: TLink) {
+  const contributor = Array.isArray(link.contributor_profile)
+    ? link.contributor_profile[0]
+    : link.contributor_profile;
+  return {
+    ...link,
+    contributor_profile: contributor ?? null,
+  };
+}
 
 function categorySkills(categorySlug: string) {
   return fallbackSkills.filter((skill) => skill.category_slug === categorySlug);
@@ -150,7 +164,7 @@ export async function getSkillPage(categorySlug: string, skillSlug: string) {
   const { data: resources } = await supabase
     .from("link_skill_relations")
     .select(
-      "id, public_note, skill_level, upvote_count, created_at, links(id, url, canonical_url, domain, title, description, thumbnail_url, content_type, created_at)",
+      `id, public_note, skill_level, upvote_count, created_at, links(${RESOURCE_LINK_SELECT})`,
     )
     .eq("skill_id", skillRow.id)
     .eq("is_active", true)
@@ -181,7 +195,7 @@ export async function getSkillPage(categorySlug: string, skillSlug: string) {
           category_slug: category.slug,
           category_name: category.name,
         },
-        link,
+        link: shapeLinkWithContributor(link),
       },
     ];
   });
@@ -319,7 +333,7 @@ export async function getCategoryWithSkillResources(
   const { data: relations } = await supabase
     .from("link_skill_relations")
     .select(
-      "id, skill_id, public_note, skill_level, upvote_count, created_at, links!inner(id, url, canonical_url, domain, title, description, thumbnail_url, content_type, created_at)",
+      `id, skill_id, public_note, skill_level, upvote_count, created_at, links!inner(${RESOURCE_LINK_SELECT})`,
     )
     .in("skill_id", skillsWithResources.map((skill) => skill.id))
     .eq("is_active", true)
@@ -340,7 +354,7 @@ export async function getCategoryWithSkillResources(
       skill_level: relation.skill_level,
       upvote_count: relation.upvote_count ?? 0,
       created_at: relation.created_at ?? link.created_at ?? null,
-      link,
+      link: shapeLinkWithContributor(link),
       skill: {
         id: skill.id,
         slug: skill.slug,
@@ -374,6 +388,93 @@ export interface AdminSuggestion {
   skill: { name: string; slug: string } | null;
   link: { title: string | null; domain: string | null; thumbnail_url: string | null } | null;
   author: { display_name: string } | null;
+}
+
+export interface ContributorProfile extends ContributorProfileSummary {
+  bio: string | null;
+  created_at: string;
+}
+
+export async function getContributorProfiles(): Promise<ContributorProfile[]> {
+  const supabase = getPublicSupabase();
+  if (!supabase) return [];
+
+  const { data, error } = await supabase
+    .from("contributor_profiles")
+    .select("id, slug, display_name, bio, avatar_url, accepted_count, created_at")
+    .order("accepted_count", { ascending: false })
+    .order("created_at", { ascending: true });
+
+  if (error) {
+    console.warn("contributors_load_failed", error.message);
+    return [];
+  }
+  return data ?? [];
+}
+
+export async function getContributorProfileBySlug(slug: string): Promise<{
+  profile: ContributorProfile | null;
+  resources: SkillResource[];
+}> {
+  const supabase = getPublicSupabase();
+  if (!supabase) return { profile: null, resources: [] };
+
+  const { data: profile, error: profileError } = await supabase
+    .from("contributor_profiles")
+    .select("id, slug, display_name, bio, avatar_url, accepted_count, created_at")
+    .eq("slug", slug)
+    .maybeSingle();
+  if (profileError) {
+    console.warn("contributor_profile_load_failed", profileError.message);
+    return { profile: null, resources: [] };
+  }
+  if (!profile) return { profile: null, resources: [] };
+
+  const { data: relations, error: relationsError } = await supabase
+    .from("link_skill_relations")
+    .select(
+      `id, public_note, skill_level, upvote_count, created_at, links!inner(${RESOURCE_LINK_SELECT}), skills!inner(id, slug, name, categories!inner(slug, name))`,
+    )
+    .eq("is_active", true)
+    .eq("links.is_active", true)
+    .eq("links.contributor_profile_id", profile.id)
+    .order("created_at", { ascending: false })
+    .limit(50);
+  if (relationsError) {
+    console.warn("contributor_resources_load_failed", relationsError.message);
+    return { profile, resources: [] };
+  }
+
+  const resources: SkillResource[] = (relations ?? []).flatMap((relation) => {
+    const link = Array.isArray(relation.links) ? relation.links[0] : relation.links;
+    if (!link) return [];
+    const skill = Array.isArray(relation.skills) ? relation.skills[0] : relation.skills;
+    const category = skill
+      ? Array.isArray(skill.categories)
+        ? skill.categories[0]
+        : skill.categories
+      : null;
+    const resource: SkillResource = {
+      id: relation.id,
+      public_note: relation.public_note,
+      skill_level: relation.skill_level,
+      upvote_count: relation.upvote_count ?? 0,
+      created_at: relation.created_at ?? link.created_at ?? null,
+      link: shapeLinkWithContributor(link),
+    };
+    if (skill) {
+      resource.skill = {
+        id: skill.id,
+        slug: skill.slug,
+        name: skill.name,
+        category_slug: category?.slug ?? "",
+        category_name: category?.name ?? null,
+      };
+    }
+    return [resource];
+  });
+
+  return { profile, resources };
 }
 
 export async function getPendingSuggestions(): Promise<AdminSuggestion[]> {

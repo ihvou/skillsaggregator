@@ -43,6 +43,7 @@ export interface LinkResource {
   thumbnail_url: string | null;
   content_type: "video" | "article" | "podcast" | "course" | null;
   created_at?: string | null;
+  contributor_profile?: ContributorProfileSummary | null;
 }
 
 export interface SkillResource {
@@ -55,6 +56,14 @@ export interface SkillResource {
   skill?: Pick<SkillSummary, "id" | "slug" | "name" | "category_slug"> & {
     category_name?: string | null;
   };
+}
+
+export interface ContributorProfileSummary {
+  id: string;
+  slug: string;
+  display_name: string;
+  avatar_url?: string | null;
+  accepted_count?: number;
 }
 
 export interface TriangulationVote {

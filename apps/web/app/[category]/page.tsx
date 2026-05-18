@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/PageHeader";
 import { ResourceTile } from "@/components/ResourceTile";
 import { SectionHeader } from "@/components/SectionHeader";
+import { SuggestLinkButton } from "@/components/SuggestLinkButton";
 import { getAllCatalogs, getCategoryWithSkillResources } from "@/lib/data";
 import { getBaseUrl } from "@/lib/env";
 
@@ -43,6 +44,7 @@ export default async function CategoryPage({
         title={category.name}
         subtitle={category.description ?? undefined}
         backHref="/"
+        rightAccessory={<SuggestLinkButton categorySlug={category.slug} />}
       />
 
       <div className="mt-12 space-y-14">

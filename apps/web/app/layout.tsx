@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { LocalActionSync } from "@/components/LocalActionSync";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -24,12 +25,22 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
               Skills Aggregator
             </Link>
             <div className="flex items-center gap-4 text-sm font-medium text-muted">
+              <Link className="focus-ring transition hover:text-ink" href="/suggest">
+                Suggest
+              </Link>
+              <Link className="focus-ring transition hover:text-ink" href="/contributors">
+                Contributors
+              </Link>
+              <Link className="focus-ring transition hover:text-ink" href="/sign-in">
+                Sign in
+              </Link>
               <Link className="focus-ring transition hover:text-ink" href="/admin">
                 Admin
               </Link>
             </div>
           </nav>
         </header>
+        <LocalActionSync />
         <main>{children}</main>
       </body>
     </html>

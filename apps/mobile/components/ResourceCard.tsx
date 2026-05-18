@@ -8,6 +8,7 @@ import {
   CircleCheck,
   ThumbsDown,
   ThumbsUp,
+  UserRound,
 } from "lucide-react-native";
 import { Swipeable } from "react-native-gesture-handler";
 import type { SkillResource } from "@skillsaggregator/shared";
@@ -131,6 +132,7 @@ export function ResourceCard({ resource }: ResourceCardProps) {
 
   const dateLabel = formatDate(resource.created_at);
   const SavedIcon = isSaved ? BookmarkCheck : Bookmark;
+  const contributor = resource.link.contributor_profile;
 
   // Reddit-style net score: server upvote_count + local vote delta.
   const ratingCount = useMemo(() => {
@@ -181,9 +183,19 @@ export function ResourceCard({ resource }: ResourceCardProps) {
             {resource.link.title ?? resource.link.url}
           </Text>
           <View style={styles.bottomRow}>
-            <Text style={styles.domain} numberOfLines={1}>
-              {resource.link.domain}
-            </Text>
+            <View style={styles.metaLine}>
+              <Text style={styles.domain} numberOfLines={1}>
+                {resource.link.domain}
+              </Text>
+              {contributor ? (
+                <View style={styles.contributorPill}>
+                  <UserRound size={11} color={colors.muted} />
+                  <Text style={styles.contributorText} numberOfLines={1}>
+                    @{contributor.slug}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
             <View style={styles.actions}>
               <Pressable
                 onPress={toggleCompleted}
@@ -345,6 +357,28 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.faint,
     flex: 1,
+  },
+  metaLine: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  contributorPill: {
+    maxWidth: 90,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: radius.sm,
+    backgroundColor: colors.bgGroup,
+  },
+  contributorText: {
+    color: colors.muted,
+    fontSize: 10,
+    fontWeight: "800",
   },
   actions: {
     flexDirection: "row",

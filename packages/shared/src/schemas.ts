@@ -32,7 +32,7 @@ export const linkAddPayloadSchema = z.object({
   content_type: z.enum(["video", "article", "podcast", "course"]).nullable().optional(),
   language: z.string().min(2).max(12).default("en"),
   target_skill_id: uuidish,
-  public_note: z.string().max(180).nullable().optional(),
+  public_note: z.string().max(140).nullable().optional(),
   skill_level: skillLevelSchema.nullable().optional(),
 });
 
@@ -85,6 +85,8 @@ export const submitSuggestionSchema = z.object({
   skill_id: uuidish.nullable().optional(),
   link_id: uuidish.nullable().optional(),
   author_internal_user_id: uuidish.nullable().optional(),
+  submitted_by_user_id: uuidish.nullable().optional(),
+  turnstile_token: z.string().min(1).max(2048).nullable().optional(),
   payload_json: z.unknown(),
   evidence_json: z.record(z.unknown()).nullable().optional(),
   triangulation_json: z.record(z.unknown()).nullable().optional(),

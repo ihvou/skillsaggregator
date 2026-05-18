@@ -1,7 +1,7 @@
-import { RefreshControl, ScrollView, StyleSheet, View } from "react-native";
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
-import { Search } from "lucide-react-native";
+import { PlusCircle, Search } from "lucide-react-native";
 import { EmptyState } from "@/components/EmptyState";
 import { PageHeader } from "@/components/PageHeader";
 import { ResourceTile } from "@/components/ResourceTile";
@@ -39,6 +39,15 @@ export default function CategoryScreen() {
       >
         <View style={styles.headerWrap}>
           <PageHeader title={categoryData?.name ?? "Category"} showBack />
+          <Pressable
+            onPress={() => router.push({ pathname: "/suggest", params: { category: categorySlug } })}
+            style={({ pressed }) => [styles.suggestInline, pressed && styles.pressed]}
+            accessibilityRole="button"
+            accessibilityLabel="Suggest a link"
+          >
+            <PlusCircle size={18} color={colors.ink} />
+            <Text style={styles.suggestInlineText}>Suggest a link</Text>
+          </Pressable>
         </View>
 
         {query.isLoading ? (
@@ -110,5 +119,24 @@ const styles = StyleSheet.create({
   },
   emptyWrap: {
     paddingHorizontal: spacing.page,
+  },
+  suggestInline: {
+    minHeight: 42,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.xs,
+    borderRadius: 999,
+    backgroundColor: colors.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.divider,
+  },
+  suggestInlineText: {
+    color: colors.ink,
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  pressed: {
+    opacity: 0.7,
   },
 });

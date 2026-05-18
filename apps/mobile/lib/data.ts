@@ -25,6 +25,19 @@ export type DiscoverCategorySection = {
   skills: DiscoverSkillTile[];
 };
 
+const RESOURCE_LINK_SELECT =
+  "id, url, canonical_url, domain, title, description, thumbnail_url, content_type, created_at, contributor_profile:contributor_profiles(id, slug, display_name, avatar_url, accepted_count)";
+
+function shapeLinkWithContributor<TLink extends { contributor_profile?: unknown }>(link: TLink) {
+  const contributor = Array.isArray(link.contributor_profile)
+    ? link.contributor_profile[0]
+    : link.contributor_profile;
+  return {
+    ...link,
+    contributor_profile: contributor ?? null,
+  };
+}
+
 function fallbackSkillsForCategory(categorySlug: string) {
   return fallbackSkills.filter((skill) => skill.category_slug === categorySlug);
 }
@@ -199,7 +212,7 @@ export async function getSkillResources(categorySlug: string, skillSlug: string,
 
   const { data: relations } = await supabase
     .from("link_skill_relations")
-    .select("id, public_note, skill_level, upvote_count, created_at, links(id, url, canonical_url, domain, title, description, thumbnail_url, content_type, created_at)")
+    .select(`id, public_note, skill_level, upvote_count, created_at, links(${RESOURCE_LINK_SELECT})`)
     .eq("skill_id", skill.id)
     .eq("is_active", true)
     .order(sort === "newest" ? "created_at" : "upvote_count", { ascending: false });
@@ -226,7 +239,7 @@ export async function getSkillResources(categorySlug: string, skillSlug: string,
           skill_level: relation.skill_level,
           upvote_count: relation.upvote_count,
           created_at: relation.created_at,
-          link,
+          link: shapeLinkWithContributor(link),
           skill: {
             id: skill.id,
             slug: skill.slug,
@@ -331,7 +344,7 @@ export async function getSavedResources(linkIds: string[]): Promise<SkillResourc
   const { data: relations } = await supabase
     .from("link_skill_relations")
     .select(
-      "id, public_note, skill_level, upvote_count, created_at, link_id, links!inner(id, url, canonical_url, domain, title, description, thumbnail_url, content_type, created_at), skills!inner(id, slug, name, categories!inner(slug, name))",
+      `id, public_note, skill_level, upvote_count, created_at, link_id, links!inner(${RESOURCE_LINK_SELECT}), skills!inner(id, slug, name, categories!inner(slug, name))`,
     )
     .in("link_id", linkIds)
     .eq("is_active", true)
@@ -355,7 +368,7 @@ export async function getSavedResources(linkIds: string[]): Promise<SkillResourc
       skill_level: relation.skill_level,
       upvote_count: relation.upvote_count ?? 0,
       created_at: relation.created_at ?? link.created_at ?? null,
-      link,
+      link: shapeLinkWithContributor(link),
     };
     if (skill) {
       resource.skill = {

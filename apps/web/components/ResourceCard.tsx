@@ -8,6 +8,7 @@ import {
   CircleCheck,
   ThumbsDown,
   ThumbsUp,
+  UserRound,
 } from "lucide-react";
 import type { SkillResource } from "@skillsaggregator/shared";
 import { useLocalFlag } from "@/lib/useLocalFlag";
@@ -48,8 +49,8 @@ function formatCount(value: number): string {
  *  - State (save / watched / vote) persisted to localStorage so it sticks
  *    across page loads on the same device, same keys as mobile
  *
- * The future logged-in pass (W2) will move these flags to server-side
- * `user_actions` so they sync across devices and feed the rating count.
+ * Logged-in users also write these flags through to `user_actions`; anonymous
+ * users keep the same local-only behavior.
  */
 export function ResourceCard({ resource }: ResourceCardProps) {
   const linkId = resource.link.id;
@@ -61,6 +62,7 @@ export function ResourceCard({ resource }: ResourceCardProps) {
   const dateLabel = formatDate(resource.created_at);
   const thumbnail = resource.link.thumbnail_url;
   const url = resource.link.url;
+  const contributor = resource.link.contributor_profile;
 
   function onUpvote() {
     const next = !upvoted;
@@ -128,7 +130,18 @@ export function ResourceCard({ resource }: ResourceCardProps) {
         </a>
 
         <div className="flex items-center justify-between gap-3 text-sm">
-          <span className="truncate text-faint">{resource.link.domain}</span>
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="truncate text-faint">{resource.link.domain}</span>
+            {contributor ? (
+              <a
+                href={`/contributors/${contributor.slug}`}
+                className="focus-ring inline-flex shrink-0 items-center gap-1 rounded-md bg-bgGroup px-2 py-1 text-xs font-bold text-muted transition hover:text-ink"
+              >
+                <UserRound className="h-3.5 w-3.5" />
+                via @{contributor.slug}
+              </a>
+            ) : null}
+          </div>
           <div className="flex items-center gap-3">
             <button
               type="button"

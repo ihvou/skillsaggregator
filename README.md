@@ -5,6 +5,7 @@ An MVP learning-resource aggregator for sport and training skills. It includes:
 - Supabase schema, RLS, multi-sport seed taxonomy, local collection, cron cleanup, and Edge Functions.
 - Next.js public SEO pages and an admin moderation queue.
 - Expo mobile app with browsing, level filters, saved resources, and completed state.
+- Public link suggestions with contributor attribution across web and mobile.
 - Shared Zod schemas, prompt templates, and tests for the suggestion pipeline.
 
 ## Architecture
@@ -45,6 +46,10 @@ Copy `.env.example` values into the relevant app and Supabase environments.
 - `NEXT_PUBLIC_BASE_URL`
 - `BASE_URL`
 - `ALLOWED_ORIGINS`
+- `SUGGEST_TURNSTILE_SITE_KEY` (optional public flag for the suggest form)
+- `SUGGEST_TURNSTILE_SECRET_KEY` (required by the Edge Function when Turnstile is enabled)
+- `SUPABASE_AUTH_GOOGLE_CLIENT_ID` / `SUPABASE_AUTH_GOOGLE_SECRET` for local Google OAuth
+- `EXPO_PUBLIC_WEB_BASE_URL` for mobile profile links
 - `DEMO_MODE` (set to `1` only for local demo without Supabase)
 - `REVALIDATE_SECRET`
 - `SUPABASE_FUNCTIONS_URL`
@@ -59,7 +64,7 @@ Copy `.env.example` values into the relevant app and Supabase environments.
 
 1. Create a Supabase project, copy the URL, anon key, and service role key into `.env.local`, and keep `DEMO_MODE` unset for any real environment.
 2. Run the migrations and seed locally with `supabase db reset`.
-3. Add moderators in both Supabase Auth and `public.moderators`; admin access is fail-closed and no longer trusts `MODERATOR_EMAILS` or user-editable auth metadata. The helper does both:
+3. Add moderators in both Supabase Auth and `public.moderators`; admin access is fail-closed and no longer trusts `MODERATOR_EMAILS` or user-editable auth metadata. Public signup is enabled for contributor profiles, but moderator access still requires the allowlist row. The helper does both:
 
 ```bash
 npm run add:moderator -- --email you@example.com
@@ -92,7 +97,15 @@ select vault.create_secret('https://YOUR_WEB_ORIGIN/api/revalidate', 'revalidate
 select vault.create_secret('YOUR_REVALIDATE_SECRET', 'revalidate_secret');
 ```
 
-5. For future deployed-agent mode, set Edge Function secrets:
+5. Configure public auth providers when using contributor login outside the local email flow. Google OAuth needs matching redirect URLs in Google Cloud and Supabase:
+
+```text
+http://localhost:3000/auth/callback
+skillsaggregator://auth/callback
+https://YOUR-WEB-ORIGIN/auth/callback
+```
+
+6. For future deployed-agent mode, set Edge Function secrets:
 
 ```bash
 supabase secrets set \
@@ -151,6 +164,7 @@ NEXT_PUBLIC_BASE_URL=http://localhost:3000
 BASE_URL=http://localhost:3000
 ALLOWED_ORIGINS=http://localhost:3000
 REVALIDATE_SECRET=local-dev-secret
+EXPO_PUBLIC_WEB_BASE_URL=http://localhost:3000
 ```
 
 5. Add a moderator in Auth and the moderator table:
@@ -159,7 +173,7 @@ REVALIDATE_SECRET=local-dev-secret
 npm run add:moderator -- --email you@example.com
 ```
 
-The SQL-only table row is not enough when local Auth signup is disabled; the matching `auth.users` row must exist before magic-link OTP can be sent.
+The SQL-only table row is not enough for admin access; the matching `auth.users` row must exist before magic-link OTP can be sent.
 
 ```sql
 insert into public.moderators (email)

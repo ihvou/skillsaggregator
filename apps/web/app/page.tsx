@@ -1,6 +1,7 @@
 import { PageHeader } from "@/components/PageHeader";
 import { SectionHeader } from "@/components/SectionHeader";
 import { SkillTile } from "@/components/SkillTile";
+import { SuggestLinkButton } from "@/components/SuggestLinkButton";
 import { getDiscoverSections } from "@/lib/data";
 
 export const revalidate = 3600;
@@ -21,6 +22,9 @@ export default async function HomePage() {
           organize the web&rsquo;s best free tutorials by the exact skill they teach — so you skip
           the search rabbit hole and get straight to practicing.
         </p>
+        <div className="mt-5">
+          <SuggestLinkButton />
+        </div>
       </section>
 
       <div className="mt-12 space-y-14">

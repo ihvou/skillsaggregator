@@ -9,6 +9,7 @@ import { JsonLd } from "@/components/JsonLd";
 import { PageHeader } from "@/components/PageHeader";
 import { ResourceCard } from "@/components/ResourceCard";
 import { SortFilterMenu } from "@/components/SortFilterMenu";
+import { SuggestLinkButton } from "@/components/SuggestLinkButton";
 import { getAllCatalogs, getSkillPage } from "@/lib/data";
 import { getBaseUrl } from "@/lib/env";
 import {
@@ -145,7 +146,10 @@ export default async function SkillPage({
         subtitle={subtitleParts.join(" · ")}
         backHref={`/${category.slug}`}
         rightAccessory={
-          <SortFilterMenu pathname={pathname} currentLevel={level} currentSort={sort} />
+          <>
+            <SuggestLinkButton categorySlug={category.slug} skillSlug={skill.slug} compact />
+            <SortFilterMenu pathname={pathname} currentLevel={level} currentSort={sort} />
+          </>
         }
       />
 
