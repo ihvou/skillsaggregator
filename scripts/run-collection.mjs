@@ -53,6 +53,8 @@ const execFileP = promisify(execFile);
 const config = {
   supabaseUrl: process.env.SUPABASE_URL ?? "http://127.0.0.1:54321",
   serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY ?? "",
+  internalFunctionToken: process.env.INTERNAL_FUNCTION_TOKEN ?? "",
+  autoApproveConfidenceFloor: Number(process.env.COLLECT_AUTO_APPROVE_FLOOR ?? 0.7),
   ollamaUrl: process.env.OLLAMA_URL ?? "http://localhost:11434",
   ollamaModel: process.env.OLLAMA_MODEL ?? "qwen2.5:7b",
   ytdlpBin: process.env.YTDLP_BIN ?? join(root, "bin", "yt-dlp"),
@@ -1060,6 +1062,11 @@ async function findSecondarySkills(primarySkill, categorySkills, candidate, tran
 }
 
 async function postSuggestion(skill, candidate, transcript, score, viewCount) {
+  const confidence = Math.min(score.relevance, score.teaching_quality);
+  // High-confidence candidates request auto_approved; the Edge Function honors it only
+  // when the request also carries the matching x-internal-token (see security.ts).
+  const requestAutoApprove =
+    Boolean(config.internalFunctionToken) && confidence >= config.autoApproveConfidenceFloor;
   const payload = {
     type: "LINK_ADD",
     origin_type: "agent",
@@ -1087,14 +1094,17 @@ async function postSuggestion(skill, candidate, transcript, score, viewCount) {
       score,
       transcript_excerpt: transcript.slice(0, 600),
     },
-    confidence: Math.min(score.relevance, score.teaching_quality),
+    confidence,
+    ...(requestAutoApprove ? { requested_status: "auto_approved" } : {}),
+  };
+  const headers = {
+    Authorization: `Bearer ${config.serviceRoleKey}`,
+    "Content-Type": "application/json",
+    ...(config.internalFunctionToken ? { "x-internal-token": config.internalFunctionToken } : {}),
   };
   const response = await fetchWithTimeout(`${config.supabaseUrl}/functions/v1/submit-suggestion`, {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${config.serviceRoleKey}`,
-      "Content-Type": "application/json",
-    },
+    headers,
     body: JSON.stringify(payload),
   }, config.submitTimeoutMs, "submit_suggestion");
   const text = await response.text();
@@ -1161,13 +1171,18 @@ async function postAttachSuggestion(primarySkill, secondary, candidate, transcri
       transcript_excerpt: transcript.slice(0, 600),
     },
     confidence: secondary.relevance,
+    ...(config.internalFunctionToken && secondary.relevance >= config.autoApproveConfidenceFloor
+      ? { requested_status: "auto_approved" }
+      : {}),
+  };
+  const headers = {
+    Authorization: `Bearer ${config.serviceRoleKey}`,
+    "Content-Type": "application/json",
+    ...(config.internalFunctionToken ? { "x-internal-token": config.internalFunctionToken } : {}),
   };
   const response = await fetchWithTimeout(`${config.supabaseUrl}/functions/v1/submit-suggestion`, {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${config.serviceRoleKey}`,
-      "Content-Type": "application/json",
-    },
+    headers,
     body: JSON.stringify(payload),
   }, config.submitTimeoutMs, "submit_secondary");
   const text = await response.text();
