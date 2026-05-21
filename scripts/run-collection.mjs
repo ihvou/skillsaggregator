@@ -32,11 +32,14 @@
  *   COLLECT_MAX_SECONDARY_SKILLS   default 4
  *   COLLECT_TRANSCRIPT_TMP_DIR    default .collection/transcripts
  *   COLLECT_OUTPUT_DIR            default .collection/runs
+ *   COLLECT_CACHE_DIR             default .collection/cache
+ *   COLLECT_CACHE_DATE            default local YYYY-MM-DD
  *   COLLECT_STOP_FILE             default .collection/STOP
  *   COLLECT_ABORT                 set to 1/true to fail fast before candidate work
  *   COLLECT_OLLAMA_TIMEOUT_MS     default 90000
  *   COLLECT_YTDLP_LIST_TIMEOUT_MS default 60000
  *   COLLECT_YTDLP_TRANSCRIPT_TIMEOUT_MS default 60000
+ *   COLLECT_TRANSCRIPT_GLOBAL_MIN_GAP_MS default YTDLP_SLEEP_SUBTITLES * 1000
  *   COLLECT_SUBMIT_TIMEOUT_MS     default 15000
  */
 import { execFile, spawn } from "node:child_process";
@@ -75,6 +78,8 @@ const config = {
   maxSecondarySkills: Number(process.env.COLLECT_MAX_SECONDARY_SKILLS ?? 4),
   transcriptDir: process.env.COLLECT_TRANSCRIPT_TMP_DIR ?? join(root, ".collection", "transcripts"),
   outputDir: process.env.COLLECT_OUTPUT_DIR ?? join(root, ".collection", "runs"),
+  cacheDir: process.env.COLLECT_CACHE_DIR ?? join(root, ".collection", "cache"),
+  cacheDate: process.env.COLLECT_CACHE_DATE ?? localDateStamp(),
   ytdlpSleepRequests: Number(process.env.YTDLP_SLEEP_REQUESTS ?? 3),
   ytdlpSleepSubtitles: Number(process.env.YTDLP_SLEEP_SUBTITLES ?? 5),
   candidatesToScorePerSkill: Number(process.env.COLLECT_CANDIDATES_TO_SCORE ?? 30),
@@ -103,6 +108,9 @@ const config = {
   systemCommandTimeoutMs: Number(process.env.COLLECT_SYSTEM_COMMAND_TIMEOUT_MS ?? 5_000),
   preflightChannelId: process.env.COLLECT_PREFLIGHT_CHANNEL_ID ?? "UCk2gRC4RewYvvXXqXZxaTbQ",
 };
+config.transcriptGlobalMinGapMs = Number(
+  process.env.COLLECT_TRANSCRIPT_GLOBAL_MIN_GAP_MS ?? config.ytdlpSleepSubtitles * 1000,
+);
 
 if (!config.serviceRoleKey) {
   console.error("SUPABASE_SERVICE_ROLE_KEY is not set. Get it from `npx supabase status` and export it.");
@@ -118,6 +126,25 @@ let activeRunId = null;
 let activeRunState = null;
 let runEventQueue = Promise.resolve();
 let shuttingDown = false;
+let lastTranscriptFetchStartedAt = 0;
+
+const collectionCache = {
+  path: null,
+  loaded: false,
+  dirty: false,
+  channelSearch: new Map(),
+  freshUploads: new Map(),
+  stats: {
+    channel_search_hits: 0,
+    channel_search_misses: 0,
+    channel_search_ytdlp_calls: 0,
+    fresh_upload_hits: 0,
+    fresh_upload_misses: 0,
+    fresh_upload_ytdlp_calls: 0,
+    transcript_global_waits: 0,
+    transcript_global_wait_ms: 0,
+  },
+};
 
 class SkillAbortError extends Error {
   constructor(code, message = code, metadata = {}) {
@@ -145,6 +172,14 @@ function errorMetadata(error) {
   return error instanceof InfrastructureError || error instanceof SkillAbortError ? error.metadata : {};
 }
 
+function localDateStamp(date = new Date()) {
+  return [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, "0"),
+    String(date.getDate()).padStart(2, "0"),
+  ].join("-");
+}
+
 function dateAfterDays(days) {
   const date = new Date(Date.now() - days * 86_400_000);
   return [
@@ -157,6 +192,103 @@ function dateAfterDays(days) {
 function clampFinite(value, fallback = 0) {
   const number = Number(value);
   return Number.isFinite(number) ? number : fallback;
+}
+
+function normalizeSearchQuery(query) {
+  return String(query)
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+function cloneCandidate(candidate) {
+  return { ...candidate };
+}
+
+function cloneCandidates(candidates) {
+  return candidates.map(cloneCandidate);
+}
+
+function channelSearchCacheKey(channelId, query) {
+  return `${channelId}::${normalizeSearchQuery(query)}`;
+}
+
+function freshUploadsCacheKey(channelId, dateAfter, limit) {
+  return `${channelId}::${dateAfter ?? "all"}::${limit}`;
+}
+
+function serializableCacheMap(map) {
+  return Object.fromEntries(map.entries());
+}
+
+function hydrateCacheMap(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return new Map();
+  return new Map(Object.entries(value));
+}
+
+async function loadCollectionCache() {
+  if (collectionCache.loaded) return;
+  collectionCache.loaded = true;
+  collectionCache.path = join(config.cacheDir, `channel-search-${config.cacheDate}.json`);
+  await mkdir(config.cacheDir, { recursive: true });
+
+  try {
+    const parsed = JSON.parse(await readFile(collectionCache.path, "utf8"));
+    collectionCache.channelSearch = hydrateCacheMap(parsed.channel_search);
+    collectionCache.freshUploads = hydrateCacheMap(parsed.fresh_uploads);
+    log("info", "collection_cache_loaded", "Loaded collection cache for this run", {
+      cache_path: collectionCache.path,
+      cache_date: config.cacheDate,
+      channel_search_entries: collectionCache.channelSearch.size,
+      fresh_upload_entries: collectionCache.freshUploads.size,
+    });
+  } catch (error) {
+    if (error?.code !== "ENOENT") {
+      log("warn", "collection_cache_load_failed", errorMessage(error), {
+        cache_path: collectionCache.path,
+      });
+    }
+    collectionCache.channelSearch = new Map();
+    collectionCache.freshUploads = new Map();
+  }
+}
+
+async function persistCollectionCache({ force = false } = {}) {
+  if (!collectionCache.loaded) return;
+  if (!force && !collectionCache.dirty) return;
+  await mkdir(config.cacheDir, { recursive: true });
+  const payload = {
+    version: 1,
+    cache_date: config.cacheDate,
+    updated_at: new Date().toISOString(),
+    channel_search: serializableCacheMap(collectionCache.channelSearch),
+    fresh_uploads: serializableCacheMap(collectionCache.freshUploads),
+  };
+  await writeFile(collectionCache.path, `${JSON.stringify(payload, null, 2)}\n`);
+  collectionCache.dirty = false;
+  log("debug", "collection_cache_saved", "Saved collection cache", {
+    cache_path: collectionCache.path,
+    channel_search_entries: collectionCache.channelSearch.size,
+    fresh_upload_entries: collectionCache.freshUploads.size,
+  });
+}
+
+async function finalizeCollectionCache() {
+  if (!collectionCache.loaded && !collectionCache.path) return;
+  await persistCollectionCache({ force: true });
+  log("info", "collection_cache_summary", "Collection cache summary", {
+    cache_path: collectionCache.path,
+    cache_date: config.cacheDate,
+    ...collectionCache.stats,
+    channel_search_entries: collectionCache.channelSearch.size,
+    fresh_upload_entries: collectionCache.freshUploads.size,
+  });
+  collectionCache.channelSearch.clear();
+  collectionCache.freshUploads.clear();
+  collectionCache.loaded = false;
+  collectionCache.dirty = false;
 }
 
 function enqueueAgentRunEvent(level, event, message, metadata) {
@@ -509,7 +641,7 @@ async function ytdlp(args, { timeoutMs = config.ytdlpListTimeoutMs, label = "ytd
   });
 }
 
-async function listChannelUploads(channelId, { dateAfter = null, source = "recent_uploads" } = {}) {
+async function listChannelUploadsRaw(channelId, { dateAfter = null, source = "recent_uploads" } = {}) {
   const url = `https://www.youtube.com/channel/${channelId}/videos`;
   const printFmt = "%(id)s\t%(title)s\t%(duration)s\t%(upload_date)s\t%(view_count)s";
   const dateArgs = dateAfter ? ["--dateafter", dateAfter] : [];
@@ -537,7 +669,44 @@ async function listChannelUploads(channelId, { dateAfter = null, source = "recen
   });
 }
 
-async function searchChannel(channelId, query, limit) {
+async function listChannelUploads(channelId, { dateAfter = null, source = "recent_uploads" } = {}) {
+  await loadCollectionCache();
+  const key = freshUploadsCacheKey(channelId, dateAfter, config.maxVideosPerChannel);
+  const cached = collectionCache.freshUploads.get(key);
+  if (cached?.results) {
+    collectionCache.stats.fresh_upload_hits += 1;
+    log("debug", "fresh_upload_cache_hit", "Reused cached fresh-upload listing", {
+      channel_id: channelId,
+      date_after: dateAfter,
+      source,
+      count: cached.results.length,
+      cache_key: key,
+    });
+    return cloneCandidates(cached.results).map((candidate) => ({ ...candidate, source }));
+  }
+
+  collectionCache.stats.fresh_upload_misses += 1;
+  collectionCache.stats.fresh_upload_ytdlp_calls += 1;
+  log("debug", "fresh_upload_cache_miss", "Fetching fresh-upload listing", {
+    channel_id: channelId,
+    date_after: dateAfter,
+    source,
+    cache_key: key,
+  });
+  const results = await listChannelUploadsRaw(channelId, { dateAfter, source });
+  collectionCache.freshUploads.set(key, {
+    channel_id: channelId,
+    date_after: dateAfter,
+    limit: config.maxVideosPerChannel,
+    cached_at: new Date().toISOString(),
+    results: cloneCandidates(results),
+  });
+  collectionCache.dirty = true;
+  await persistCollectionCache();
+  return cloneCandidates(results);
+}
+
+async function searchChannelRaw(channelId, query, limit) {
   const url = `https://www.youtube.com/channel/${channelId}/search?query=${encodeURIComponent(query)}`;
   const printFmt = "%(id)s\t%(title)s\t%(duration)s";
   const { stdout } = await ytdlp([
@@ -562,6 +731,48 @@ async function searchChannel(channelId, query, limit) {
       query,
     };
   });
+}
+
+async function searchChannel(channelId, query, limit) {
+  await loadCollectionCache();
+  const queryNormalized = normalizeSearchQuery(query);
+  const key = channelSearchCacheKey(channelId, query);
+  const cached = collectionCache.channelSearch.get(key);
+  if (cached?.results && cached.limit >= limit) {
+    collectionCache.stats.channel_search_hits += 1;
+    log("debug", "channel_search_cache_hit", "Reused cached channel search", {
+      channel_id: channelId,
+      query,
+      query_normalized: queryNormalized,
+      requested_limit: limit,
+      cached_limit: cached.limit,
+      count: cached.results.length,
+      cache_key: key,
+    });
+    return cloneCandidates(cached.results).slice(0, limit).map((candidate) => ({ ...candidate, query }));
+  }
+
+  collectionCache.stats.channel_search_misses += 1;
+  collectionCache.stats.channel_search_ytdlp_calls += 1;
+  log("debug", "channel_search_cache_miss", "Fetching channel search", {
+    channel_id: channelId,
+    query,
+    query_normalized: queryNormalized,
+    requested_limit: limit,
+    cached_limit: cached?.limit ?? null,
+    cache_key: key,
+  });
+  const results = await searchChannelRaw(channelId, query, limit);
+  collectionCache.channelSearch.set(key, {
+    channel_id: channelId,
+    query_normalized: queryNormalized,
+    limit,
+    cached_at: new Date().toISOString(),
+    results: cloneCandidates(results),
+  });
+  collectionCache.dirty = true;
+  await persistCollectionCache();
+  return cloneCandidates(results);
 }
 
 function termsForSkill(skill) {
@@ -831,9 +1042,34 @@ async function ensureSystemHealthy(skill, candidate) {
   }
 }
 
+async function waitForTranscriptSlot(videoId) {
+  const minGapMs = Math.max(0, config.transcriptGlobalMinGapMs);
+  if (minGapMs <= 0) {
+    lastTranscriptFetchStartedAt = Date.now();
+    return;
+  }
+
+  const now = Date.now();
+  const nextAllowedAt = lastTranscriptFetchStartedAt + minGapMs;
+  const waitMs = lastTranscriptFetchStartedAt ? Math.max(0, nextAllowedAt - now) : 0;
+  if (waitMs > 0) {
+    collectionCache.stats.transcript_global_waits += 1;
+    collectionCache.stats.transcript_global_wait_ms += waitMs;
+    log("debug", "transcript_global_throttle_wait", "Waiting before transcript fetch to avoid YouTube subtitle 429s", {
+      video_id: videoId,
+      wait_ms: waitMs,
+      min_gap_ms: minGapMs,
+      cookies_from_browser: config.ytdlpCookiesFromBrowser || null,
+    });
+    await sleep(waitMs);
+  }
+  lastTranscriptFetchStartedAt = Date.now();
+}
+
 async function fetchTranscript(videoId) {
   const baseOut = join(config.transcriptDir, videoId);
   await mkdir(config.transcriptDir, { recursive: true });
+  await waitForTranscriptSlot(videoId);
   await ytdlp([
     "--skip-download",
     "--write-auto-subs", "--write-subs",
@@ -1292,7 +1528,9 @@ function installTerminationHandlers() {
       if (shuttingDown) process.exit(signal === "SIGTERM" ? 143 : 130);
       shuttingDown = true;
       abortActiveRun(signal.toLowerCase()).finally(() => {
-        process.exit(signal === "SIGTERM" ? 143 : 130);
+        finalizeCollectionCache()
+          .catch(() => undefined)
+          .finally(() => process.exit(signal === "SIGTERM" ? 143 : 130));
       });
     });
   }
@@ -1667,48 +1905,63 @@ async function processSkill(skill, summary) {
 async function main() {
   installTerminationHandlers();
   await mkdir(config.outputDir, { recursive: true });
+  await loadCollectionCache();
   try {
-    await preflightCheck();
-  } catch (error) {
-    await persistPreflightFailure(error);
-    throw error;
-  }
-
-  const skills = await loadSkills(skillSlugFilter);
-  if (!skills.length) throw new Error(`No active skills found${categorySlugFilter ? ` for category ${categorySlugFilter}` : ""}.`);
-  log("info", "collection_started", "Starting collection", {
-    skills: skills.length,
-    category: categorySlugFilter,
-    model: config.ollamaModel,
-    supabase_url: config.supabaseUrl,
-    ytdlp_cookies_from_browser: config.ytdlpCookiesFromBrowser || null,
-  });
-  const summary = [];
-  let consecutiveRateLimitCircuits = 0;
-  let stoppedByRateLimitCircuit = false;
-  for (const skill of skills) {
     try {
-      const result = await processSkill(skill, summary);
-      consecutiveRateLimitCircuits = result.circuitOpen ? consecutiveRateLimitCircuits + 1 : 0;
-      if (consecutiveRateLimitCircuits >= config.rateLimitConsecutiveSkillStop) {
-        stoppedByRateLimitCircuit = true;
-        log("error", "collection_rate_limit_circuit_stop", "Stopping collection after consecutive skill rate-limit circuits", {
-          consecutive_rate_limit_circuits: consecutiveRateLimitCircuits,
-          threshold: config.rateLimitConsecutiveSkillStop,
-        });
-        break;
-      }
+      await preflightCheck();
     } catch (error) {
-      consecutiveRateLimitCircuits = 0;
-      log("error", "skill_run_failed", errorMessage(error), { skill: skill.slug });
-      summary.push({ skill: skill.slug, status: "failed", error: errorMessage(error) });
+      await persistPreflightFailure(error);
+      throw error;
     }
-  }
 
-  const outputPath = join(config.outputDir, `${new Date().toISOString().replace(/[:.]/g, "-")}.json`);
-  await writeFile(outputPath, JSON.stringify({ ts: new Date().toISOString(), stopped_by_rate_limit_circuit: stoppedByRateLimitCircuit, summary }, null, 2));
-  log("info", "collection_finished", "Collection finished", { output: outputPath, stopped_by_rate_limit_circuit: stoppedByRateLimitCircuit, summary });
-  if (stoppedByRateLimitCircuit) process.exitCode = 1;
+    const skills = await loadSkills(skillSlugFilter);
+    if (!skills.length) throw new Error(`No active skills found${categorySlugFilter ? ` for category ${categorySlugFilter}` : ""}.`);
+    log("info", "collection_started", "Starting collection", {
+      skills: skills.length,
+      category: categorySlugFilter,
+      model: config.ollamaModel,
+      supabase_url: config.supabaseUrl,
+      ytdlp_cookies_from_browser: config.ytdlpCookiesFromBrowser || null,
+      collection_cache_path: collectionCache.path,
+      collection_cache_date: config.cacheDate,
+      transcript_global_min_gap_ms: config.transcriptGlobalMinGapMs,
+    });
+    const summary = [];
+    let consecutiveRateLimitCircuits = 0;
+    let stoppedByRateLimitCircuit = false;
+    for (const skill of skills) {
+      try {
+        const result = await processSkill(skill, summary);
+        consecutiveRateLimitCircuits = result.circuitOpen ? consecutiveRateLimitCircuits + 1 : 0;
+        if (consecutiveRateLimitCircuits >= config.rateLimitConsecutiveSkillStop) {
+          stoppedByRateLimitCircuit = true;
+          log("error", "collection_rate_limit_circuit_stop", "Stopping collection after consecutive skill rate-limit circuits", {
+            consecutive_rate_limit_circuits: consecutiveRateLimitCircuits,
+            threshold: config.rateLimitConsecutiveSkillStop,
+          });
+          break;
+        }
+      } catch (error) {
+        consecutiveRateLimitCircuits = 0;
+        log("error", "skill_run_failed", errorMessage(error), { skill: skill.slug });
+        summary.push({ skill: skill.slug, status: "failed", error: errorMessage(error) });
+      }
+    }
+
+    const outputPath = join(config.outputDir, `${new Date().toISOString().replace(/[:.]/g, "-")}.json`);
+    await writeFile(outputPath, JSON.stringify({ ts: new Date().toISOString(), stopped_by_rate_limit_circuit: stoppedByRateLimitCircuit, summary }, null, 2));
+    log("info", "collection_finished", "Collection finished", { output: outputPath, stopped_by_rate_limit_circuit: stoppedByRateLimitCircuit, summary });
+    if (stoppedByRateLimitCircuit) process.exitCode = 1;
+  } finally {
+    await finalizeCollectionCache().catch((error) => {
+      console.warn(JSON.stringify({
+        ts: new Date().toISOString(),
+        level: "warn",
+        event: "collection_cache_finalize_failed",
+        message: errorMessage(error),
+      }));
+    });
+  }
 }
 
 main().catch(async (error) => {
