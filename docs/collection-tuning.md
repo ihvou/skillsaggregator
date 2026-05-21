@@ -23,15 +23,31 @@ The cap order matters most:
 3. Lowering `COLLECT_SEARCH_RESULTS_PER_CHANNEL` cuts each search-page payload (less work, less throttle risk).
 4. Bumping `YTDLP_SLEEP_REQUESTS` spaces channel-search calls (a softer endpoint).
 
-### Authenticated YouTube via browser cookies (added 2026-05-21)
+### Authenticated YouTube via exported cookies file (added 2026-05-22, **preferred**)
 
 ```bash
-COLLECT_YTDLP_COOKIES_FROM_BROWSER=chrome  # or "safari" / "firefox" / "brave"
+COLLECT_YTDLP_COOKIES_FILE=/path/to/youtube-cookies.txt
 ```
 
-When set, every `yt-dlp` invocation gets `--cookies-from-browser <name>`. Authenticated YouTube users get higher quota on metadata + channel-listing endpoints. **Note:** the subtitle endpoint still has a per-IP cooldown that cookies don't bypass immediately. Verified empirically — auth helped channel-list and video-info but didn't help subtitles during an active 24h+ cooldown window.
+Reads a Netscape-format cookies.txt exported from your browser. Reliable across any browser, bypasses the macOS Keychain entirely, gives yt-dlp the actual YouTube auth tokens. The agent gracefully falls back to anonymous if the path doesn't exist (logs `ytdlp_cookies_file_missing` warning).
 
-To disable: set to empty string. To use Safari: requires "Allow remote automation" in Safari Develop menu (the keychain dance).
+**How to export (one-time setup, ~2 min)**:
+1. Install "[Get cookies.txt LOCALLY](https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc)" extension in your browser
+2. Visit `https://www.youtube.com` while signed in
+3. Click the extension icon → "Export As" → "Netscape"
+4. Save to the path configured in `COLLECT_YTDLP_COOKIES_FILE`
+
+**Refresh cadence**: roughly monthly, or whenever the agent logs start showing `HTTP Error 401` on YouTube requests (means cookies expired). Re-export and overwrite the file.
+
+### Authenticated YouTube via cookies-from-browser (added 2026-05-21, **don't use with Arc**)
+
+```bash
+# COLLECT_YTDLP_COOKIES_FROM_BROWSER=chrome   # disabled 2026-05-22, see below
+```
+
+yt-dlp's `--cookies-from-browser` flag. **This was wired in originally but had a silent failure mode**: yt-dlp's supported browsers list is `brave | chrome | chromium | edge | firefox | opera | safari | vivaldi | whale`. Arc is NOT in that list. The closest workaround (`chromium:<arc-path>`) tries to look up the cookie-encryption key in macOS Keychain under the name "Chrome Safe Storage", but Arc stores it as "Arc Safe Storage", so the lookup misses — and yt-dlp silently grabs only the un-encrypted preference/analytics cookies, NOT the encrypted YouTube auth tokens. No Keychain prompt fires (because nothing asked for the actual key), so the misconfig is invisible. Output looks like `Extracted 468 cookies from chrome` but functionally identical to anonymous.
+
+If your browser IS in the supported list (Safari users especially) AND you've granted Keychain access once, this can work. But the cookies-file path is more durable and the recommended default.
 
 ### Internal-token auto-approve gate (added 2026-05-19, see W7)
 

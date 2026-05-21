@@ -61,11 +61,21 @@ const config = {
   ollamaUrl: process.env.OLLAMA_URL ?? "http://localhost:11434",
   ollamaModel: process.env.OLLAMA_MODEL ?? "qwen2.5:7b",
   ytdlpBin: process.env.YTDLP_BIN ?? join(root, "bin", "yt-dlp"),
-  // When set (e.g. "chrome", "safari", "firefox", "brave"), yt-dlp reads the
-  // browser's logged-in YouTube cookies and sends authenticated requests.
-  // Authenticated YouTube quota is much higher than the anonymous IP quota
-  // — especially for subtitle endpoints — and is on a separate quota bucket
-  // (so anonymous-IP cooldowns don't apply). Leave unset to keep anonymous.
+  // Path to a Netscape-format cookies.txt exported from your browser (preferred).
+  // Best path because it avoids macOS Keychain lookups entirely — `cookies-from-browser`
+  // only works for yt-dlp's supported browsers (brave / chrome / chromium / edge /
+  // firefox / opera / safari / vivaldi / whale) AND requires the right Keychain
+  // entry name. For Arc, Edge profiles in non-standard paths, etc., the keychain
+  // entry name doesn't match what yt-dlp probes for and the encrypted v10 cookies
+  // (which carry the YouTube auth) get silently skipped — yt-dlp returns only
+  // anonymous-tier session cookies, indistinguishable from no auth at all.
+  // Export with a browser extension like "Get cookies.txt LOCALLY" while logged
+  // into YouTube; refresh roughly monthly as cookies expire.
+  ytdlpCookiesFile: process.env.COLLECT_YTDLP_COOKIES_FILE ?? "",
+  // Fallback: yt-dlp's built-in cookies-from-browser. Only useful if your browser
+  // is in the supported list above AND yt-dlp can find the keychain decryption key
+  // for the encrypted cookies. If both this and ytdlpCookiesFile are set, the file
+  // wins (it's the more reliable signal). Leave unset for anonymous.
   ytdlpCookiesFromBrowser: process.env.COLLECT_YTDLP_COOKIES_FROM_BROWSER ?? "",
   nodeBin: process.env.NODE_BIN_FOR_YTDLP ?? process.execPath,
   relevanceThreshold: Number(process.env.STAGE2_RELEVANCE_THRESHOLD ?? 0.7),
@@ -111,6 +121,19 @@ const config = {
 config.transcriptGlobalMinGapMs = Number(
   process.env.COLLECT_TRANSCRIPT_GLOBAL_MIN_GAP_MS ?? config.ytdlpSleepSubtitles * 1000,
 );
+
+// Gracefully ignore a missing cookies file (e.g. user hasn't exported yet, or it
+// got cleaned up) — yt-dlp would otherwise error every call. Falls back to either
+// browser-based cookies or anonymous, in that order.
+if (config.ytdlpCookiesFile && !existsSync(config.ytdlpCookiesFile)) {
+  console.warn(JSON.stringify({
+    ts: new Date().toISOString(),
+    level: "warn",
+    event: "ytdlp_cookies_file_missing",
+    message: `COLLECT_YTDLP_COOKIES_FILE points to a path that doesn't exist (${config.ytdlpCookiesFile}); falling back to ${config.ytdlpCookiesFromBrowser ? `browser cookies (${config.ytdlpCookiesFromBrowser})` : "anonymous requests"}.`,
+  }));
+  config.ytdlpCookiesFile = "";
+}
 
 if (!config.serviceRoleKey) {
   console.error("SUPABASE_SERVICE_ROLE_KEY is not set. Get it from `npx supabase status` and export it.");
@@ -603,9 +626,13 @@ async function finishAgentRun(runId, { status = "completed", suggestionsCreated 
 
 async function ytdlp(args, { timeoutMs = config.ytdlpListTimeoutMs, label = "ytdlp" } = {}) {
   return new Promise((resolveP, rejectP) => {
-    const cookiesArgs = config.ytdlpCookiesFromBrowser
-      ? ["--cookies-from-browser", config.ytdlpCookiesFromBrowser]
-      : [];
+    // Cookies-file beats cookies-from-browser when both are set — the file is
+    // the explicit, no-keychain path that actually carries the encrypted auth tokens.
+    const cookiesArgs = config.ytdlpCookiesFile
+      ? ["--cookies", config.ytdlpCookiesFile]
+      : config.ytdlpCookiesFromBrowser
+        ? ["--cookies-from-browser", config.ytdlpCookiesFromBrowser]
+        : [];
     const child = spawn(
       config.ytdlpBin,
       ["--js-runtimes", `node:${config.nodeBin}`, ...cookiesArgs, ...args],
@@ -1059,6 +1086,7 @@ async function waitForTranscriptSlot(videoId) {
       video_id: videoId,
       wait_ms: waitMs,
       min_gap_ms: minGapMs,
+      cookies_file: config.ytdlpCookiesFile || null,
       cookies_from_browser: config.ytdlpCookiesFromBrowser || null,
     });
     await sleep(waitMs);
@@ -1921,6 +1949,7 @@ async function main() {
       category: categorySlugFilter,
       model: config.ollamaModel,
       supabase_url: config.supabaseUrl,
+      ytdlp_cookies_file: config.ytdlpCookiesFile || null,
       ytdlp_cookies_from_browser: config.ytdlpCookiesFromBrowser || null,
       collection_cache_path: collectionCache.path,
       collection_cache_date: config.cacheDate,
