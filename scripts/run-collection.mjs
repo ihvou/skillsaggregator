@@ -58,6 +58,12 @@ const config = {
   ollamaUrl: process.env.OLLAMA_URL ?? "http://localhost:11434",
   ollamaModel: process.env.OLLAMA_MODEL ?? "qwen2.5:7b",
   ytdlpBin: process.env.YTDLP_BIN ?? join(root, "bin", "yt-dlp"),
+  // When set (e.g. "chrome", "safari", "firefox", "brave"), yt-dlp reads the
+  // browser's logged-in YouTube cookies and sends authenticated requests.
+  // Authenticated YouTube quota is much higher than the anonymous IP quota
+  // — especially for subtitle endpoints — and is on a separate quota bucket
+  // (so anonymous-IP cooldowns don't apply). Leave unset to keep anonymous.
+  ytdlpCookiesFromBrowser: process.env.COLLECT_YTDLP_COOKIES_FROM_BROWSER ?? "",
   nodeBin: process.env.NODE_BIN_FOR_YTDLP ?? process.execPath,
   relevanceThreshold: Number(process.env.STAGE2_RELEVANCE_THRESHOLD ?? 0.7),
   qualityThreshold: Number(process.env.STAGE2_QUALITY_THRESHOLD ?? 0.6),
@@ -465,9 +471,14 @@ async function finishAgentRun(runId, { status = "completed", suggestionsCreated 
 
 async function ytdlp(args, { timeoutMs = config.ytdlpListTimeoutMs, label = "ytdlp" } = {}) {
   return new Promise((resolveP, rejectP) => {
-    const child = spawn(config.ytdlpBin, ["--js-runtimes", `node:${config.nodeBin}`, ...args], {
-      stdio: ["ignore", "pipe", "pipe"],
-    });
+    const cookiesArgs = config.ytdlpCookiesFromBrowser
+      ? ["--cookies-from-browser", config.ytdlpCookiesFromBrowser]
+      : [];
+    const child = spawn(
+      config.ytdlpBin,
+      ["--js-runtimes", `node:${config.nodeBin}`, ...cookiesArgs, ...args],
+      { stdio: ["ignore", "pipe", "pipe"] },
+    );
     let stdout = "";
     let stderr = "";
     let timedOut = false;
@@ -1670,6 +1681,7 @@ async function main() {
     category: categorySlugFilter,
     model: config.ollamaModel,
     supabase_url: config.supabaseUrl,
+    ytdlp_cookies_from_browser: config.ytdlpCookiesFromBrowser || null,
   });
   const summary = [];
   let consecutiveRateLimitCircuits = 0;
