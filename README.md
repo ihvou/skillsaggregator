@@ -42,6 +42,8 @@ The default MVP workflow is local collection plus human moderation:
 
 To switch back to deployed-agent collection later, re-enable the cron jobs, deploy the dormant functions, configure live model/API secrets, and keep the server-side moderation policy explicit.
 
+Collection rate-limit tuning + escalation playbook lives at [`docs/collection-tuning.md`](docs/collection-tuning.md). `apps/web/.env.local` is gitignored, so that doc is the canonical record of what's currently configured and why.
+
 ## Apps
 
 ```bash
