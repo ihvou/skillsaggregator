@@ -226,6 +226,20 @@ function renderReport({ date, start, end, runs, events, suggestionStatusCounts, 
   const skillRuns = runs.filter((run) => run.skill_slug);
   const runStatusCounts = countBy(skillRuns, (run) => run.status);
   const scored = events.filter((event) => event.event_type === "candidate_scored").length;
+  const transcriptFailures = events.filter((event) => event.event_type === "transcript_failed");
+  const transcriptTimeoutFailures = transcriptFailures.filter((event) =>
+    event.metadata.transcript_timed_out === true
+    || String(event.message).includes("ytdlp_transcript_timeout_after_")
+  ).length;
+  const transcriptRateLimitEquivalentFailures = transcriptFailures.filter((event) =>
+    event.metadata.youtube_rate_limited === true
+  ).length;
+  const transcriptCircuitOpens = events.filter((event) =>
+    event.event_type === "transcript_rate_limit_circuit_open"
+  ).length;
+  const metadataFallbackScored = events.filter((event) =>
+    event.event_type === "candidate_scored" && event.metadata.scoring_mode === "metadata_fallback"
+  ).length;
   const submittedEvents = events.filter((event) =>
     event.event_type === "suggestion_submitted" || event.event_type === "secondary_suggestion_submitted"
   );
@@ -254,6 +268,11 @@ function renderReport({ date, start, end, runs, events, suggestionStatusCounts, 
     "",
     "## Candidates And Suggestions",
     `Candidates scored: ${scored}`,
+    `Transcript failed: ${transcriptFailures.length}`,
+    `Transcript timeouts: ${transcriptTimeoutFailures}`,
+    `Transcript rate-limit-equivalent failures: ${transcriptRateLimitEquivalentFailures}`,
+    `Transcript circuits opened: ${transcriptCircuitOpens}`,
+    `Metadata fallback scored: ${metadataFallbackScored}`,
     `Submitted: ${submitted}`,
     `Approved now: ${approved}`,
     `Rejected now: ${rejected}`,

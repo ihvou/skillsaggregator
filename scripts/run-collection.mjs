@@ -38,8 +38,11 @@
  *   COLLECT_ABORT                 set to 1/true to fail fast before candidate work
  *   COLLECT_OLLAMA_TIMEOUT_MS     default 90000
  *   COLLECT_YTDLP_LIST_TIMEOUT_MS default 60000
- *   COLLECT_YTDLP_TRANSCRIPT_TIMEOUT_MS default 60000
+ *   COLLECT_YTDLP_TRANSCRIPT_TIMEOUT_MS default 15000
  *   COLLECT_TRANSCRIPT_GLOBAL_MIN_GAP_MS default YTDLP_SLEEP_SUBTITLES * 1000
+ *   COLLECT_TRANSCRIPT_RATE_LIMIT_CONSECUTIVE default 5
+ *   COLLECT_TRANSCRIPT_FALLBACK_CANDIDATES default 5
+ *   COLLECT_TRANSCRIPT_FALLBACK_RELEVANCE_MULTIPLIER default 0.7
  *   COLLECT_SUBMIT_TIMEOUT_MS     default 15000
  */
 import { execFile, spawn } from "node:child_process";
@@ -99,7 +102,7 @@ const config = {
   saturationDuplicateThreshold: Number(process.env.COLLECT_SATURATION_DUPLICATE_THRESHOLD ?? 0.9),
   saturationCooldownDays: Number(process.env.COLLECT_SATURATION_COOLDOWN_DAYS ?? 7),
   ytdlpListTimeoutMs: Number(process.env.COLLECT_YTDLP_LIST_TIMEOUT_MS ?? 60_000),
-  ytdlpTranscriptTimeoutMs: Number(process.env.COLLECT_YTDLP_TRANSCRIPT_TIMEOUT_MS ?? 60_000),
+  ytdlpTranscriptTimeoutMs: Number(process.env.COLLECT_YTDLP_TRANSCRIPT_TIMEOUT_MS ?? 15_000),
   ollamaTimeoutMs: Number(process.env.COLLECT_OLLAMA_TIMEOUT_MS ?? 90_000),
   submitTimeoutMs: Number(process.env.COLLECT_SUBMIT_TIMEOUT_MS ?? 15_000),
   submit503CircuitThreshold: Number(process.env.COLLECT_SUBMIT_503_CIRCUIT_THRESHOLD ?? 5),
@@ -107,6 +110,9 @@ const config = {
   dbQueryTimeoutMs: Number(process.env.COLLECT_DB_TIMEOUT_MS ?? 30_000),
   rateLimitWindowSize: Number(process.env.COLLECT_RATE_LIMIT_WINDOW_SIZE ?? 10),
   rateLimitThreshold: Number(process.env.COLLECT_RATE_LIMIT_THRESHOLD ?? 0.4),
+  transcriptRateLimitConsecutiveThreshold: Number(process.env.COLLECT_TRANSCRIPT_RATE_LIMIT_CONSECUTIVE ?? 5),
+  transcriptFallbackCandidates: Number(process.env.COLLECT_TRANSCRIPT_FALLBACK_CANDIDATES ?? 5),
+  transcriptFallbackRelevanceMultiplier: Number(process.env.COLLECT_TRANSCRIPT_FALLBACK_RELEVANCE_MULTIPLIER ?? 0.7),
   rateLimitConsecutiveSkillStop: Number(process.env.COLLECT_RATE_LIMIT_CONSECUTIVE_SKILLS ?? 2),
   stopFile: process.env.COLLECT_STOP_FILE ?? join(root, ".collection", "STOP"),
   skipSystemPressureCheck: process.env.COLLECT_SKIP_SYSTEM_PRESSURE === "1",
@@ -834,20 +840,37 @@ function passesSoftFilters(candidate) {
   return { ok: true };
 }
 
+function isTranscriptTimeout(error) {
+  return errorMessage(error).toLowerCase().includes("ytdlp_transcript_timeout_after_");
+}
+
 function isYoutubeRateLimit(error) {
   const message = errorMessage(error).toLowerCase();
-  return message.includes("429") || message.includes("too many requests") || message.includes("rate limit");
+  return isTranscriptTimeout(error)
+    || message.includes("429")
+    || message.includes("too many requests")
+    || message.includes("rate limit");
 }
 
 function rememberTranscriptAttempt(window, wasRateLimited) {
   window.push(wasRateLimited);
   while (window.length > config.rateLimitWindowSize) window.shift();
   const rateLimited = window.filter(Boolean).length;
+  const ratio = window.length ? rateLimited / window.length : 0;
+  let consecutiveRateLimited = 0;
+  for (let index = window.length - 1; index >= 0; index -= 1) {
+    if (!window[index]) break;
+    consecutiveRateLimited += 1;
+  }
+  const openByRatio = window.length >= config.rateLimitWindowSize && ratio > config.rateLimitThreshold;
+  const openByConsecutive = consecutiveRateLimited >= config.transcriptRateLimitConsecutiveThreshold;
   return {
     total: window.length,
     rate_limited: rateLimited,
-    ratio: window.length ? rateLimited / window.length : 0,
-    open: window.length >= config.rateLimitWindowSize && rateLimited / window.length > config.rateLimitThreshold,
+    consecutive_rate_limited: consecutiveRateLimited,
+    ratio,
+    open: openByRatio || openByConsecutive,
+    open_reason: openByConsecutive ? "consecutive_transcript_failures" : openByRatio ? "rate_limit_ratio" : null,
   };
 }
 
@@ -1173,6 +1196,64 @@ function promptUser(skill, candidate, transcript) {
   ].join("\n");
 }
 
+function clampScore(value, fallback = 0) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return Math.max(0, Math.min(1, number));
+}
+
+function candidateMetadataForFallback(candidate) {
+  return {
+    title: candidate.title ?? "",
+    description: candidate.description ?? null,
+    first_comment: candidate.first_comment ?? null,
+    view_count: candidate.view_count ?? null,
+    duration_sec: candidate.duration_sec ?? null,
+    upload_date: candidate.upload_date ?? null,
+    source: candidate.source ?? null,
+    query: candidate.query ?? null,
+    channel_id: candidate.channel_id ?? null,
+  };
+}
+
+function metadataFallbackPromptSystem(skill) {
+  const category = skill.category_name ?? skill.category_slug ?? "the sport";
+  return [
+    `You score ${category} tutorial videos against a specific sub-skill when the transcript endpoint is unavailable.`,
+    `Use only the provided metadata: title, description, first comment, view count, duration, upload date, source, and query.`,
+    `Be conservative because there is no transcript. A clear how-to title and specific description can be relevant; vague titles, competition footage, vlogs, or highlights should score low.`,
+    `Return JSON only.`,
+  ].join(" ");
+}
+
+function metadataFallbackPromptUser(skill, candidate) {
+  return [
+    `Return JSON with these exact keys:`,
+    `{"relevance": 0..1, "teaching_quality": 0..1, "demo_vs_talk": 0..1, "level": "beginner"|"intermediate"|"advanced", "public_note": "<=140 chars", "evidence_quote": "<=200 chars from title/description/first_comment"}`,
+    "",
+    `Rules:`,
+    `- there is no transcript; do not invent evidence`,
+    `- relevance should be high only when the metadata clearly says the video teaches the sub-skill`,
+    `- teaching_quality should reflect tutorial intent and useful metadata signals, not channel reputation alone`,
+    `- evidence_quote must be a real substring from title, description, or first_comment`,
+    "",
+    `sub_skill: "${skill.name}"`,
+    `sub_skill_description: "${skill.description}"`,
+    "",
+    `candidate_metadata_json:`,
+    JSON.stringify(candidateMetadataForFallback(candidate), null, 2),
+  ].join("\n");
+}
+
+function fallbackEvidenceQuote(candidate, preferredQuote) {
+  const evidenceText = [
+    candidate.title,
+    candidate.description,
+    candidate.first_comment,
+  ].filter(Boolean).join(" | ");
+  return String(preferredQuote || evidenceText || candidate.title || "").slice(0, 200);
+}
+
 function parseOllamaJson(payload, context) {
   const cleaned = (payload.response ?? "").replace(/[‘’]/g, "'").replace(/[“”]/g, '"');
   try {
@@ -1257,12 +1338,56 @@ async function scoreWithOllama(skill, candidate, transcript) {
   const payload = await response.json();
   const parsed = parseOllamaJson(payload, "score");
   return {
-    relevance: Number(parsed.relevance ?? 0),
-    teaching_quality: Number(parsed.teaching_quality ?? 0),
-    demo_vs_talk: Number(parsed.demo_vs_talk ?? 0.5),
+    relevance: clampScore(parsed.relevance),
+    teaching_quality: clampScore(parsed.teaching_quality),
+    demo_vs_talk: clampScore(parsed.demo_vs_talk, 0.5),
     level: ["beginner", "intermediate", "advanced"].includes(parsed.level) ? parsed.level : null,
     public_note: String(parsed.public_note ?? "").slice(0, 140),
     evidence_quote: String(parsed.evidence_quote ?? "").slice(0, 200),
+    scoring_mode: "transcript",
+  };
+}
+
+async function scoreMetadataFallbackWithOllama(skill, candidate) {
+  const body = {
+    model: config.ollamaModel,
+    stream: false,
+    format: "json",
+    options: { temperature: 0 },
+    system: metadataFallbackPromptSystem(skill),
+    prompt: metadataFallbackPromptUser(skill, candidate),
+  };
+  const response = await fetchWithTimeout(`${config.ollamaUrl}/api/generate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  }, config.ollamaTimeoutMs, "ollama_metadata_fallback_score");
+  if (!response.ok) throw new Error(`Ollama metadata fallback ${response.status}`);
+  const payload = await response.json();
+  const parsed = parseOllamaJson(payload, "metadata_fallback_score");
+  const originalRelevance = clampScore(parsed.relevance);
+  const relevanceMultiplier = clampScore(config.transcriptFallbackRelevanceMultiplier, 0.7);
+  return {
+    relevance: clampScore(originalRelevance * relevanceMultiplier),
+    original_relevance: originalRelevance,
+    relevance_multiplier: relevanceMultiplier,
+    teaching_quality: clampScore(parsed.teaching_quality),
+    demo_vs_talk: clampScore(parsed.demo_vs_talk, 0.5),
+    level: ["beginner", "intermediate", "advanced"].includes(parsed.level) ? parsed.level : null,
+    public_note: String(parsed.public_note ?? "").slice(0, 140),
+    evidence_quote: fallbackEvidenceQuote(candidate, parsed.evidence_quote),
+    scoring_mode: "metadata_fallback",
+  };
+}
+
+function scoreThresholdStatus(score) {
+  const relevanceThreshold = score.scoring_mode === "metadata_fallback"
+    ? config.relevanceThreshold * clampScore(config.transcriptFallbackRelevanceMultiplier, 0.7)
+    : config.relevanceThreshold;
+  return {
+    passes: score.relevance >= relevanceThreshold && score.teaching_quality >= config.qualityThreshold,
+    relevance_threshold: relevanceThreshold,
+    quality_threshold: config.qualityThreshold,
   };
 }
 
@@ -1343,6 +1468,8 @@ async function findSecondarySkills(primarySkill, categorySkills, candidate, tran
 
 async function postSuggestion(skill, candidate, transcript, score, viewCount) {
   const confidence = Math.min(score.relevance, score.teaching_quality);
+  const scoringMode = score.scoring_mode ?? "transcript";
+  const hasTranscript = typeof transcript === "string" && transcript.length > 0;
   // High-confidence candidates request auto_approved; the Edge Function honors it only
   // when the request also carries the matching x-internal-token (see security.ts).
   const requestAutoApprove =
@@ -1358,7 +1485,7 @@ async function postSuggestion(skill, candidate, transcript, score, viewCount) {
       canonical_url: candidate.canonical_url,
       domain: "youtube.com",
       title: candidate.title,
-      description: null,
+      description: candidate.description ?? null,
       thumbnail_url: `https://i.ytimg.com/vi/${candidate.video_id}/hqdefault.jpg`,
       content_type: "video",
       language: "en",
@@ -1367,12 +1494,24 @@ async function postSuggestion(skill, candidate, transcript, score, viewCount) {
       skill_level: score.level,
     },
     evidence_json: {
-      source: "youtube_local_collection",
+      source: scoringMode === "metadata_fallback"
+        ? "youtube_local_collection_metadata_fallback"
+        : "youtube_local_collection",
       channel_id: candidate.channel_id,
       video_id: candidate.video_id,
       view_count: viewCount,
+      scoring_mode: scoringMode,
+      transcript_available: hasTranscript,
+      metadata_fallback: scoringMode === "metadata_fallback"
+        ? {
+            description_available: Boolean(candidate.description),
+            first_comment_available: Boolean(candidate.first_comment),
+            original_relevance: score.original_relevance ?? null,
+            relevance_multiplier: score.relevance_multiplier ?? null,
+          }
+        : null,
       score,
-      transcript_excerpt: transcript.slice(0, 600),
+      transcript_excerpt: hasTranscript ? transcript.slice(0, 600) : null,
     },
     confidence,
     ...(requestAutoApprove ? { requested_status: "auto_approved" } : {}),
@@ -1578,6 +1717,12 @@ async function processSkill(skill, summary) {
   let duplicateCount = 0;
   let consecutiveSubmit503 = 0;
   const transcriptRateWindow = [];
+  let transcriptFailures = 0;
+  let transcriptRateLimitEquivalentFailures = 0;
+  let transcriptCircuitOpen = false;
+  let transcriptFallbackRemaining = 0;
+  let metadataFallbackScoredCount = 0;
+  let lastTranscriptRateStatus = null;
   activeRunId = runId;
   activeRunState = { runId, skill, suggestionsCreated: 0, finalized: false };
 
@@ -1690,42 +1835,100 @@ async function processSkill(skill, summary) {
         await sleep(2000);
       }
       firstCandidate = false;
-      let transcript;
-      try {
-        transcript = await fetchTranscript(candidate.video_id);
-        const rateStatus = rememberTranscriptAttempt(transcriptRateWindow, false);
-        log("debug", "transcript_fetch_completed", "Transcript fetched", {
-          video_id: candidate.video_id,
-          length: transcript?.length ?? 0,
-          rate_limit_window: rateStatus,
-        });
-        if (!transcript || transcript.length < 200) {
-          log("debug", "candidate_skipped_no_transcript", "Transcript missing or too short", {
-            video_id: candidate.video_id, length: transcript?.length ?? 0,
-          });
-          continue;
-        }
-      } catch (error) {
-        const rateLimited = isYoutubeRateLimit(error);
-        const rateStatus = rememberTranscriptAttempt(transcriptRateWindow, rateLimited);
-        log("warn", "transcript_failed", errorMessage(error), {
-          video_id: candidate.video_id,
-          youtube_rate_limited: rateLimited,
-          rate_limit_window: rateStatus,
-        });
-        if (rateStatus.open) {
+      let transcript = null;
+      let scoringMode = "transcript";
+
+      if (transcriptCircuitOpen) {
+        if (transcriptFallbackRemaining <= 0) {
           throw new SkillAbortError("youtube_rate_limit_circuit_open", "YouTube transcript rate-limit circuit opened", {
+            rate_limit_window: lastTranscriptRateStatus,
+            transcript_failures: transcriptFailures,
+            transcript_rate_limit_equivalent_failures: transcriptRateLimitEquivalentFailures,
+            metadata_fallback_scored_count: metadataFallbackScoredCount,
+          });
+        }
+
+        transcriptFallbackRemaining -= 1;
+        scoringMode = "metadata_fallback";
+        log("warn", "transcript_optional_fallback_candidate", "Scoring candidate without transcript because transcript circuit is open", {
+          skill: skill.slug,
+          video_id: candidate.video_id,
+          fallback_remaining_after_this: transcriptFallbackRemaining,
+          metadata: candidateMetadataForFallback(candidate),
+        });
+      } else {
+        try {
+          transcript = await fetchTranscript(candidate.video_id);
+          const rateStatus = rememberTranscriptAttempt(transcriptRateWindow, false);
+          lastTranscriptRateStatus = rateStatus;
+          log("debug", "transcript_fetch_completed", "Transcript fetched", {
+            video_id: candidate.video_id,
+            length: transcript?.length ?? 0,
             rate_limit_window: rateStatus,
           });
+          if (!transcript || transcript.length < 200) {
+            log("debug", "candidate_skipped_no_transcript", "Transcript missing or too short", {
+              video_id: candidate.video_id, length: transcript?.length ?? 0,
+            });
+            continue;
+          }
+        } catch (error) {
+          const transcriptTimedOut = isTranscriptTimeout(error);
+          const rateLimited = isYoutubeRateLimit(error);
+          const rateStatus = rememberTranscriptAttempt(transcriptRateWindow, rateLimited);
+          lastTranscriptRateStatus = rateStatus;
+          transcriptFailures += 1;
+          if (rateLimited) transcriptRateLimitEquivalentFailures += 1;
+          log("warn", "transcript_failed", errorMessage(error), {
+            video_id: candidate.video_id,
+            youtube_rate_limited: rateLimited,
+            transcript_timed_out: transcriptTimedOut,
+            rate_limit_window: rateStatus,
+            transcript_failures: transcriptFailures,
+            transcript_rate_limit_equivalent_failures: transcriptRateLimitEquivalentFailures,
+          });
+          if (rateStatus.open) {
+            transcriptCircuitOpen = true;
+            transcriptFallbackRemaining = Math.max(0, config.transcriptFallbackCandidates);
+            log("error", "transcript_rate_limit_circuit_open", "YouTube transcript rate-limit circuit opened", {
+              skill: skill.slug,
+              video_id: candidate.video_id,
+              rate_limit_window: rateStatus,
+              consecutive_threshold: config.transcriptRateLimitConsecutiveThreshold,
+              fallback_candidate_budget: transcriptFallbackRemaining,
+              timeout_ms: config.ytdlpTranscriptTimeoutMs,
+            });
+            if (transcriptFallbackRemaining > 0) {
+              log("warn", "transcript_optional_fallback_activated", "Transcript fetches are failing; trying metadata-only scoring for the next candidates", {
+                skill: skill.slug,
+                fallback_candidate_budget: transcriptFallbackRemaining,
+                relevance_multiplier: config.transcriptFallbackRelevanceMultiplier,
+                rate_limit_window: rateStatus,
+              });
+              continue;
+            }
+            throw new SkillAbortError("youtube_rate_limit_circuit_open", "YouTube transcript rate-limit circuit opened", {
+              rate_limit_window: rateStatus,
+              transcript_failures: transcriptFailures,
+              transcript_rate_limit_equivalent_failures: transcriptRateLimitEquivalentFailures,
+              metadata_fallback_scored_count: metadataFallbackScoredCount,
+            });
+          }
+          continue;
         }
-        continue;
       }
 
       let score;
       try {
-        score = await scoreWithOllama(skill, candidate, transcript);
+        score = scoringMode === "metadata_fallback"
+          ? await scoreMetadataFallbackWithOllama(skill, candidate)
+          : await scoreWithOllama(skill, candidate, transcript);
+        if (score.scoring_mode === "metadata_fallback") metadataFallbackScoredCount += 1;
       } catch (error) {
-        log("warn", "score_failed", errorMessage(error), { video_id: candidate.video_id });
+        log("warn", "score_failed", errorMessage(error), {
+          video_id: candidate.video_id,
+          scoring_mode: scoringMode,
+        });
         continue;
       }
 
@@ -1733,13 +1936,26 @@ async function processSkill(skill, summary) {
         video_id: candidate.video_id,
         title: candidate.title.slice(0, 80),
         relevance: score.relevance,
+        original_relevance: score.original_relevance ?? null,
+        relevance_multiplier: score.relevance_multiplier ?? null,
         teaching_quality: score.teaching_quality,
         skill_level: score.level,
         title_relevance: candidate.title_relevance,
+        scoring_mode: score.scoring_mode ?? scoringMode,
+        transcript_available: Boolean(transcript),
       });
       scoredCount += 1;
 
-      if (score.relevance < config.relevanceThreshold || score.teaching_quality < config.qualityThreshold) {
+      const thresholdStatus = scoreThresholdStatus(score);
+      if (!thresholdStatus.passes) {
+        log("debug", "candidate_rejected_score_threshold", "Candidate score below threshold", {
+          video_id: candidate.video_id,
+          scoring_mode: score.scoring_mode ?? scoringMode,
+          relevance: score.relevance,
+          original_relevance: score.original_relevance ?? null,
+          teaching_quality: score.teaching_quality,
+          ...thresholdStatus,
+        });
         continue;
       }
 
@@ -1790,6 +2006,14 @@ async function processSkill(skill, summary) {
             last_video_id: candidate.video_id,
           });
         }
+        continue;
+      }
+
+      if (score.scoring_mode === "metadata_fallback") {
+        log("debug", "secondary_skills_skipped_metadata_fallback", "Skipping secondary skill scoring because transcript was unavailable", {
+          video_id: candidate.video_id,
+          primary_skill: skill.slug,
+        });
         continue;
       }
 
@@ -1869,6 +2093,16 @@ async function processSkill(skill, summary) {
       }
     }
 
+    if (transcriptCircuitOpen) {
+      throw new SkillAbortError("youtube_rate_limit_circuit_open", "YouTube transcript rate-limit circuit opened", {
+        rate_limit_window: lastTranscriptRateStatus,
+        transcript_failures: transcriptFailures,
+        transcript_rate_limit_equivalent_failures: transcriptRateLimitEquivalentFailures,
+        metadata_fallback_scored_count: metadataFallbackScoredCount,
+        fallback_remaining: transcriptFallbackRemaining,
+      });
+    }
+
     const duplicateRatio = scoredCount ? duplicateCount / scoredCount : 0;
     if (scoredCount > 0 && duplicateRatio >= config.saturationDuplicateThreshold) {
       log("warn", "skill_saturated", "Most scored candidates were duplicate submissions; cooling this skill down", {
@@ -1888,6 +2122,9 @@ async function processSkill(skill, summary) {
       primary_submitted: primarySubmitted,
       secondary_submitted: secondarySubmitted,
       scored_count: scoredCount,
+      metadata_fallback_scored_count: metadataFallbackScoredCount,
+      transcript_failures: transcriptFailures,
+      transcript_rate_limit_equivalent_failures: transcriptRateLimitEquivalentFailures,
       duplicate_count: duplicateCount,
       duplicate_ratio: Number(duplicateRatio.toFixed(3)),
     });
@@ -1898,6 +2135,9 @@ async function processSkill(skill, summary) {
       primary_submitted: primarySubmitted,
       secondary_submitted: secondarySubmitted,
       scored_count: scoredCount,
+      metadata_fallback_scored_count: metadataFallbackScoredCount,
+      transcript_failures: transcriptFailures,
+      transcript_rate_limit_equivalent_failures: transcriptRateLimitEquivalentFailures,
       duplicate_count: duplicateCount,
       duplicate_ratio: Number(duplicateRatio.toFixed(3)),
     };
@@ -1914,6 +2154,10 @@ async function processSkill(skill, summary) {
       skill: skill.slug,
       run_id: runId,
       submitted,
+      scored_count: scoredCount,
+      metadata_fallback_scored_count: metadataFallbackScoredCount,
+      transcript_failures: transcriptFailures,
+      transcript_rate_limit_equivalent_failures: transcriptRateLimitEquivalentFailures,
       ...metadata,
     });
     await finishAgentRun(runId, { status, suggestionsCreated: submitted, errorMessage: message });
@@ -1925,6 +2169,10 @@ async function processSkill(skill, summary) {
       submitted,
       primary_submitted: primarySubmitted,
       secondary_submitted: secondarySubmitted,
+      scored_count: scoredCount,
+      metadata_fallback_scored_count: metadataFallbackScoredCount,
+      transcript_failures: transcriptFailures,
+      transcript_rate_limit_equivalent_failures: transcriptRateLimitEquivalentFailures,
     };
     summary.push(item);
     await flushAgentRunEvents();
@@ -1959,6 +2207,10 @@ async function main() {
       collection_cache_path: collectionCache.path,
       collection_cache_date: config.cacheDate,
       transcript_global_min_gap_ms: config.transcriptGlobalMinGapMs,
+      ytdlp_transcript_timeout_ms: config.ytdlpTranscriptTimeoutMs,
+      transcript_rate_limit_consecutive_threshold: config.transcriptRateLimitConsecutiveThreshold,
+      transcript_fallback_candidates: config.transcriptFallbackCandidates,
+      transcript_fallback_relevance_multiplier: config.transcriptFallbackRelevanceMultiplier,
     });
     const summary = [];
     let consecutiveRateLimitCircuits = 0;
