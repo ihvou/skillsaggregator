@@ -1105,8 +1105,13 @@ async function fetchTranscript(videoId) {
     // like en-ar, en-bn, en-yue and trigger HTTP 429 on YouTube's subtitle endpoint.
     "--sub-lang", "en,en-orig",
     "--sub-format", "vtt",
-    "--sleep-requests", String(config.ytdlpSleepRequests),
-    "--sleep-subtitles", String(config.ytdlpSleepSubtitles),
+    // NOTE: deliberately NOT passing --sleep-requests or --sleep-subtitles. A
+    // single transcript fetch makes ~3-4 internal HTTP requests (webpage,
+    // player API, m3u8, subs); --sleep-requests=10 stacks to 30-40s of pure
+    // sleep, blowing past the wall timeout while yt-dlp is mid-sleep. The
+    // cross-skill 25s pacing in waitForTranscriptSlot() above is what actually
+    // protects the YouTube subtitle endpoint quota — yt-dlp's internal sleeps
+    // are redundant AND fatal to the wall timeout.
     "-o", `${baseOut}.%(ext)s`,
     `https://www.youtube.com/watch?v=${videoId}`,
   ], { timeoutMs: config.ytdlpTranscriptTimeoutMs, label: "ytdlp_transcript" });
