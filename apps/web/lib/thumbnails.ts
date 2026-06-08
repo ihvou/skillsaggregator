@@ -39,7 +39,11 @@ function isAllowedAbsoluteThumbnail(parsed: URL) {
       host.endsWith(".ytimg.com") ||
       host === "img.youtube.com" ||
       host.endsWith(".supabase.co") ||
-      host.endsWith(".supabase.in")
+      host.endsWith(".supabase.in") ||
+      host.endsWith(".tiktokcdn.com") ||
+      host.endsWith(".tiktokcdn-us.com") ||
+      host.endsWith(".tiktokcdn-eu.com") ||
+      host.endsWith(".muscdn.com")
     );
   }
   if (parsed.protocol !== "http:") return false;
@@ -59,7 +63,7 @@ function storageKeyFromValue(value: string) {
     if (markerIndex === -1) return null;
     return decodeURIComponent(parsed.pathname.slice(markerIndex + SUPABASE_STORAGE_MARKER.length));
   } catch {
-    return trimmed.startsWith("link-thumbnails/") ? trimmed : null;
+    return trimmed.startsWith("link-thumbnails/") || trimmed.startsWith("thumbnails/") ? trimmed : null;
   }
 }
 
@@ -72,19 +76,34 @@ function publicStorageUrl(key: string) {
 export function normalizeThumbnailUrl(
   thumbnailUrl: string | null | undefined,
   canonicalUrl?: string | null,
-) {
-  const youtubeFallback = youtubeThumbnailUrl(thumbnailUrl) ?? youtubeThumbnailUrl(canonicalUrl);
-  if (!thumbnailUrl) return youtubeFallback;
+  fallbackThumbnailUrl?: string | null,
+): string | null {
+  const youtubeFallback =
+    youtubeThumbnailUrl(thumbnailUrl) ??
+    youtubeThumbnailUrl(fallbackThumbnailUrl) ??
+    youtubeThumbnailUrl(canonicalUrl);
+  const candidates = [thumbnailUrl, fallbackThumbnailUrl]
+    .map((value) => (typeof value === "string" ? value.trim() : ""))
+    .filter(Boolean);
+  const seen = new Set<string>();
 
-  try {
-    const parsed = new URL(thumbnailUrl);
-    if (isAllowedAbsoluteThumbnail(parsed)) return thumbnailUrl;
+  for (const candidate of candidates) {
+    if (seen.has(candidate)) continue;
+    seen.add(candidate);
 
-    const storageKey = storageKeyFromValue(thumbnailUrl);
-    return storageKey ? publicStorageUrl(storageKey) ?? youtubeFallback : youtubeFallback;
-  } catch {
-    const storageKey = storageKeyFromValue(thumbnailUrl);
-    return storageKey ? publicStorageUrl(storageKey) ?? youtubeFallback : youtubeFallback;
+    try {
+      const parsed = new URL(candidate);
+      if (isAllowedAbsoluteThumbnail(parsed)) return candidate;
+
+      const storageKey = storageKeyFromValue(candidate);
+      const storageUrl = storageKey ? publicStorageUrl(storageKey) : null;
+      if (storageUrl) return storageUrl;
+    } catch {
+      const storageKey = storageKeyFromValue(candidate);
+      const storageUrl = storageKey ? publicStorageUrl(storageKey) : null;
+      if (storageUrl) return storageUrl;
+    }
   }
-}
 
+  return youtubeFallback;
+}

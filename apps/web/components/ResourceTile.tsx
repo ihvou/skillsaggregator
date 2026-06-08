@@ -7,32 +7,39 @@ interface ResourceTileProps {
   width?: number;
 }
 
+function isPortraitResource(resource: SkillResource) {
+  const domain = resource.link.domain?.toLowerCase() ?? "";
+  return domain.includes("tiktok") || resource.link.thumbnail_storage_path?.includes("/tiktok/") === true;
+}
+
 /**
  * Pure-thumbnail tile for the Category page horizontal scroll rail.
  * 16/9 native YouTube proportions, same radius/shadow as the Skill-screen
  * card thumbnail. Click opens the link in a new tab.
  */
 export function ResourceTile({ resource, width = 280 }: ResourceTileProps) {
-  const height = Math.round((width * 9) / 16);
+  const portrait = isPortraitResource(resource);
+  const tileWidth = portrait ? Math.round((width * 9) / 16) : width;
+  const height = portrait ? width : Math.round((width * 9) / 16);
   return (
     <a
       href={resource.link.url}
       target="_blank"
       rel="noreferrer"
       className="focus-ring group block shrink-0 transition hover:opacity-90"
-      style={{ width }}
+      style={{ width: tileWidth }}
       aria-label={resource.link.title ?? "Open resource"}
     >
       <div
         className="relative overflow-hidden rounded-[14px] bg-bgGroup shadow-thumb"
-        style={{ width, height }}
+        style={{ width: tileWidth, height }}
       >
         {resource.link.thumbnail_url ? (
           <Image
             src={resource.link.thumbnail_url}
             alt={resource.link.title ?? ""}
             fill
-            sizes={`${width}px`}
+            sizes={`${tileWidth}px`}
             className="object-cover"
           />
         ) : null}

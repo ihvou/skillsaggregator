@@ -42,6 +42,15 @@ export interface LinkResource {
   title: string | null;
   description: string | null;
   thumbnail_url: string | null;
+  thumbnail_storage_path?: string | null;
+  duration_seconds?: number | null;
+  like_count?: number | null;
+  comment_count?: number | null;
+  share_count?: number | null;
+  favorite_count?: number | null;
+  creator_handle?: string | null;
+  creator_url?: string | null;
+  scoring_strategy?: "transcript_llm" | "engagement_authority";
   content_type: "video" | "article" | "podcast" | "course" | null;
   created_at?: string | null;
   contributor_profile?: ContributorProfileSummary | null;

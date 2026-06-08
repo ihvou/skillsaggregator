@@ -72,6 +72,11 @@ function SourceIcon({ domain }: { domain?: string | null }) {
   return <Globe size={12} color={colors.faint} />;
 }
 
+function isPortraitResource(resource: SkillResource) {
+  const domain = resource.link.domain?.toLowerCase() ?? "";
+  return domain.includes("tiktok") || resource.link.thumbnail_storage_path?.includes("/tiktok/") === true;
+}
+
 /**
  * Skill-screen resource row.
  *  - 16/9 thumbnail on the left at row-height (so its bottom aligns with
@@ -152,6 +157,7 @@ export function ResourceCard({ resource }: ResourceCardProps) {
   const dateLabel = formatDate(resource.created_at);
   const SavedIcon = isSaved ? BookmarkCheck : Bookmark;
   const contributor = resource.link.contributor_profile;
+  const portrait = isPortraitResource(resource);
 
   // Reddit-style net score: server vote_score + local vote delta.
   const ratingCount = useMemo(() => {
@@ -181,7 +187,7 @@ export function ResourceCard({ resource }: ResourceCardProps) {
         onLongPress={toggleSaved}
         style={({ pressed }) => [styles.row, pressed && styles.pressed]}
       >
-        <View style={styles.thumbWrap}>
+        <View style={[styles.thumbWrap, portrait && styles.thumbWrapPortrait]}>
           {resource.link.thumbnail_url ? (
             <Image
               source={resource.link.thumbnail_url}
@@ -327,6 +333,9 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     backgroundColor: colors.bgGroup,
     ...shadows.thumbnail,
+  },
+  thumbWrapPortrait: {
+    aspectRatio: 9 / 16,
   },
   thumbnail: {
     width: "100%",

@@ -11,6 +11,11 @@ interface ResourceTileProps {
   width?: number;
 }
 
+function isPortraitResource(resource: SkillResource) {
+  const domain = resource.link.domain?.toLowerCase() ?? "";
+  return domain.includes("tiktok") || resource.link.thumbnail_storage_path?.includes("/tiktok/") === true;
+}
+
 /**
  * Pure thumbnail tile used inside horizontal-scrolling rows on the Category
  * screen. 16/9 native YouTube proportions, same radius/shadow as the
@@ -18,8 +23,10 @@ interface ResourceTileProps {
  */
 export function ResourceTile({ resource, width = 170 }: ResourceTileProps) {
   const isSaved = getFlag(`saved:${resource.link.id}`);
-  const height = Math.round((width * 9) / 16);
-  const style = [styles.thumbnail, { width, height }];
+  const portrait = isPortraitResource(resource);
+  const tileWidth = portrait ? Math.round((width * 9) / 16) : width;
+  const height = portrait ? width : Math.round((width * 9) / 16);
+  const style = [styles.thumbnail, { width: tileWidth, height }];
 
   return (
     <Pressable

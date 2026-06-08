@@ -1,0 +1,529 @@
+{
+  "query": "surfing pop up",
+  "summary": {
+    "cards_count": 12,
+    "details_count": 5,
+    "creators_probed": 10,
+    "likes": {
+      "n": 12,
+      "min": 118,
+      "p25": 661,
+      "median": 1812,
+      "p75": 6583,
+      "max": 19600,
+      "mean": 4627.4
+    },
+    "duration_s": {
+      "n": 5,
+      "min": 14,
+      "p25": 23,
+      "median": 32,
+      "p75": 34,
+      "max": 36,
+      "mean": 27.8
+    },
+    "followers": {
+      "n": 10,
+      "min": 217,
+      "p25": 1661,
+      "median": 2582,
+      "p75": 14800,
+      "max": 36200,
+      "mean": 9487.1
+    },
+    "verified_creators": 0,
+    "creators_with_bio_link": 5
+  },
+  "search": {
+    "url": "https://www.tiktok.com/search?q=surfing%20pop%20up",
+    "total_video_urls": 12,
+    "cards_count": 12,
+    "cards": [
+      {
+        "href": "https://www.tiktok.com/@rapturecamps/video/7453148693684899094",
+        "handle": "rapturecamps",
+        "caption": "Struggling with your pop-up? Don’t worry, we’ve got you covered with these 3 LEVEL exercises to take your stance from meh to pro. 💪",
+        "views_text": "19.6K",
+        "creator_url": "https://www.tiktok.com/@rapturecamps",
+        "views_count": 19600
+      },
+      {
+        "href": "https://www.tiktok.com/@surfsimply/video/7593007909798268216",
+        "handle": "surfsimply",
+        "caption": "Are you struggling to pop-up ?",
+        "views_text": "1391",
+        "creator_url": "https://www.tiktok.com/@surfsimply",
+        "views_count": 1391
+      },
+      {
+        "href": "https://www.tiktok.com/@tsunamizack/video/7525254144182045965",
+        "handle": "tsunamizack",
+        "caption": "How to pop up on a short surfboard",
+        "views_text": "357",
+        "creator_url": "https://www.tiktok.com/@tsunamizack",
+        "views_count": 357
+      },
+      {
+        "href": "https://www.tiktok.com/@surf_tips_for_beginners/video/7266144459941809409",
+        "handle": "surf_tips_for_beginners",
+        "caption": "Pop up break down 👇",
+        "views_text": "6583",
+        "creator_url": "https://www.tiktok.com/@surf_tips_for_beginners",
+        "views_count": 6583
+      },
+      {
+        "href": "https://www.tiktok.com/@algarve_watersport/video/7604748794890128642",
+        "handle": "algarve_watersport",
+        "caption": "Learn how to POP UP in 3 steps 🌊",
+        "views_text": "344",
+        "creator_url": "https://www.tiktok.com/@algarve_watersport",
+        "views_count": 344
+      },
+      {
+        "href": "https://www.tiktok.com/@algarve_watersport/video/7642042354131635488",
+        "handle": "algarve_watersport",
+        "caption": "Let’s fix your surf pop up 👇",
+        "views_text": "118",
+        "creator_url": "https://www.tiktok.com/@algarve_watersport",
+        "views_count": 118
+      },
+      {
+        "href": "https://www.tiktok.com/@mellow.surf.bali/video/7617753623908338966",
+        "handle": "mellow.surf.bali",
+        "caption": "Want to pop up faster in surfing?",
+        "views_text": "1812",
+        "creator_url": "https://www.tiktok.com/@mellow.surf.bali",
+        "views_count": 1812
+      },
+      {
+        "href": "https://www.tiktok.com/@goldcoastsurfexperience/video/7485906020603120914",
+        "handle": "goldcoastsurfexperience",
+        "caption": "Do you struggle with your pop-up? #surfing  #surf  #surftok",
+        "views_text": "5200",
+        "creator_url": "https://www.tiktok.com/@goldcoastsurfexperience",
+        "views_count": 5200
+      },
+      {
+        "href": "https://www.tiktok.com/@gosurfbasis/video/7638304790149172494",
+        "handle": "gosurfbasis",
+        "caption": "There is nothing more satisfying than a perfect pop-up.",
+        "views_text": "661",
+        "creator_url": "https://www.tiktok.com/@gosurfbasis",
+        "views_count": 661
+      },
+      {
+        "href": "https://www.tiktok.com/@fabriciosteinmetz/video/7624225205463960852",
+        "handle": "fabriciosteinmetz",
+        "caption": "Quer parar de não ter força no drop e fazer “Undaiá” na onda?",
+        "views_text": "3517",
+        "creator_url": "https://www.tiktok.com/@fabriciosteinmetz",
+        "views_count": 3517
+      },
+      {
+        "href": "https://www.tiktok.com/@kiwi_surf/video/7621526929140731143",
+        "handle": "kiwi_surf",
+        "caption": "These are the 3 biggest pop-up mistakes beginners make…",
+        "views_text": "14.7K",
+        "creator_url": "https://www.tiktok.com/@kiwi_surf",
+        "views_count": 14700
+      },
+      {
+        "href": "https://www.tiktok.com/@gosurfbasis/video/7616377419691298061",
+        "handle": "gosurfbasis",
+        "caption": "A proper takeoff takes commitment",
+        "views_text": "1246",
+        "creator_url": "https://www.tiktok.com/@gosurfbasis",
+        "views_count": 1246
+      }
+    ]
+  },
+  "details": [
+    {
+      "url": "https://www.tiktok.com/@rapturecamps/video/7453148693684899094",
+      "duration_seconds": 36,
+      "duration_source": "ssr_json",
+      "like_count": 19600,
+      "comment_count": 70,
+      "share_count": 1728,
+      "favorite_count": 15300,
+      "caption": "Struggling with your pop-up? Don’t worry, we’ve got you covered with these 3 LEVEL exercises to take your stance from meh to pro. 💪#surftips #surfing #popup #surftraining",
+      "creator_handle": "rapturecamps",
+      "creator_url": "https://www.tiktok.com/@rapturecamps",
+      "music": null,
+      "_raw_text": {
+        "like_text": "19.6K",
+        "comment_text": "70",
+        "share_text": "1728",
+        "favorite_text": "15.3K",
+        "caption_text": "Struggling with your pop-up? Don’t worry, we’ve got you covered with these 3 LEVEL exercises to take your stance from meh to pro. 💪#surftips #surfing #popup #surftraining",
+        "avatar_href_text": "/@rapturecamps",
+        "music_text": null
+      },
+      "_selector_hits": {
+        "like": "strong[data-e2e=\"like-count\"]",
+        "comment": "strong[data-e2e=\"comment-count\"]",
+        "share": "strong[data-e2e=\"share-count\"]",
+        "favorite": "strong[data-e2e=\"favorite-count\"]",
+        "caption": "[data-e2e=\"video-desc\"]",
+        "avatar_href": "a[data-e2e=\"video-author-avatar\"]",
+        "music": null
+      }
+    },
+    {
+      "url": "https://www.tiktok.com/@surfsimply/video/7593007909798268216",
+      "duration_seconds": 34,
+      "duration_source": "ssr_json",
+      "like_count": 1391,
+      "comment_count": 3,
+      "share_count": 80,
+      "favorite_count": 450,
+      "caption": "Are you struggling to pop-up ?A common mistake we often see people making is placing their hands too high on the surfboard. Ideally, we want to place our hands under our bottom ribs when popping to our feet. This not only allows us more power and leverage but also creates more space between our chest and our board for planting our front foot on the accelerator.The pop-up is the process of getting onto our feet and into our surf stance in one fluid motion. This is a skill that can take years to years to hone and become consistent with but we have a few pointers below.1 - Hands behind shoulders, flat on the deck.2 - Lock arms before moving legs3 - Weight focused on hands4 - Lunge legs forward to body (not body back to legs)5 - Shoulders in front of hands6 - Plant front foot7 - Push off hands as you extend8 - Eyes down the line looking for target.Have any questions or something you’d like us to cover in a future reel? Drop a comment down below.#surftips #learntosurf #surfcoaching #howtosurf #surfing #surftrip #shortboard #longboard #surfvacation #surfresort",
+      "creator_handle": "surfsimply",
+      "creator_url": "https://www.tiktok.com/@surfsimply",
+      "music": null,
+      "_raw_text": {
+        "like_text": "1391",
+        "comment_text": "3",
+        "share_text": "80",
+        "favorite_text": "450",
+        "caption_text": "Are you struggling to pop-up ?A common mistake we often see people making is placing their hands too high on the surfboard. Ideally, we want to place our hands under our bottom ribs when popping to our feet. This not only allows us more power and leverage but also creates more space between our chest and our board for planting our front foot on the accelerator.The pop-up is the process of getting onto our feet and into our surf stance in one fluid motion. This is a skill that can take years to years to hone and become consistent with but we have a few pointers below.1 - Hands behind shoulders, flat on the deck.2 - Lock arms before moving legs3 - Weight focused on hands4 - Lunge legs forward to body (not body back to legs)5 - Shoulders in front of hands6 - Plant front foot7 - Push off hands as you extend8 - Eyes down the line looking for target.Have any questions or something you’d like us to cover in a future reel? Drop a comment down below.#surftips #learntosurf #surfcoaching #howtosurf #surfing #surftrip #shortboard #longboard #surfvacation #surfresort",
+        "avatar_href_text": "/@surfsimply",
+        "music_text": null
+      },
+      "_selector_hits": {
+        "like": "strong[data-e2e=\"like-count\"]",
+        "comment": "strong[data-e2e=\"comment-count\"]",
+        "share": "strong[data-e2e=\"share-count\"]",
+        "favorite": "strong[data-e2e=\"favorite-count\"]",
+        "caption": "[data-e2e=\"video-desc\"]",
+        "avatar_href": "a[data-e2e=\"video-author-avatar\"]",
+        "music": null
+      }
+    },
+    {
+      "url": "https://www.tiktok.com/@tsunamizack/video/7525254144182045965",
+      "duration_seconds": 32,
+      "duration_source": "ssr_json",
+      "like_count": 357,
+      "comment_count": 15,
+      "share_count": 15,
+      "favorite_count": 212,
+      "caption": "How to pop up on a short surfboard",
+      "creator_handle": "tsunamizack",
+      "creator_url": "https://www.tiktok.com/@tsunamizack",
+      "music": null,
+      "_raw_text": {
+        "like_text": "357",
+        "comment_text": "15",
+        "share_text": "15",
+        "favorite_text": "212",
+        "caption_text": "How to pop up on a short surfboard",
+        "avatar_href_text": "/@tsunamizack",
+        "music_text": null
+      },
+      "_selector_hits": {
+        "like": "strong[data-e2e=\"like-count\"]",
+        "comment": "strong[data-e2e=\"comment-count\"]",
+        "share": "strong[data-e2e=\"share-count\"]",
+        "favorite": "strong[data-e2e=\"favorite-count\"]",
+        "caption": "[data-e2e=\"video-desc\"]",
+        "avatar_href": "a[data-e2e=\"video-author-avatar\"]",
+        "music": null
+      }
+    },
+    {
+      "url": "https://www.tiktok.com/@surf_tips_for_beginners/video/7266144459941809409",
+      "duration_seconds": 23,
+      "duration_source": "ssr_json",
+      "like_count": 6583,
+      "comment_count": 33,
+      "share_count": 617,
+      "favorite_count": 3284,
+      "caption": "Pop up break down 👇•Push up, straight arms & locked elbows• Look straight ahead • Slide your back foot forward • Knee at 90 degrees • Slide front foot between your hands (45 degrees )• Rise up to surfing position• Knees bent, back straight, arms in surfing position • Like he said!!! Have fun 🤘🎥 Some really good pop up tips from our friend @gotadagua_surf check out their surf school.Using FLOWT SURFBOARD.....#surfschool #surf #surfing #surfmore #surflessons #surfer #surfingtips #surftraining #surflife #surflesson #clasesdesurf #surfinglife #surffitness #surfcommunity #surfboard #surfshop #firstsurf #surfboards #surfcoaching #surfcoach #surfbetter #surfers #surfhack #surfingforbeginners #onlinesurftips #learntosurf #howtosurf #surftips #surfergirl#surffit",
+      "creator_handle": "surf_tips_for_beginners",
+      "creator_url": "https://www.tiktok.com/@surf_tips_for_beginners",
+      "music": null,
+      "_raw_text": {
+        "like_text": "6583",
+        "comment_text": "33",
+        "share_text": "617",
+        "favorite_text": "3284",
+        "caption_text": "Pop up break down 👇•Push up, straight arms & locked elbows• Look straight ahead • Slide your back foot forward • Knee at 90 degrees • Slide front foot between your hands (45 degrees )• Rise up to surfing position• Knees bent, back straight, arms in surfing position • Like he said!!! Have fun 🤘🎥 Some really good pop up tips from our friend @gotadagua_surf check out their surf school.Using FLOWT SURFBOARD.....#surfschool #surf #surfing #surfmore #surflessons #surfer #surfingtips #surftraining #surflife #surflesson #clasesdesurf #surfinglife #surffitness #surfcommunity #surfboard #surfshop #firstsurf #surfboards #surfcoaching #surfcoach #surfbetter #surfers #surfhack #surfingforbeginners #onlinesurftips #learntosurf #howtosurf #surftips #surfergirl#surffit",
+        "avatar_href_text": "/@surf_tips_for_beginners",
+        "music_text": null
+      },
+      "_selector_hits": {
+        "like": "strong[data-e2e=\"like-count\"]",
+        "comment": "strong[data-e2e=\"comment-count\"]",
+        "share": "strong[data-e2e=\"share-count\"]",
+        "favorite": "strong[data-e2e=\"favorite-count\"]",
+        "caption": "[data-e2e=\"video-desc\"]",
+        "avatar_href": "a[data-e2e=\"video-author-avatar\"]",
+        "music": null
+      }
+    },
+    {
+      "url": "https://www.tiktok.com/@algarve_watersport/video/7604748794890128642",
+      "duration_seconds": 14,
+      "duration_source": "ssr_json",
+      "like_count": 344,
+      "comment_count": 0,
+      "share_count": 41,
+      "favorite_count": 200,
+      "caption": "Learn how to POP UP in 3 steps 🌊1. Cobra position 🐍• Start by paddling strongly to catch the wave. As you feel the wave lift the board, place your hands flat on the board near your rib cage.• Push your chest up into a cobra position, lifting your torso off the board. This initial push-up motion helps you get ready to bring your feet under you.2. Back foot first 🦶🏽 • Quickly bring your back foot up and place it near the tail of the board. This movement should be swift and controlled, maintaining balance and stability.• Ensure your back foot is positioned correctly to provide a strong base for your pop-up. The placement should give you enough leverage to bring your front foot forward smoothly.3. Front foot follows🦵🏽• Bring your front foot forward to where your hands were, centering it on the board. This should be done in one fluid motion to maintain momentum and balance.• Keep your feet shoulder-width apart for stability. Bend your knees and stay low to help maintain balance as you start riding the wave.• Look forward in the direction you want to go, keeping your back straight and your weight centered over the board.🌞🏄Practicing these steps repeatedly will help you develop muscle memory and improve your pop-up technique.…or just learn it with our great instructors 🤙🏽#surfpopup #howtopopup #surfingtips",
+      "creator_handle": "algarve_watersport",
+      "creator_url": "https://www.tiktok.com/@algarve_watersport",
+      "music": null,
+      "_raw_text": {
+        "like_text": "344",
+        "comment_text": "0",
+        "share_text": "41",
+        "favorite_text": "200",
+        "caption_text": "Learn how to POP UP in 3 steps 🌊1. Cobra position 🐍• Start by paddling strongly to catch the wave. As you feel the wave lift the board, place your hands flat on the board near your rib cage.• Push your chest up into a cobra position, lifting your torso off the board. This initial push-up motion helps you get ready to bring your feet under you.2. Back foot first 🦶🏽 • Quickly bring your back foot up and place it near the tail of the board. This movement should be swift and controlled, maintaining balance and stability.• Ensure your back foot is positioned correctly to provide a strong base for your pop-up. The placement should give you enough leverage to bring your front foot forward smoothly.3. Front foot follows🦵🏽• Bring your front foot forward to where your hands were, centering it on the board. This should be done in one fluid motion to maintain momentum and balance.• Keep your feet shoulder-width apart for stability. Bend your knees and stay low to help maintain balance as you start riding the wave.• Look forward in the direction you want to go, keeping your back straight and your weight centered over the board.🌞🏄Practicing these steps repeatedly will help you develop muscle memory and improve your pop-up technique.…or just learn it with our great instructors 🤙🏽#surfpopup #howtopopup #surfingtips",
+        "avatar_href_text": "/@algarve_watersport",
+        "music_text": null
+      },
+      "_selector_hits": {
+        "like": "strong[data-e2e=\"like-count\"]",
+        "comment": "strong[data-e2e=\"comment-count\"]",
+        "share": "strong[data-e2e=\"share-count\"]",
+        "favorite": "strong[data-e2e=\"favorite-count\"]",
+        "caption": "[data-e2e=\"video-desc\"]",
+        "avatar_href": "a[data-e2e=\"video-author-avatar\"]",
+        "music": null
+      }
+    }
+  ],
+  "creator_profiles": {
+    "rapturecamps": {
+      "url": "https://www.tiktok.com/@rapturecamps",
+      "handle": "rapturecamps",
+      "nickname": "Rapturecamps",
+      "bio": "Rapture Surfcamps 🏄🏽 \nSurf Camp experiences around the world",
+      "verified": false,
+      "bio_link": null,
+      "sec_uid": "MS4wLjABAAAAcp5ZsHlQVXmXeTga_D0NOCQ0SB9lpjllk-2q8WG51jyc1VOjWE9N6Z30jgz7wJbc",
+      "followers_count": 8223,
+      "following_count": 853,
+      "hearts_count": 308400,
+      "videos_count": 424,
+      "_source": {
+        "json_available": true,
+        "dom_hits": {
+          "bio": "[data-e2e=\"user-bio\"]",
+          "nickname": "[data-e2e=\"user-title\"]",
+          "followers": "strong[data-e2e=\"followers-count\"]",
+          "following": "strong[data-e2e=\"following-count\"]",
+          "likes": "strong[data-e2e=\"likes-count\"]"
+        }
+      }
+    },
+    "surfsimply": {
+      "url": "https://www.tiktok.com/@surfsimply",
+      "handle": "surfsimply",
+      "nickname": "SurfSimply",
+      "bio": "Technical Surfing Taught Simply.",
+      "verified": false,
+      "bio_link": null,
+      "sec_uid": "MS4wLjABAAAAZ4HbLiMTYTNlOK5Y5FwErE9nqwbt2iW0kkEQ9eVnFG0UN57WnZ_aAGq-7UAE0Z7G",
+      "followers_count": 1821,
+      "following_count": 3,
+      "hearts_count": 9903,
+      "videos_count": 118,
+      "_source": {
+        "json_available": true,
+        "dom_hits": {
+          "bio": "[data-e2e=\"user-bio\"]",
+          "nickname": "[data-e2e=\"user-title\"]",
+          "followers": "strong[data-e2e=\"followers-count\"]",
+          "following": "strong[data-e2e=\"following-count\"]",
+          "likes": "strong[data-e2e=\"likes-count\"]"
+        }
+      }
+    },
+    "tsunamizack": {
+      "url": "https://www.tiktok.com/@tsunamizack",
+      "handle": "tsunamizack",
+      "nickname": "Tsunamizack",
+      "bio": "Coach | Gamer | Free Surfer\nHelping beginner and intermediate surfers understand the ocean and catch more waves! 🌊 🏄🏼‍♂️\n☀️San Diego based📍",
+      "verified": false,
+      "bio_link": null,
+      "sec_uid": "MS4wLjABAAAADqXVLzI3tcMRuqGSaSphfW_OhRp432nOBrh9NvB1QezxIEooqgUY0uByiBqgbpw1",
+      "followers_count": 1217,
+      "following_count": 1653,
+      "hearts_count": 5152,
+      "videos_count": 98,
+      "_source": {
+        "json_available": true,
+        "dom_hits": {
+          "bio": "[data-e2e=\"user-bio\"]",
+          "nickname": "[data-e2e=\"user-title\"]",
+          "followers": "strong[data-e2e=\"followers-count\"]",
+          "following": "strong[data-e2e=\"following-count\"]",
+          "likes": "strong[data-e2e=\"likes-count\"]"
+        }
+      }
+    },
+    "surf_tips_for_beginners": {
+      "url": "https://www.tiktok.com/@surf_tips_for_beginners",
+      "handle": "surf_tips_for_beginners",
+      "nickname": "surf_tips_for_beginners",
+      "bio": "➜ Surfing tips & tutorials \n➜ Best coaches in 1 place\n👇Free Surf Guides👇",
+      "verified": false,
+      "bio_link": "https://tr.ee/ELks_uHAwN",
+      "sec_uid": "MS4wLjABAAAA2kSuXEfaoFcUW7_cQPiQh3VSRY_sbL39h1zZ2JFVe9lvzzPzwrQMNgbGQlBQpMys",
+      "followers_count": 14800,
+      "following_count": 19,
+      "hearts_count": 264300,
+      "videos_count": 315,
+      "_source": {
+        "json_available": true,
+        "dom_hits": {
+          "bio": "[data-e2e=\"user-bio\"]",
+          "nickname": "[data-e2e=\"user-title\"]",
+          "followers": "strong[data-e2e=\"followers-count\"]",
+          "following": "strong[data-e2e=\"following-count\"]",
+          "likes": "strong[data-e2e=\"likes-count\"]"
+        }
+      }
+    },
+    "algarve_watersport": {
+      "url": "https://www.tiktok.com/@algarve_watersport",
+      "handle": "algarve_watersport",
+      "nickname": "Surf Camp Portugal 🇵🇹🤙🏽",
+      "bio": "Multi-sport Surf Camp in Lagos, Portugal.\nAll-inclusive camps for solo travel or with friends!",
+      "verified": false,
+      "bio_link": "https://algarvewatersport.com/en/linktree-tt/?utm_source=tiktok&utm_medium=social&utm_campaign=linktree_main",
+      "sec_uid": "MS4wLjABAAAACve-TQehLt9SW9vXDOvEAk0NSu4KIRrLoyUwYp2Fx-j3PFGtNV7hHhQyKBEKxAGL",
+      "followers_count": 1750,
+      "following_count": 43,
+      "hearts_count": 17400,
+      "videos_count": 147,
+      "_source": {
+        "json_available": true,
+        "dom_hits": {
+          "bio": "[data-e2e=\"user-bio\"]",
+          "nickname": "[data-e2e=\"user-title\"]",
+          "followers": "strong[data-e2e=\"followers-count\"]",
+          "following": "strong[data-e2e=\"following-count\"]",
+          "likes": "strong[data-e2e=\"likes-count\"]"
+        }
+      }
+    },
+    "mellow.surf.bali": {
+      "url": "https://www.tiktok.com/@mellow.surf.bali",
+      "handle": "mellow.surf.bali",
+      "nickname": "Mellow Surf Bali | Putu",
+      "bio": "Follow for tips for beginners & intermediates surfers to turn fears and hesitation into real surf progress🤙🏼\n📍Canggu 📍Kedungu\nwww.mellowsurfbali.com 🌊",
+      "verified": false,
+      "bio_link": null,
+      "sec_uid": "MS4wLjABAAAA4cE9gOAs4ZsR0HqDCq4XZYnGCJMssZ64xAYqZLrpUn-9kenB1-yM0xIb42m_Ts0Q",
+      "followers_count": 217,
+      "following_count": 0,
+      "hearts_count": 5275,
+      "videos_count": 23,
+      "_source": {
+        "json_available": true,
+        "dom_hits": {
+          "bio": "[data-e2e=\"user-bio\"]",
+          "nickname": "[data-e2e=\"user-title\"]",
+          "followers": "strong[data-e2e=\"followers-count\"]",
+          "following": "strong[data-e2e=\"following-count\"]",
+          "likes": "strong[data-e2e=\"likes-count\"]"
+        }
+      }
+    },
+    "goldcoastsurfexperience": {
+      "url": "https://www.tiktok.com/@goldcoastsurfexperience",
+      "handle": "goldcoastsurfexperience",
+      "nickname": "Gold Coast Surf Experience",
+      "bio": "Private surf coaching\nGold Coast, Australia",
+      "verified": false,
+      "bio_link": "https://linktr.ee/goldcoastsurfexperience?fbclid=PAZXh0bgNhZW0CMTEAAaakGsq8ljqk8LicocZNPRnVm1CrFmsKkswo25itW4787sQwDel3CVr72Mw_aem_OIgWIbbg5PAUUoLPauTn6g",
+      "sec_uid": "MS4wLjABAAAAtIoRDbSLBM9YP7flWVo2FLVxlcTR6yoJbc4aGfxHZ90_aagaRJz5yVhNPPDR_2Ry",
+      "followers_count": 2582,
+      "following_count": 1510,
+      "hearts_count": 100300,
+      "videos_count": 777,
+      "_source": {
+        "json_available": true,
+        "dom_hits": {
+          "bio": "[data-e2e=\"user-bio\"]",
+          "nickname": "[data-e2e=\"user-title\"]",
+          "followers": "strong[data-e2e=\"followers-count\"]",
+          "following": "strong[data-e2e=\"following-count\"]",
+          "likes": "strong[data-e2e=\"likes-count\"]"
+        }
+      }
+    },
+    "gosurfbasis": {
+      "url": "https://www.tiktok.com/@gosurfbasis",
+      "handle": "gosurfbasis",
+      "nickname": "Basis Surf",
+      "bio": "Catch more waves w/ the BASIS PADDLE TRAINER👇🏽",
+      "verified": false,
+      "bio_link": "https://linktr.ee/gosurfbasis",
+      "sec_uid": "MS4wLjABAAAAVLPVO91GCLhkKFk7ucArHMZ2spCNi5BU9aVuuK-UM6b22a8-rbF_B-Jcr64n5Txd",
+      "followers_count": 26400,
+      "following_count": 195,
+      "hearts_count": 863100,
+      "videos_count": 1146,
+      "_source": {
+        "json_available": true,
+        "dom_hits": {
+          "bio": "[data-e2e=\"user-bio\"]",
+          "nickname": "[data-e2e=\"user-title\"]",
+          "followers": "strong[data-e2e=\"followers-count\"]",
+          "following": "strong[data-e2e=\"following-count\"]",
+          "likes": "strong[data-e2e=\"likes-count\"]"
+        }
+      }
+    },
+    "fabriciosteinmetz": {
+      "url": "https://www.tiktok.com/@fabriciosteinmetz",
+      "handle": "fabriciosteinmetz",
+      "nickname": "FA",
+      "bio": "✌🏽🙂 | Treinamento Funcional Específico para Surfistas ⚡️🌊\nInsta: fasteinmetz",
+      "verified": false,
+      "bio_link": "https://www.fabriciosteinmetz.com.br/pt",
+      "sec_uid": "MS4wLjABAAAA6M9OmkMfxxEW9KuIRi51TRwcrElHQcztLdk_-CCUrQZwBnumde1W3Qssejxn7Ppe",
+      "followers_count": 36200,
+      "following_count": 530,
+      "hearts_count": 1100000,
+      "videos_count": 184,
+      "_source": {
+        "json_available": true,
+        "dom_hits": {
+          "bio": "[data-e2e=\"user-bio\"]",
+          "nickname": "[data-e2e=\"user-title\"]",
+          "followers": "strong[data-e2e=\"followers-count\"]",
+          "following": "strong[data-e2e=\"following-count\"]",
+          "likes": "strong[data-e2e=\"likes-count\"]"
+        }
+      }
+    },
+    "kiwi_surf": {
+      "url": "https://www.tiktok.com/@kiwi_surf",
+      "handle": "kiwi_surf",
+      "nickname": "Kiwi Surf",
+      "bio": "Surf lessons for beginners & intermediates🏄‍♂️🌞\n📍Batu Bolong Beach, Canggu\nReady to catch waves together?🌊\nDM to book your lesson now!📲",
+      "verified": false,
+      "bio_link": null,
+      "sec_uid": "MS4wLjABAAAAJbI0yRAs8OoZhDXswF_0RVDflV8O8A7snE5zyJrwkBT9PWhQy2ARpfrVLnV6sRvW",
+      "followers_count": 1661,
+      "following_count": 2,
+      "hearts_count": 30900,
+      "videos_count": 29,
+      "_source": {
+        "json_available": true,
+        "dom_hits": {
+          "bio": "[data-e2e=\"user-bio\"]",
+          "nickname": "[data-e2e=\"user-title\"]",
+          "followers": "strong[data-e2e=\"followers-count\"]",
+          "following": "strong[data-e2e=\"following-count\"]",
+          "likes": "strong[data-e2e=\"likes-count\"]"
+        }
+      }
+    }
+  }
+}

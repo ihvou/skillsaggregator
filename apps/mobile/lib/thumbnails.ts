@@ -41,7 +41,7 @@ function storageKeyFromValue(value: string) {
     if (markerIndex === -1) return null;
     return decodeURIComponent(parsed.pathname.slice(markerIndex + SUPABASE_STORAGE_MARKER.length));
   } catch {
-    return trimmed.startsWith("link-thumbnails/") ? trimmed : null;
+    return trimmed.startsWith("link-thumbnails/") || trimmed.startsWith("thumbnails/") ? trimmed : null;
   }
 }
 
@@ -67,18 +67,32 @@ function publicStorageUrl(key: string) {
 export function normalizeThumbnailUrl(
   thumbnailUrl: string | null | undefined,
   canonicalUrl?: string | null,
-) {
-  const youtubeFallback = youtubeThumbnailUrl(thumbnailUrl) ?? youtubeThumbnailUrl(canonicalUrl);
-  if (!thumbnailUrl) return youtubeFallback;
+  fallbackThumbnailUrl?: string | null,
+): string | null {
+  const youtubeFallback =
+    youtubeThumbnailUrl(thumbnailUrl) ??
+    youtubeThumbnailUrl(fallbackThumbnailUrl) ??
+    youtubeThumbnailUrl(canonicalUrl);
+  const candidates = [thumbnailUrl, fallbackThumbnailUrl]
+    .map((value) => (typeof value === "string" ? value.trim() : ""))
+    .filter(Boolean);
+  const seen = new Set<string>();
 
-  const storageKey = storageKeyFromValue(thumbnailUrl);
-  if (storageKey) return publicStorageUrl(storageKey) ?? youtubeFallback;
+  for (const candidate of candidates) {
+    if (seen.has(candidate)) continue;
+    seen.add(candidate);
 
-  try {
-    const parsed = new URL(thumbnailUrl);
-    if (parsed.protocol === "http:" || parsed.protocol === "https:") return thumbnailUrl;
-  } catch {
-    // Not an absolute URL and not a recognizable storage key — fall through.
+    const storageKey = storageKeyFromValue(candidate);
+    const storageUrl = storageKey ? publicStorageUrl(storageKey) : null;
+    if (storageUrl) return storageUrl;
+
+    try {
+      const parsed = new URL(candidate);
+      if (parsed.protocol === "http:" || parsed.protocol === "https:") return candidate;
+    } catch {
+      // Not an absolute URL and not a recognizable storage key — try fallback.
+    }
   }
+
   return youtubeFallback;
 }

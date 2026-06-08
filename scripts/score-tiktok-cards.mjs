@@ -24,6 +24,12 @@
 
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
+import {
+  detectVertical as detectVerticalShared,
+  lfPct as lfPctShared,
+  mergeTikTokCardDetail,
+  scoreTikTokCandidate,
+} from "./_lib/tiktok-scoring.mjs";
 
 // ===========================================================================
 // TUNABLES — change these and re-run; no code edits required elsewhere.
@@ -290,7 +296,7 @@ function scoreCard(card, detail, profile, query, vcfg) {
 function runFile(path, verbose, acceptedOnly) {
   const raw = JSON.parse(readFileSync(path, "utf8"));
   const query = raw.query;
-  const vert  = detectVertical(query);
+  const vert  = detectVerticalShared(query);
   const detailsByUrl = Object.fromEntries(raw.details.map((d) => [d.url, d]));
   const profilesByHandle = raw.creator_profiles ?? {};
   const cards = raw.search.cards;
@@ -299,10 +305,11 @@ function runFile(path, verbose, acceptedOnly) {
   for (const card of cards) {
     const detail  = detailsByUrl[card.href] ?? null;
     const profile = profilesByHandle[card.handle] ?? null;
-    const scored  = scoreCard(card, detail, profile, query, vert.cfg);
+    const candidate = mergeTikTokCardDetail(card, detail);
+    const scored  = scoreTikTokCandidate(candidate, profile, { query });
     const likes     = detail?.like_count ?? card.views_count ?? 0;
     const followers = profile?.followers_count ?? null;
-    const lf        = lfPct(likes, followers);
+    const lf        = lfPctShared(likes, followers);
     const dur       = detail?.duration_seconds ?? null;
     rows.push({ card, detail, profile, scored, likes, followers, lf, dur });
   }

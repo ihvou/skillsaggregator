@@ -24,5 +24,12 @@ describe("SEO helpers", () => {
     expect(normalizeThumbnailUrl("https://bad.example/image.jpg", "https://youtu.be/abc123def45")).toBe(
       "https://i.ytimg.com/vi/abc123def45/hqdefault.jpg",
     );
+    expect(
+      normalizeThumbnailUrl(
+        "https://bad.example/image.jpg",
+        "https://example.com/article",
+        "https://bad.example/image.jpg",
+      ),
+    ).toBeNull();
   });
 });

@@ -7,6 +7,7 @@ import { Check, X } from "lucide-react";
 import { createBrowserClient } from "@supabase/ssr";
 import type { AdminSuggestion } from "@/lib/data";
 import { approveSuggestion, declineSuggestion } from "@/app/admin/actions";
+import { normalizeThumbnailUrl } from "@/lib/thumbnails";
 
 interface ModerationQueueProps {
   initialSuggestions: AdminSuggestion[];
@@ -32,8 +33,16 @@ function getPreview(suggestion: AdminSuggestion) {
       (typeof payload.title === "string" ? payload.title : null) ??
       (typeof payload.url === "string" ? payload.url : "Untitled suggestion"),
     thumbnail:
-      suggestion.link?.thumbnail_url ??
-      (typeof payload.thumbnail_url === "string" ? payload.thumbnail_url : null),
+      normalizeThumbnailUrl(
+        suggestion.link?.thumbnail_storage_path ??
+          (typeof payload.thumbnail_storage_path === "string" ? payload.thumbnail_storage_path : null) ??
+          suggestion.link?.thumbnail_url ??
+          (typeof payload.thumbnail_url === "string" ? payload.thumbnail_url : null),
+        typeof payload.canonical_url === "string" ? payload.canonical_url : typeof payload.url === "string" ? payload.url : null,
+        suggestion.link?.thumbnail_storage_path || typeof payload.thumbnail_storage_path === "string"
+          ? suggestion.link?.thumbnail_url ?? (typeof payload.thumbnail_url === "string" ? payload.thumbnail_url : null)
+          : null,
+      ),
     url:
       typeof payload.canonical_url === "string"
         ? payload.canonical_url

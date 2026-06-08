@@ -30,11 +30,26 @@ export const linkAddPayloadSchema = z.object({
   title: z.string().min(1).nullable().optional(),
   description: z.string().nullable().optional(),
   thumbnail_url: z.string().url().nullable().optional(),
+  thumbnail_dynamic_url: z.string().url().nullable().optional(),
+  thumbnail_storage_path: z.string().min(1).nullable().optional(),
+  thumbnail_cache_status: z.enum(["cached", "failed"]).nullable().optional(),
+  thumbnail_cache_error: z.string().max(500).nullable().optional(),
+  thumbnail_cache_attempted_at: z.string().datetime().nullable().optional(),
   content_type: z.enum(["video", "article", "podcast", "course"]).nullable().optional(),
   language: z.string().min(2).max(12).default("en"),
   target_skill_id: uuidish,
   public_note: z.string().max(140).nullable().optional(),
   skill_level: skillLevelSchema.nullable().optional(),
+  duration_seconds: z.number().min(0).nullable().optional(),
+  like_count: z.number().int().min(0).nullable().optional(),
+  comment_count: z.number().int().min(0).nullable().optional(),
+  share_count: z.number().int().min(0).nullable().optional(),
+  favorite_count: z.number().int().min(0).nullable().optional(),
+  creator_handle: z.string().min(1).max(120).nullable().optional(),
+  creator_url: z.string().url().nullable().optional(),
+  creator_platform: z.enum(["youtube", "tiktok"]).nullable().optional(),
+  creator_profile: z.record(z.unknown()).nullable().optional(),
+  scoring_strategy: z.enum(["transcript_llm", "engagement_authority"]).default("transcript_llm").optional(),
 });
 
 export const linkAttachSkillPayloadSchema = z.object({
@@ -63,7 +78,7 @@ export const skillCreatePayloadSchema = z.object({
 });
 
 export const sourceAddPayloadSchema = z.object({
-  source_type: z.enum(["youtube_channel", "domain", "rss"]),
+  source_type: z.enum(["youtube_channel", "domain", "rss", "tiktok_search"]),
   identifier: z.string().min(1).max(500),
   display_name: z.string().min(1).max(200),
   category_id: uuidish.nullable().optional(),

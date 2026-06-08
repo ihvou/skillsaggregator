@@ -1,0 +1,502 @@
+{
+  "query": "padel volley",
+  "summary": {
+    "cards_count": 12,
+    "details_count": 5,
+    "creators_probed": 10,
+    "likes": {
+      "n": 12,
+      "min": 39,
+      "p25": 743,
+      "median": 1368,
+      "p75": 6247,
+      "max": 23800,
+      "mean": 4354.4
+    },
+    "duration_s": {
+      "n": 4,
+      "min": 12,
+      "p25": 14,
+      "median": 22,
+      "p75": 30,
+      "max": 30,
+      "mean": 19.5
+    },
+    "followers": {
+      "n": 10,
+      "min": 236,
+      "p25": 3683,
+      "median": 8788,
+      "p75": 27000,
+      "max": 91100,
+      "mean": 19258.8
+    },
+    "verified_creators": 0,
+    "creators_with_bio_link": 6
+  },
+  "search": {
+    "url": "https://www.tiktok.com/search?q=padel%20volley",
+    "total_video_urls": 12,
+    "cards_count": 12,
+    "cards": [
+      {
+        "href": "https://www.tiktok.com/@hellopadel/video/7634133386059173142",
+        "handle": "hellopadel",
+        "caption": "Common mistake in your padel volley",
+        "views_text": "6247",
+        "creator_url": "https://www.tiktok.com/@hellopadel",
+        "views_count": 6247
+      },
+      {
+        "href": "https://www.tiktok.com/@dennycattaneo/video/7549263762063232278",
+        "handle": "dennycattaneo",
+        "caption": "Forehand volley",
+        "views_text": "23.8K",
+        "creator_url": "https://www.tiktok.com/@dennycattaneo",
+        "views_count": 23800
+      },
+      {
+        "href": "https://www.tiktok.com/@aleriaspadelcoach1/video/7562677360026275104",
+        "handle": "aleriaspadelcoach1",
+        "caption": "3 TIPS TO IMPROVE FOREHAND VOLLEY❗️",
+        "views_text": "1180",
+        "creator_url": "https://www.tiktok.com/@aleriaspadelcoach1",
+        "views_count": 1180
+      },
+      {
+        "href": "https://www.tiktok.com/@coach.rish/video/7628710020968025365",
+        "handle": "coach.rish",
+        "caption": "Beginner vs advanced volleys 🙌🏻🔥",
+        "views_text": "893",
+        "creator_url": "https://www.tiktok.com/@coach.rish",
+        "views_count": 893
+      },
+      {
+        "href": "https://www.tiktok.com/@padeuxpadel/video/7577299405078809878",
+        "handle": "padeuxpadel",
+        "caption": "If you want to get your padel volleys right you need to work on your whole posture and follow through. 💪🏻🎾",
+        "views_text": "1368",
+        "creator_url": "https://www.tiktok.com/@padeuxpadel",
+        "views_count": 1368
+      },
+      {
+        "href": "https://www.tiktok.com/@otronivelpadel/video/7400321992680901920",
+        "handle": "otronivelpadel",
+        "caption": "5 TIPS For An Amazing FH-Volley! #padeltips  #padel  #padellesson  #padeltutorial",
+        "views_text": "3421",
+        "creator_url": "https://www.tiktok.com/@otronivelpadel",
+        "views_count": 3421
+      },
+      {
+        "href": "https://www.tiktok.com/@fenixpadelacademy/video/7600639537529834773",
+        "handle": "fenixpadelacademy",
+        "caption": "Do you miss easy volleys? 👀",
+        "views_text": "598",
+        "creator_url": "https://www.tiktok.com/@fenixpadelacademy",
+        "views_count": 598
+      },
+      {
+        "href": "https://www.tiktok.com/@danihoyo_padelcoach/video/7612573636821519638",
+        "handle": "danihoyo_padelcoach",
+        "caption": "Don’t play only with your arms, your whole body should be involved to get more power and control.",
+        "views_text": "743",
+        "creator_url": "https://www.tiktok.com/@danihoyo_padelcoach",
+        "views_count": 743
+      },
+      {
+        "href": "https://www.tiktok.com/@yann.schuerch/video/7577033110366342422",
+        "handle": "yann.schuerch",
+        "caption": "Did you know the difference?",
+        "views_text": "278",
+        "creator_url": "https://www.tiktok.com/@yann.schuerch",
+        "views_count": 278
+      },
+      {
+        "href": "https://www.tiktok.com/@padeuxpadel/video/7607500592000421142",
+        "handle": "padeuxpadel",
+        "caption": "Share this simple but highly effective padel strategy play with your partner to win more points. 👏🏼🎾",
+        "views_text": "6017",
+        "creator_url": "https://www.tiktok.com/@padeuxpadel",
+        "views_count": 6017
+      },
+      {
+        "href": "https://www.tiktok.com/@raphael.cuesta.pa/video/7536999325369486614",
+        "handle": "raphael.cuesta.pa",
+        "caption": "Backhand Volley 5 steps progression with @Julie Padel",
+        "views_text": "7669",
+        "creator_url": "https://www.tiktok.com/@raphael.cuesta.pa",
+        "views_count": 7669
+      },
+      {
+        "href": "https://www.tiktok.com/@padeuxpadel/video/7624056609764838678",
+        "handle": "padeuxpadel",
+        "caption": "Share with your padel partner and both level up your volleys with this essential tutorial. 📝🎾",
+        "views_text": "39",
+        "creator_url": "https://www.tiktok.com/@padeuxpadel",
+        "views_count": 39
+      }
+    ]
+  },
+  "details": [
+    {
+      "url": "https://www.tiktok.com/@hellopadel/video/7634133386059173142",
+      "error": "page.goto: net::ERR_HTTP_RESPONSE_CODE_FAILURE at https://www.tiktok.com/@hellopadel/video/7634133386059173142\nCall log:\n  - navigating to \"https://www.tiktok.com/@hellopadel/video/7634133386059173142\", waiting until \"domcontentloaded\"\n"
+    },
+    {
+      "url": "https://www.tiktok.com/@dennycattaneo/video/7549263762063232278",
+      "duration_seconds": 22,
+      "duration_source": "ssr_json",
+      "like_count": 23800,
+      "comment_count": 88,
+      "share_count": 2535,
+      "favorite_count": 2760,
+      "caption": "Forehand volleyLet’s put some fire on the ball 🔥🎾 #padelvideos #padel #padelitalia",
+      "creator_handle": "dennycattaneo",
+      "creator_url": "https://www.tiktok.com/@dennycattaneo",
+      "music": null,
+      "_raw_text": {
+        "like_text": "23.8K",
+        "comment_text": "88",
+        "share_text": "2535",
+        "favorite_text": "2760",
+        "caption_text": "Forehand volleyLet’s put some fire on the ball 🔥🎾 #padelvideos #padel #padelitalia",
+        "avatar_href_text": "/@dennycattaneo",
+        "music_text": null
+      },
+      "_selector_hits": {
+        "like": "strong[data-e2e=\"like-count\"]",
+        "comment": "strong[data-e2e=\"comment-count\"]",
+        "share": "strong[data-e2e=\"share-count\"]",
+        "favorite": "strong[data-e2e=\"favorite-count\"]",
+        "caption": "[data-e2e=\"video-desc\"]",
+        "avatar_href": "a[data-e2e=\"video-author-avatar\"]",
+        "music": null
+      }
+    },
+    {
+      "url": "https://www.tiktok.com/@aleriaspadelcoach1/video/7562677360026275104",
+      "duration_seconds": 12,
+      "duration_source": "ssr_json",
+      "like_count": 1180,
+      "comment_count": 5,
+      "share_count": 273,
+      "favorite_count": 864,
+      "caption": "3 TIPS TO IMPROVE FOREHAND VOLLEY❗️•1. Keep your dominant elbow close to the body. Specially for BEGINNERS because there’s a tendency to fully extend the arm to hit the ball.2. Racket in neutral position. Pointing up/down or to the sides will reduce your control over the shot.3. Follow through. It’s not only about the hit, it’s about what you do after hitting the ball.Make sure there’s motion after the contact.•#padel #padeltime #padeladdict #padelmania",
+      "creator_handle": "aleriaspadelcoach1",
+      "creator_url": "https://www.tiktok.com/@aleriaspadelcoach1",
+      "music": null,
+      "_raw_text": {
+        "like_text": "1180",
+        "comment_text": "5",
+        "share_text": "273",
+        "favorite_text": "864",
+        "caption_text": "3 TIPS TO IMPROVE FOREHAND VOLLEY❗️•1. Keep your dominant elbow close to the body. Specially for BEGINNERS because there’s a tendency to fully extend the arm to hit the ball.2. Racket in neutral position. Pointing up/down or to the sides will reduce your control over the shot.3. Follow through. It’s not only about the hit, it’s about what you do after hitting the ball.Make sure there’s motion after the contact.•#padel #padeltime #padeladdict #padelmania",
+        "avatar_href_text": "/@aleriaspadelcoach1",
+        "music_text": null
+      },
+      "_selector_hits": {
+        "like": "strong[data-e2e=\"like-count\"]",
+        "comment": "strong[data-e2e=\"comment-count\"]",
+        "share": "strong[data-e2e=\"share-count\"]",
+        "favorite": "strong[data-e2e=\"favorite-count\"]",
+        "caption": "[data-e2e=\"video-desc\"]",
+        "avatar_href": "a[data-e2e=\"video-author-avatar\"]",
+        "music": null
+      }
+    },
+    {
+      "url": "https://www.tiktok.com/@coach.rish/video/7628710020968025365",
+      "duration_seconds": 30,
+      "duration_source": "ssr_json",
+      "like_count": 893,
+      "comment_count": 5,
+      "share_count": 118,
+      "favorite_count": 258,
+      "caption": "Beginner vs advanced volleys 🙌🏻🔥Which is yours?Level up your volleys skills. Send to your padel crew!",
+      "creator_handle": "coach.rish",
+      "creator_url": "https://www.tiktok.com/@coach.rish",
+      "music": null,
+      "_raw_text": {
+        "like_text": "893",
+        "comment_text": "5",
+        "share_text": "118",
+        "favorite_text": "258",
+        "caption_text": "Beginner vs advanced volleys 🙌🏻🔥Which is yours?Level up your volleys skills. Send to your padel crew!",
+        "avatar_href_text": "/@coach.rish",
+        "music_text": null
+      },
+      "_selector_hits": {
+        "like": "strong[data-e2e=\"like-count\"]",
+        "comment": "strong[data-e2e=\"comment-count\"]",
+        "share": "strong[data-e2e=\"share-count\"]",
+        "favorite": "strong[data-e2e=\"favorite-count\"]",
+        "caption": "[data-e2e=\"video-desc\"]",
+        "avatar_href": "a[data-e2e=\"video-author-avatar\"]",
+        "music": null
+      }
+    },
+    {
+      "url": "https://www.tiktok.com/@padeuxpadel/video/7577299405078809878",
+      "duration_seconds": 14,
+      "duration_source": "ssr_json",
+      "like_count": 1368,
+      "comment_count": 11,
+      "share_count": 230,
+      "favorite_count": 544,
+      "caption": "If you want to get your padel volleys right you need to work on your whole posture and follow through. 💪🏻🎾Apply this simple adjustment and connect with more volleys in every game. ✅🫡@padeldrive 🎥#padel #padelvideos  #padeladdict #padeltennis  #padelmania",
+      "creator_handle": "padeuxpadel",
+      "creator_url": "https://www.tiktok.com/@padeuxpadel",
+      "music": null,
+      "_raw_text": {
+        "like_text": "1368",
+        "comment_text": "11",
+        "share_text": "230",
+        "favorite_text": "544",
+        "caption_text": "If you want to get your padel volleys right you need to work on your whole posture and follow through. 💪🏻🎾Apply this simple adjustment and connect with more volleys in every game. ✅🫡@padeldrive 🎥#padel #padelvideos  #padeladdict #padeltennis  #padelmania",
+        "avatar_href_text": "/@padeuxpadel",
+        "music_text": null
+      },
+      "_selector_hits": {
+        "like": "strong[data-e2e=\"like-count\"]",
+        "comment": "strong[data-e2e=\"comment-count\"]",
+        "share": "strong[data-e2e=\"share-count\"]",
+        "favorite": "strong[data-e2e=\"favorite-count\"]",
+        "caption": "[data-e2e=\"video-desc\"]",
+        "avatar_href": "a[data-e2e=\"video-author-avatar\"]",
+        "music": null
+      }
+    }
+  ],
+  "creator_profiles": {
+    "hellopadel": {
+      "url": "https://www.tiktok.com/@hellopadel",
+      "handle": "hellopadel",
+      "nickname": "Hello Padel",
+      "bio": "20+ FREE top tier padel lesson inside our APP 👇",
+      "verified": false,
+      "bio_link": "https://onelink.to/hello-padel-app",
+      "sec_uid": "MS4wLjABAAAAfLLpeJ0u408d1FZErcWbD7O7sFuUVUoei1hP-jzW-aAwamnv4Iz97HJ9GbE76jev",
+      "followers_count": 27000,
+      "following_count": 4,
+      "hearts_count": 303400,
+      "videos_count": 178,
+      "_source": {
+        "json_available": true,
+        "dom_hits": {
+          "bio": "[data-e2e=\"user-bio\"]",
+          "nickname": "[data-e2e=\"user-title\"]",
+          "followers": "strong[data-e2e=\"followers-count\"]",
+          "following": "strong[data-e2e=\"following-count\"]",
+          "likes": "strong[data-e2e=\"likes-count\"]"
+        }
+      }
+    },
+    "dennycattaneo": {
+      "url": "https://www.tiktok.com/@dennycattaneo",
+      "handle": "dennycattaneo",
+      "nickname": "Denny Cattaneo",
+      "bio": "Professional Padel Player\n 🎾🇮🇹",
+      "verified": false,
+      "bio_link": "https://www.instagram.com/dennycattaneo?igsh=MWZyM3ltcGIzNXdlcw",
+      "sec_uid": "MS4wLjABAAAAZdUby2c0N8LKbrOO1r0T5Gfvp82xlAzMaFmm6EcWX6U",
+      "followers_count": 1841,
+      "following_count": 54,
+      "hearts_count": 32000,
+      "videos_count": 20,
+      "_source": {
+        "json_available": true,
+        "dom_hits": {
+          "bio": "[data-e2e=\"user-bio\"]",
+          "nickname": "[data-e2e=\"user-title\"]",
+          "followers": "strong[data-e2e=\"followers-count\"]",
+          "following": "strong[data-e2e=\"following-count\"]",
+          "likes": "strong[data-e2e=\"likes-count\"]"
+        }
+      }
+    },
+    "aleriaspadelcoach1": {
+      "url": "https://www.tiktok.com/@aleriaspadelcoach1",
+      "handle": "aleriaspadelcoach1",
+      "nickname": "Andre Lerias Padel Coach",
+      "bio": "📍UAE\n🎾 IMPROVE YOUR LEVEL \n📚 Online Coaching",
+      "verified": false,
+      "bio_link": null,
+      "sec_uid": "MS4wLjABAAAAdaaIYyC9zXJ3_bcXmVmBS5kPLPlgVS05fkIymBpQk6T_Y0ZIC5rkGfVWwLNegZfD",
+      "followers_count": 5944,
+      "following_count": 46,
+      "hearts_count": 65400,
+      "videos_count": 33,
+      "_source": {
+        "json_available": true,
+        "dom_hits": {
+          "bio": "[data-e2e=\"user-bio\"]",
+          "nickname": "[data-e2e=\"user-title\"]",
+          "followers": "strong[data-e2e=\"followers-count\"]",
+          "following": "strong[data-e2e=\"following-count\"]",
+          "likes": "strong[data-e2e=\"likes-count\"]"
+        }
+      }
+    },
+    "coach.rish": {
+      "url": "https://www.tiktok.com/@coach.rish",
+      "handle": "coach.rish",
+      "nickname": "Coach Rish",
+      "bio": "Head Coach & GM - Fig Tree Padel \nInstagram - Coach Rish  Padel",
+      "verified": false,
+      "bio_link": null,
+      "sec_uid": "MS4wLjABAAAA8gXLmITA4__pdCuFllTT5jxDidjBrenBRi_w5Mv0FSEVFHa2vXg2bBBoze18_teH",
+      "followers_count": 5996,
+      "following_count": 14,
+      "hearts_count": 77400,
+      "videos_count": 110,
+      "_source": {
+        "json_available": true,
+        "dom_hits": {
+          "bio": "[data-e2e=\"user-bio\"]",
+          "nickname": "[data-e2e=\"user-title\"]",
+          "followers": "strong[data-e2e=\"followers-count\"]",
+          "following": "strong[data-e2e=\"following-count\"]",
+          "likes": "strong[data-e2e=\"likes-count\"]"
+        }
+      }
+    },
+    "padeuxpadel": {
+      "url": "https://www.tiktok.com/@padeuxpadel",
+      "handle": "padeuxpadel",
+      "nickname": "PADEUX",
+      "bio": "All the greatest shots, tips and fun from the world of Padel! 🎾😍",
+      "verified": false,
+      "bio_link": "www.padeux.com",
+      "sec_uid": "MS4wLjABAAAAUbiK6S8hBJw6DtYUuM-E255SS-vQizoZuCPjKAAVnmcV8iPK3PzSqBf97RBVJBuj",
+      "followers_count": 91100,
+      "following_count": 0,
+      "hearts_count": 3500000,
+      "videos_count": 2562,
+      "_source": {
+        "json_available": true,
+        "dom_hits": {
+          "bio": "[data-e2e=\"user-bio\"]",
+          "nickname": "[data-e2e=\"user-title\"]",
+          "followers": "strong[data-e2e=\"followers-count\"]",
+          "following": "strong[data-e2e=\"following-count\"]",
+          "likes": "strong[data-e2e=\"likes-count\"]"
+        }
+      }
+    },
+    "otronivelpadel": {
+      "url": "https://www.tiktok.com/@otronivelpadel",
+      "handle": "otronivelpadel",
+      "nickname": "Otro Nivel Padel",
+      "bio": "🎾Padel youtuber > Otro Nivel\n🎾70K Subs\n🎾Learn padel in a fun way",
+      "verified": false,
+      "bio_link": "http://www.youtube.com/c/otronivelpadel",
+      "sec_uid": "MS4wLjABAAAABhs4JJNuUHPfL9gJKnZ-jR9eVkOsCqJmjI1V4EmTOBc7PjkeXfLzcYn2kjxdN092",
+      "followers_count": 20100,
+      "following_count": 758,
+      "hearts_count": 306200,
+      "videos_count": 520,
+      "_source": {
+        "json_available": true,
+        "dom_hits": {
+          "bio": "[data-e2e=\"user-bio\"]",
+          "nickname": "[data-e2e=\"user-title\"]",
+          "followers": "strong[data-e2e=\"followers-count\"]",
+          "following": "strong[data-e2e=\"following-count\"]",
+          "likes": "strong[data-e2e=\"likes-count\"]"
+        }
+      }
+    },
+    "fenixpadelacademy": {
+      "url": "https://www.tiktok.com/@fenixpadelacademy",
+      "handle": "fenixpadelacademy",
+      "nickname": "Fenix Padel Academy",
+      "bio": "Level up your Padel Game\nCoaching • Training • Community\nWhatsApps : 0815 1767 1133",
+      "verified": false,
+      "bio_link": null,
+      "sec_uid": "MS4wLjABAAAAULjIbLp6yV3P_pBDagpI-XtBaLVLEDC7zmO39XjXERARLfmKGA0w2QI8cEPUweIN",
+      "followers_count": 236,
+      "following_count": 7,
+      "hearts_count": 1648,
+      "videos_count": 9,
+      "_source": {
+        "json_available": true,
+        "dom_hits": {
+          "bio": "[data-e2e=\"user-bio\"]",
+          "nickname": "[data-e2e=\"user-title\"]",
+          "followers": "strong[data-e2e=\"followers-count\"]",
+          "following": "strong[data-e2e=\"following-count\"]",
+          "likes": "strong[data-e2e=\"likes-count\"]"
+        }
+      }
+    },
+    "danihoyo_padelcoach": {
+      "url": "https://www.tiktok.com/@danihoyo_padelcoach",
+      "handle": "danihoyo_padelcoach",
+      "nickname": "danihoyo_padelcoach",
+      "bio": "Padel coach for more than 7 years.",
+      "verified": false,
+      "bio_link": null,
+      "sec_uid": "MS4wLjABAAAA60vV_EdkZMWztz5aVnfjer1gxHABmdA_bW_fP5ah-JQvfN7Q7AHUpde9vGmW4O4w",
+      "followers_count": 3683,
+      "following_count": 4,
+      "hearts_count": 50800,
+      "videos_count": 62,
+      "_source": {
+        "json_available": true,
+        "dom_hits": {
+          "bio": "[data-e2e=\"user-bio\"]",
+          "nickname": "[data-e2e=\"user-title\"]",
+          "followers": "strong[data-e2e=\"followers-count\"]",
+          "following": "strong[data-e2e=\"following-count\"]",
+          "likes": "strong[data-e2e=\"likes-count\"]"
+        }
+      }
+    },
+    "yann.schuerch": {
+      "url": "https://www.tiktok.com/@yann.schuerch",
+      "handle": "yann.schuerch",
+      "nickname": "roadtopadelpro",
+      "bio": "🌍 Chasing First FIP Point\n🇩🇪 Best Ranking: #186 \n🎾 Team @pallap",
+      "verified": false,
+      "bio_link": "https://beacons.ai/yann.schuerch",
+      "sec_uid": "MS4wLjABAAAAYpkarxLdeZoQVNFoNXAZDOfbn1Hcjp67I-IhjmUq97TxuOil9-OPWZ5770QvE2aD",
+      "followers_count": 8788,
+      "following_count": 178,
+      "hearts_count": 119300,
+      "videos_count": 173,
+      "_source": {
+        "json_available": true,
+        "dom_hits": {
+          "bio": "[data-e2e=\"user-bio\"]",
+          "nickname": "[data-e2e=\"user-title\"]",
+          "followers": "strong[data-e2e=\"followers-count\"]",
+          "following": "strong[data-e2e=\"following-count\"]",
+          "likes": "strong[data-e2e=\"likes-count\"]"
+        }
+      }
+    },
+    "raphael.cuesta.pa": {
+      "url": "https://www.tiktok.com/@raphael.cuesta.pa",
+      "handle": "raphael.cuesta.pa",
+      "nickname": "Raphael Cuesta Padel",
+      "bio": "Raphael & Julie 🎾🫶🏼 Padel\nFrom 0 to Pro ?\nYouTubers 🍿\n\n👇🏽Join the Level UP Padel Club👇🏽",
+      "verified": false,
+      "bio_link": "https://www.skool.com/the-international-padel-club-1058/about",
+      "sec_uid": "MS4wLjABAAAAjdMfO1NHdYlR7bno_GDFKrum1ihvBlhW3qTBCM7qY_kqYLMWrIMGh1bpMZMaGnh3",
+      "followers_count": 27900,
+      "following_count": 9,
+      "hearts_count": 330800,
+      "videos_count": 93,
+      "_source": {
+        "json_available": true,
+        "dom_hits": {
+          "bio": "[data-e2e=\"user-bio\"]",
+          "nickname": "[data-e2e=\"user-title\"]",
+          "followers": "strong[data-e2e=\"followers-count\"]",
+          "following": "strong[data-e2e=\"following-count\"]",
+          "likes": "strong[data-e2e=\"likes-count\"]"
+        }
+      }
+    }
+  }
+}

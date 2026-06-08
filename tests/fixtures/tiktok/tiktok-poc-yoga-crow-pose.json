@@ -1,0 +1,575 @@
+{
+  "query": "yoga crow pose",
+  "summary": {
+    "cards_count": 12,
+    "details_count": 5,
+    "creators_probed": 12,
+    "likes": {
+      "n": 12,
+      "min": 31,
+      "p25": 246,
+      "median": 1395,
+      "p75": 6862,
+      "max": 14400,
+      "mean": 3968.3
+    },
+    "duration_s": {
+      "n": 5,
+      "min": 18,
+      "p25": 21,
+      "median": 38,
+      "p75": 39,
+      "max": 75,
+      "mean": 38.2
+    },
+    "followers": {
+      "n": 12,
+      "min": 127,
+      "p25": 4161,
+      "median": 16300,
+      "p75": 73100,
+      "max": 106300,
+      "mean": 28007.1
+    },
+    "verified_creators": 0,
+    "creators_with_bio_link": 8
+  },
+  "search": {
+    "url": "https://www.tiktok.com/search?q=yoga%20crow%20pose",
+    "total_video_urls": 12,
+    "cards_count": 12,
+    "cards": [
+      {
+        "href": "https://www.tiktok.com/@realtraviseliot/video/7645077570588888350",
+        "handle": "realtraviseliot",
+        "caption": "🐦‍⬛ Crow pose is a combination of balance, coordination, core engagement, and learning how to distribute your weight with control and awareness.",
+        "views_text": "95",
+        "creator_url": "https://www.tiktok.com/@realtraviseliot",
+        "views_count": 95
+      },
+      {
+        "href": "https://www.tiktok.com/@fayeyoga_/video/7588493996662557974",
+        "handle": "fayeyoga_",
+        "caption": "How to do crow pose step by step. #crowpose  #bakasana  #yoga  #armbalance",
+        "views_text": "14.4K",
+        "creator_url": "https://www.tiktok.com/@fayeyoga_",
+        "views_count": 14400
+      },
+      {
+        "href": "https://www.tiktok.com/@jhoolylalyogi2/video/7645812706519436564",
+        "handle": "jhoolylalyogi2",
+        "caption": "Master Crow Pose In 3 Simple Steps! 🧘‍♀️✨#yoga  #crow  #pose  #fitness  #workout",
+        "views_text": "6303",
+        "creator_url": "https://www.tiktok.com/@jhoolylalyogi2",
+        "views_count": 6303
+      },
+      {
+        "href": "https://www.tiktok.com/@yogiflightschool/video/7206072267632102699",
+        "handle": "yogiflightschool",
+        "caption": "Here's a tip to make it easier to catch your crow pose! 🧡 #crowpose  #bakasana  #bakasanatips  #bakasanapose  #crowposetutorial  #crowposetips  #crowposeforbeginners  #crowposeyoga",
+        "views_text": "774",
+        "creator_url": "https://www.tiktok.com/@yogiflightschool",
+        "views_count": 774
+      },
+      {
+        "href": "https://www.tiktok.com/@yoga.universe/video/7588097353203158280",
+        "handle": "yoga.universe",
+        "caption": "Bakāsana (Crow Pose)",
+        "views_text": "1395",
+        "creator_url": "https://www.tiktok.com/@yoga.universe",
+        "views_count": 1395
+      },
+      {
+        "href": "https://www.tiktok.com/@yoga.click0/video/7599484129947782421",
+        "handle": "yoga.click0",
+        "caption": "Crow pose in 5 easy steps  @Liforme Yoga Mats  #crowpose  #yogaclick  #yogawithsagar  #yogahouseuongbi",
+        "views_text": "6862",
+        "creator_url": "https://www.tiktok.com/@yoga.click0",
+        "views_count": 6862
+      },
+      {
+        "href": "https://www.tiktok.com/@justjuliaiz/video/7501854171331693855",
+        "handle": "justjuliaiz",
+        "caption": "✨Bakasana✨ practice! Do this to learn or IMPROVE your crow 💪 LMK how it goes <3 #crowpose  #yogatutorial  #yogatips  #armbalance",
+        "views_text": "5706",
+        "creator_url": "https://www.tiktok.com/@justjuliaiz",
+        "views_count": 5706
+      },
+      {
+        "href": "https://www.tiktok.com/@rhigreenwood/video/7446906670866894113",
+        "handle": "rhigreenwood",
+        "caption": "Stop trying to rest your knees on the backs of your arms if you are learning crow pose. Initially take the knees wide to create a shelf for your arms and this is where you’ll learn the balance #crowpose  #crowposetutorial  #yogatutorial",
+        "views_text": "11.5K",
+        "creator_url": "https://www.tiktok.com/@rhigreenwood",
+        "views_count": 11500
+      },
+      {
+        "href": "https://www.tiktok.com/@balance.with.ale/video/7648931918095912214",
+        "handle": "balance.with.ale",
+        "caption": "Most people think advanced poses like flying crow require crazy strength or experience.",
+        "views_text": "32",
+        "creator_url": "https://www.tiktok.com/@balance.with.ale",
+        "views_count": 32
+      },
+      {
+        "href": "https://www.tiktok.com/@crk.store/video/7648683082718956820",
+        "handle": "crk.store",
+        "caption": "Master Crow Pose with Anik • Step-by-Step Yoga Tutorial",
+        "views_text": "31",
+        "creator_url": "https://www.tiktok.com/@crk.store",
+        "views_count": 31
+      },
+      {
+        "href": "https://www.tiktok.com/@peter.c.lin/video/7637990023429737758",
+        "handle": "peter.c.lin",
+        "caption": "If your knees slip or you feel tricep pain in crow pose, try engaging your core to lift your hips! Your hips and knees don't literally need to lift up, but the act of trying to lift them up will reduce the weight in your arms :)",
+        "views_text": "246",
+        "creator_url": "https://www.tiktok.com/@peter.c.lin",
+        "views_count": 246
+      },
+      {
+        "href": "https://www.tiktok.com/@charlieafollows/video/7320252283420200224",
+        "handle": "charlieafollows",
+        "caption": "How to improve your crow pose #crowpose  #crowposeyoga  #yogaprogress  #yogagoals",
+        "views_text": "275",
+        "creator_url": "https://www.tiktok.com/@charlieafollows",
+        "views_count": 275
+      }
+    ]
+  },
+  "details": [
+    {
+      "url": "https://www.tiktok.com/@realtraviseliot/video/7645077570588888350",
+      "duration_seconds": 39,
+      "duration_source": "ssr_json",
+      "like_count": 95,
+      "comment_count": 2,
+      "share_count": 3,
+      "favorite_count": 18,
+      "caption": "🐦‍⬛ Crow pose is a combination of balance, coordination, core engagement, and learning how to distribute your weight with control and awareness.One of the most common mistakes in crow is trying to muscle your way into the pose. In reality, the posture becomes much more accessible when you focus on creating a strong foundation through the hands, engaging the core, and gradually shifting your center of gravity forward.It also helps develop concentration.The moment the mind becomes scattered or hesitant, the posture usually reflects it immediately.Like many arm balances, crow is less about forcing the pose and more about patience, repetition, and consistent practice.You do not need to rush the process.Build the foundation.Stay focused.Keep practicing.@Inner Dimension #yoga #armbalance #crowpose #learnyoga #yogapractice",
+      "creator_handle": "realtraviseliot",
+      "creator_url": "https://www.tiktok.com/@realtraviseliot",
+      "music": null,
+      "_raw_text": {
+        "like_text": "95",
+        "comment_text": "2",
+        "share_text": "3",
+        "favorite_text": "18",
+        "caption_text": "🐦‍⬛ Crow pose is a combination of balance, coordination, core engagement, and learning how to distribute your weight with control and awareness.One of the most common mistakes in crow is trying to muscle your way into the pose. In reality, the posture becomes much more accessible when you focus on creating a strong foundation through the hands, engaging the core, and gradually shifting your center of gravity forward.It also helps develop concentration.The moment the mind becomes scattered or hesitant, the posture usually reflects it immediately.Like many arm balances, crow is less about forcing the pose and more about patience, repetition, and consistent practice.You do not need to rush the process.Build the foundation.Stay focused.Keep practicing.@Inner Dimension #yoga #armbalance #crowpose #learnyoga #yogapractice",
+        "avatar_href_text": "/@realtraviseliot",
+        "music_text": null
+      },
+      "_selector_hits": {
+        "like": "strong[data-e2e=\"like-count\"]",
+        "comment": "strong[data-e2e=\"comment-count\"]",
+        "share": "strong[data-e2e=\"share-count\"]",
+        "favorite": "strong[data-e2e=\"favorite-count\"]",
+        "caption": "[data-e2e=\"video-desc\"]",
+        "avatar_href": "a[data-e2e=\"video-author-avatar\"]",
+        "music": null
+      }
+    },
+    {
+      "url": "https://www.tiktok.com/@fayeyoga_/video/7588493996662557974",
+      "duration_seconds": 38,
+      "duration_source": "ssr_json",
+      "like_count": 14400,
+      "comment_count": 47,
+      "share_count": 630,
+      "favorite_count": 8368,
+      "caption": "How to do crow pose step by step. #crowpose #bakasana #yoga #armbalance",
+      "creator_handle": "fayeyoga_",
+      "creator_url": "https://www.tiktok.com/@fayeyoga_",
+      "music": null,
+      "_raw_text": {
+        "like_text": "14.4K",
+        "comment_text": "47",
+        "share_text": "630",
+        "favorite_text": "8368",
+        "caption_text": "How to do crow pose step by step. #crowpose #bakasana #yoga #armbalance",
+        "avatar_href_text": "/@fayeyoga_",
+        "music_text": null
+      },
+      "_selector_hits": {
+        "like": "strong[data-e2e=\"like-count\"]",
+        "comment": "strong[data-e2e=\"comment-count\"]",
+        "share": "strong[data-e2e=\"share-count\"]",
+        "favorite": "strong[data-e2e=\"favorite-count\"]",
+        "caption": "[data-e2e=\"video-desc\"]",
+        "avatar_href": "a[data-e2e=\"video-author-avatar\"]",
+        "music": null
+      }
+    },
+    {
+      "url": "https://www.tiktok.com/@jhoolylalyogi2/video/7645812706519436564",
+      "duration_seconds": 18,
+      "duration_source": "ssr_json",
+      "like_count": 6303,
+      "comment_count": 90,
+      "share_count": 158,
+      "favorite_count": 631,
+      "caption": "Master Crow Pose In 3 Simple Steps! 🧘‍♀️✨#yoga #crow #pose #fitness #workout",
+      "creator_handle": "jhoolylalyogi2",
+      "creator_url": "https://www.tiktok.com/@jhoolylalyogi2",
+      "music": null,
+      "_raw_text": {
+        "like_text": "6303",
+        "comment_text": "90",
+        "share_text": "158",
+        "favorite_text": "631",
+        "caption_text": "Master Crow Pose In 3 Simple Steps! 🧘‍♀️✨#yoga #crow #pose #fitness #workout",
+        "avatar_href_text": "/@jhoolylalyogi2",
+        "music_text": null
+      },
+      "_selector_hits": {
+        "like": "strong[data-e2e=\"like-count\"]",
+        "comment": "strong[data-e2e=\"comment-count\"]",
+        "share": "strong[data-e2e=\"share-count\"]",
+        "favorite": "strong[data-e2e=\"favorite-count\"]",
+        "caption": "[data-e2e=\"video-desc\"]",
+        "avatar_href": "a[data-e2e=\"video-author-avatar\"]",
+        "music": null
+      }
+    },
+    {
+      "url": "https://www.tiktok.com/@yogiflightschool/video/7206072267632102699",
+      "duration_seconds": 75,
+      "duration_source": "ssr_json",
+      "like_count": null,
+      "comment_count": null,
+      "share_count": null,
+      "favorite_count": null,
+      "caption": null,
+      "creator_handle": null,
+      "creator_url": null,
+      "music": null,
+      "_raw_text": {
+        "like_text": null,
+        "comment_text": null,
+        "share_text": null,
+        "favorite_text": null,
+        "caption_text": null,
+        "avatar_href_text": null,
+        "music_text": null
+      },
+      "_selector_hits": {
+        "like": null,
+        "comment": null,
+        "share": null,
+        "favorite": null,
+        "caption": null,
+        "avatar_href": null,
+        "music": null
+      }
+    },
+    {
+      "url": "https://www.tiktok.com/@yoga.universe/video/7588097353203158280",
+      "duration_seconds": 21,
+      "duration_source": "ssr_json",
+      "like_count": 1395,
+      "comment_count": 8,
+      "share_count": 188,
+      "favorite_count": 611,
+      "caption": "Bakāsana (Crow Pose) for Beginners – Step by Step by @YOGA.UNIVERSE ..#crowpose #creatorsearchinsights #crowposeyoga #crowposeyogachallenge #bakasana",
+      "creator_handle": "yoga.universe",
+      "creator_url": "https://www.tiktok.com/@yoga.universe",
+      "music": null,
+      "_raw_text": {
+        "like_text": "1395",
+        "comment_text": "8",
+        "share_text": "188",
+        "favorite_text": "611",
+        "caption_text": "Bakāsana (Crow Pose) for Beginners – Step by Step by @YOGA.UNIVERSE ..#crowpose #creatorsearchinsights #crowposeyoga #crowposeyogachallenge #bakasana",
+        "avatar_href_text": "/@yoga.universe",
+        "music_text": null
+      },
+      "_selector_hits": {
+        "like": "strong[data-e2e=\"like-count\"]",
+        "comment": "strong[data-e2e=\"comment-count\"]",
+        "share": "strong[data-e2e=\"share-count\"]",
+        "favorite": "strong[data-e2e=\"favorite-count\"]",
+        "caption": "[data-e2e=\"video-desc\"]",
+        "avatar_href": "a[data-e2e=\"video-author-avatar\"]",
+        "music": null
+      }
+    }
+  ],
+  "creator_profiles": {
+    "realtraviseliot": {
+      "url": "https://www.tiktok.com/@realtraviseliot",
+      "handle": "realtraviseliot",
+      "nickname": "Travis Eliot",
+      "bio": "Yoga • Mindfulness • Self-Mastery  \nAncient wisdom for modern life  \nTravis Eliot | Founder @innerdimensionyoga  \n👇 Practice with me",
+      "verified": false,
+      "bio_link": "https://www.innerdimensionyoga.com/",
+      "sec_uid": "MS4wLjABAAAAjsEMTwOBPCvRu-qvkAiiEgu2eoE7WTesJls0B116fzcxm5JOAFEUdRn1SFFX5NaH",
+      "followers_count": 16300,
+      "following_count": 32,
+      "hearts_count": 138200,
+      "videos_count": 999,
+      "_source": {
+        "json_available": true,
+        "dom_hits": {
+          "bio": "[data-e2e=\"user-bio\"]",
+          "nickname": "[data-e2e=\"user-title\"]",
+          "followers": "strong[data-e2e=\"followers-count\"]",
+          "following": "strong[data-e2e=\"following-count\"]",
+          "likes": "strong[data-e2e=\"likes-count\"]"
+        }
+      }
+    },
+    "fayeyoga_": {
+      "url": "https://www.tiktok.com/@fayeyoga_",
+      "handle": "fayeyoga_",
+      "nickname": "fayeyoga_",
+      "bio": "Yoga for strength, flexibility & wellbeing \nBreathe • Move • Connect\n↓ Free Home Yoga Guide ↓",
+      "verified": false,
+      "bio_link": "https://impact.me/fayeoliveryoga",
+      "sec_uid": "MS4wLjABAAAAumrpPwKPy_XFPw0ijAgMY8yCr4PNbaIn_f7yFEPPtzaUe1HDVi62AGCte9PVG49F",
+      "followers_count": 1103,
+      "following_count": 71,
+      "hearts_count": 19600,
+      "videos_count": 46,
+      "_source": {
+        "json_available": true,
+        "dom_hits": {
+          "bio": "[data-e2e=\"user-bio\"]",
+          "nickname": "[data-e2e=\"user-title\"]",
+          "followers": "strong[data-e2e=\"followers-count\"]",
+          "following": "strong[data-e2e=\"following-count\"]",
+          "likes": "strong[data-e2e=\"likes-count\"]"
+        }
+      }
+    },
+    "jhoolylalyogi2": {
+      "url": "https://www.tiktok.com/@jhoolylalyogi2",
+      "handle": "jhoolylalyogi2",
+      "nickname": "jhoolylalyogi",
+      "bio": "•🧘‍♀️ Yoga with Jhoolylal\n•#YogaLife #HealthyLiving #Peace\n•Daily yoga practice 🙈",
+      "verified": false,
+      "bio_link": null,
+      "sec_uid": "MS4wLjABAAAAC0068A3d0RYirdxdqFl4PKZzkcWnczueWbQUS2WsgYhAXtwndAklpLesY655V5tt",
+      "followers_count": 23100,
+      "following_count": 20,
+      "hearts_count": 358900,
+      "videos_count": 677,
+      "_source": {
+        "json_available": true,
+        "dom_hits": {
+          "bio": "[data-e2e=\"user-bio\"]",
+          "nickname": "[data-e2e=\"user-title\"]",
+          "followers": "strong[data-e2e=\"followers-count\"]",
+          "following": "strong[data-e2e=\"following-count\"]",
+          "likes": "strong[data-e2e=\"likes-count\"]"
+        }
+      }
+    },
+    "yogiflightschool": {
+      "url": "https://www.tiktok.com/@yogiflightschool",
+      "handle": "yogiflightschool",
+      "nickname": "Yogi Flight School",
+      "bio": "Online Yoga ARM BALANCE and INVERSION Course  🤸🏿‍♀️👇See b!o for my arm balance training!",
+      "verified": false,
+      "bio_link": "https://www.yogiflightschool.com/free-training-social?el=social",
+      "sec_uid": "MS4wLjABAAAAYOyLaDxy1j0eYVAHOHA5y_cwzZ33nLZNaAGJSDpuerCTstuRWO-vbm2gDcbZIlqi",
+      "followers_count": 73100,
+      "following_count": 117,
+      "hearts_count": 500200,
+      "videos_count": 1627,
+      "_source": {
+        "json_available": true,
+        "dom_hits": {
+          "bio": "[data-e2e=\"user-bio\"]",
+          "nickname": "[data-e2e=\"user-title\"]",
+          "followers": "strong[data-e2e=\"followers-count\"]",
+          "following": "strong[data-e2e=\"following-count\"]",
+          "likes": "strong[data-e2e=\"likes-count\"]"
+        }
+      }
+    },
+    "yoga.universe": {
+      "url": "https://www.tiktok.com/@yoga.universe",
+      "handle": "yoga.universe",
+      "nickname": "YOGA UNIVERSE",
+      "bio": "Yoga",
+      "verified": false,
+      "bio_link": null,
+      "sec_uid": "MS4wLjABAAAAYA-7inPvOGfBhm7Y1who5vweNr1mKvebSsKOOeVBjHJj6bt67D9a0g6LF1RfFZ_5",
+      "followers_count": 6976,
+      "following_count": 0,
+      "hearts_count": 61300,
+      "videos_count": 160,
+      "_source": {
+        "json_available": true,
+        "dom_hits": {
+          "bio": "[data-e2e=\"user-bio\"]",
+          "nickname": "[data-e2e=\"user-title\"]",
+          "followers": "strong[data-e2e=\"followers-count\"]",
+          "following": "strong[data-e2e=\"following-count\"]",
+          "likes": "strong[data-e2e=\"likes-count\"]"
+        }
+      }
+    },
+    "yoga.click0": {
+      "url": "https://www.tiktok.com/@yoga.click0",
+      "handle": "yoga.click0",
+      "nickname": "YOGA CLICK",
+      "bio": "Hi am a yoga instructor. I will help you to achieve in your yoga goals practice  If you need any assistance inbox me and online classes are available thank you",
+      "verified": false,
+      "bio_link": null,
+      "sec_uid": "MS4wLjABAAAAGegtX8hJyzyjJFMiwQaS0NAKOfuafe2gM_f13yMZS7DTQbWcC6drPN3-MDlYKzxg",
+      "followers_count": 10600,
+      "following_count": 0,
+      "hearts_count": 82600,
+      "videos_count": 41,
+      "_source": {
+        "json_available": true,
+        "dom_hits": {
+          "bio": "[data-e2e=\"user-bio\"]",
+          "nickname": "[data-e2e=\"user-title\"]",
+          "followers": "strong[data-e2e=\"followers-count\"]",
+          "following": "strong[data-e2e=\"following-count\"]",
+          "likes": "strong[data-e2e=\"likes-count\"]"
+        }
+      }
+    },
+    "justjuliaiz": {
+      "url": "https://www.tiktok.com/@justjuliaiz",
+      "handle": "justjuliaiz",
+      "nickname": "justjuliaiz",
+      "bio": "yoga, pilates, wellness\npractice w me @themadfitapp \n💌 hello@juliaizhealth.com",
+      "verified": false,
+      "bio_link": "https://msha.ke/juliaizyoga",
+      "sec_uid": "MS4wLjABAAAAZmgaONTblK3n72stDUdACGv8VxVd_oBu5Z6d5PWIeohsFNFgviO6e4tSCey-pL0p",
+      "followers_count": 106300,
+      "following_count": 1351,
+      "hearts_count": 1800000,
+      "videos_count": 1927,
+      "_source": {
+        "json_available": true,
+        "dom_hits": {
+          "bio": "[data-e2e=\"user-bio\"]",
+          "nickname": "[data-e2e=\"user-title\"]",
+          "followers": "strong[data-e2e=\"followers-count\"]",
+          "following": "strong[data-e2e=\"following-count\"]",
+          "likes": "strong[data-e2e=\"likes-count\"]"
+        }
+      }
+    },
+    "rhigreenwood": {
+      "url": "https://www.tiktok.com/@rhigreenwood",
+      "handle": "rhigreenwood",
+      "nickname": "RhiRhi Yoga Teacher",
+      "bio": "Yoga & handstand teacher, runner, lifter and trying triathlon",
+      "verified": false,
+      "bio_link": "https://linktr.ee/rhi_escapeyoga",
+      "sec_uid": "MS4wLjABAAAAh8hJGJEjfEDzHsQ1mfjtL4sm3uxNlPO36JShyH3y4CKV8XlKh2KCgDwXA3aAzVO3",
+      "followers_count": 18200,
+      "following_count": 147,
+      "hearts_count": 291100,
+      "videos_count": 1103,
+      "_source": {
+        "json_available": true,
+        "dom_hits": {
+          "bio": "[data-e2e=\"user-bio\"]",
+          "nickname": "[data-e2e=\"user-title\"]",
+          "followers": "strong[data-e2e=\"followers-count\"]",
+          "following": "strong[data-e2e=\"following-count\"]",
+          "likes": "strong[data-e2e=\"likes-count\"]"
+        }
+      }
+    },
+    "balance.with.ale": {
+      "url": "https://www.tiktok.com/@balance.with.ale",
+      "handle": "balance.with.ale",
+      "nickname": "Balance with Alejandra",
+      "bio": "Learn arm balances and inversions, even if you're afraid or think you're not strong enough \nTaught 300+ people\nGet 7-day trial: www.skool.com/balance-with-ale",
+      "verified": false,
+      "bio_link": null,
+      "sec_uid": "MS4wLjABAAAAqE_0jrUFX5tSHhWOdd3FE39L8i5ll8fWjGhQSLkPFA_b5UR3o89BYjwy2ThCTG9m",
+      "followers_count": 318,
+      "following_count": 8,
+      "hearts_count": 4611,
+      "videos_count": 140,
+      "_source": {
+        "json_available": true,
+        "dom_hits": {
+          "bio": "[data-e2e=\"user-bio\"]",
+          "nickname": "[data-e2e=\"user-title\"]",
+          "followers": "strong[data-e2e=\"followers-count\"]",
+          "following": "strong[data-e2e=\"following-count\"]",
+          "likes": "strong[data-e2e=\"likes-count\"]"
+        }
+      }
+    },
+    "crk.store": {
+      "url": "https://www.tiktok.com/@crk.store",
+      "handle": "crk.store",
+      "nickname": "Crk.store",
+      "bio": "Our trusted yoga and pilates brand is sold at 50+ studios and stores📍Shop Now",
+      "verified": false,
+      "bio_link": "https://crk.store",
+      "sec_uid": "MS4wLjABAAAAAfZy1nefqnDY1afnCJI1x-ykdsAks_CnZ3lI1T0SJhEzJj3qE7zIztb_ZXHpGaSH",
+      "followers_count": 127,
+      "following_count": 12,
+      "hearts_count": 18900,
+      "videos_count": 229,
+      "_source": {
+        "json_available": true,
+        "dom_hits": {
+          "bio": "[data-e2e=\"user-bio\"]",
+          "nickname": "[data-e2e=\"user-title\"]",
+          "followers": "strong[data-e2e=\"followers-count\"]",
+          "following": "strong[data-e2e=\"following-count\"]",
+          "likes": "strong[data-e2e=\"likes-count\"]"
+        }
+      }
+    },
+    "peter.c.lin": {
+      "url": "https://www.tiktok.com/@peter.c.lin",
+      "handle": "peter.c.lin",
+      "nickname": "Peter Lin",
+      "bio": "Certified Yoga & Breathwork Teacher\nIG @peter.c.lin \n⬇️ Come join me for class! 🥰 ⬇️",
+      "verified": false,
+      "bio_link": "https://www.empower-mend.com/events",
+      "sec_uid": "MS4wLjABAAAAwOM1RcFc2ek8jauOIApnKaWvumy6YDmA2afC8qN9zpMi-fprMGz721gfgsAVwYvQ",
+      "followers_count": 4161,
+      "following_count": 414,
+      "hearts_count": 36000,
+      "videos_count": 265,
+      "_source": {
+        "json_available": true,
+        "dom_hits": {
+          "bio": "[data-e2e=\"user-bio\"]",
+          "nickname": "[data-e2e=\"user-title\"]",
+          "followers": "strong[data-e2e=\"followers-count\"]",
+          "following": "strong[data-e2e=\"following-count\"]",
+          "likes": "strong[data-e2e=\"likes-count\"]"
+        }
+      }
+    },
+    "charlieafollows": {
+      "url": "https://www.tiktok.com/@charlieafollows",
+      "handle": "charlieafollows",
+      "nickname": "charlieafollows",
+      "bio": "Yoga Teacher | YouTuber\nHelping you see what you’re capable of\nJoin the 7-day strength series 👇",
+      "verified": false,
+      "bio_link": "https://join.charliefollows.com/c/7-day-challenge",
+      "sec_uid": "MS4wLjABAAAAQqVeGABggE5TLgVYqaoO1H_fjyFvM_xIDP5rBIiiUkaqTV_JKFf-PyEfFffER5CL",
+      "followers_count": 75800,
+      "following_count": 364,
+      "hearts_count": 897700,
+      "videos_count": 706,
+      "_source": {
+        "json_available": true,
+        "dom_hits": {
+          "bio": "[data-e2e=\"user-bio\"]",
+          "nickname": "[data-e2e=\"user-title\"]",
+          "followers": "strong[data-e2e=\"followers-count\"]",
+          "following": "strong[data-e2e=\"following-count\"]",
+          "likes": "strong[data-e2e=\"likes-count\"]"
+        }
+      }
+    }
+  }
+}

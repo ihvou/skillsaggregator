@@ -1,0 +1,529 @@
+{
+  "query": "badminton forehand smash",
+  "summary": {
+    "cards_count": 12,
+    "details_count": 5,
+    "creators_probed": 10,
+    "likes": {
+      "n": 12,
+      "min": 130,
+      "p25": 659,
+      "median": 1910,
+      "p75": 12500,
+      "max": 43600,
+      "mean": 9014.4
+    },
+    "duration_s": {
+      "n": 5,
+      "min": 15,
+      "p25": 33,
+      "median": 46,
+      "p75": 72,
+      "max": 158,
+      "mean": 64.8
+    },
+    "followers": {
+      "n": 10,
+      "min": 303,
+      "p25": 6010,
+      "median": 14900,
+      "p75": 43200,
+      "max": 152800,
+      "mean": 37828.3
+    },
+    "verified_creators": 0,
+    "creators_with_bio_link": 5
+  },
+  "search": {
+    "url": "https://www.tiktok.com/search?q=badminton%20forehand%20smash",
+    "total_video_urls": 12,
+    "cards_count": 12,
+    "cards": [
+      {
+        "href": "https://www.tiktok.com/@alliedbadmintoncl/video/7427038481274146055",
+        "handle": "alliedbadmintoncl",
+        "caption": "🏸 A forehand jumping smash is often used to finish a rally. It can be challenging to return due to its speed and steep angle. With consistent practice and focus on the technique, you will have improvement and progress. 💪",
+        "views_text": "324",
+        "creator_url": "https://www.tiktok.com/@alliedbadmintoncl",
+        "views_count": 324
+      },
+      {
+        "href": "https://www.tiktok.com/@basicfeather/video/7033492736888032518",
+        "handle": "basicfeather",
+        "caption": "The technique of the forehand smash. Full video on YouTube!🔥🏸 #basicfeather  #badminton  #badmintonvideos  #badmintonskills  #badmintontraining  #foryou",
+        "views_text": "659",
+        "creator_url": "https://www.tiktok.com/@basicfeather",
+        "views_count": 659
+      },
+      {
+        "href": "https://www.tiktok.com/@featherballer_/video/7575115052009737503",
+        "handle": "featherballer_",
+        "caption": "The flat forehand shot in Badminton - fast, sharp, and straight to the point ⚡️",
+        "views_text": "33.9K",
+        "creator_url": "https://www.tiktok.com/@featherballer_",
+        "views_count": 33900
+      },
+      {
+        "href": "https://www.tiktok.com/@setbadmintonacademy/video/7355736796623293713",
+        "handle": "setbadmintonacademy",
+        "caption": "Forehand Smash🏸 *Left Hand",
+        "views_text": "2684",
+        "creator_url": "https://www.tiktok.com/@setbadmintonacademy",
+        "views_count": 2684
+      },
+      {
+        "href": "https://www.tiktok.com/@junbadmintonacademy/video/7613008708615851272",
+        "handle": "junbadmintonacademy",
+        "caption": "#badminton  #badmintonasmr  #badmintonlovers  #badmintonskills  #badmintonvideo",
+        "views_text": "130",
+        "creator_url": "https://www.tiktok.com/@junbadmintonacademy",
+        "views_count": 130
+      },
+      {
+        "href": "https://www.tiktok.com/@korrsaofficial/video/7553168924657945876",
+        "handle": "korrsaofficial",
+        "caption": "Forehand smash // the boring basics pt. 6",
+        "views_text": "12.5K",
+        "creator_url": "https://www.tiktok.com/@korrsaofficial",
+        "views_count": 12500
+      },
+      {
+        "href": "https://www.tiktok.com/@morethanaswing/video/7479002801004121352",
+        "handle": "morethanaswing",
+        "caption": "Unleash your forehand! 🔥 From powerful smashes to tricky drops, here are the essential forehand shots you need in your game. Which one is your go-to? #badminton  #forehandmastery  #MoreThanASwing  #badmintonacademy",
+        "views_text": "1836",
+        "creator_url": "https://www.tiktok.com/@morethanaswing",
+        "views_count": 1836
+      },
+      {
+        "href": "https://www.tiktok.com/@bulutangkisrally/video/7646619226995805461",
+        "handle": "bulutangkisrally",
+        "caption": "prinsip dasar pukulan forehand smash depan net #badminton  #badmintonlover  #badmintonindonesia  #badmintontraining",
+        "views_text": "254",
+        "creator_url": "https://www.tiktok.com/@bulutangkisrally",
+        "views_count": 254
+      },
+      {
+        "href": "https://www.tiktok.com/@junbadmintonacademy/video/7594440018244996360",
+        "handle": "junbadmintonacademy",
+        "caption": "Badminton training in Kuala Lumpur,Malaysia🇲🇾",
+        "views_text": "763",
+        "creator_url": "https://www.tiktok.com/@junbadmintonacademy",
+        "views_count": 763
+      },
+      {
+        "href": "https://www.tiktok.com/@cloud_sports/video/7535045218144374034",
+        "handle": "cloud_sports",
+        "caption": "Did you know with just 2 actions you’re able to execute most of the forehand shots?",
+        "views_text": "1910",
+        "creator_url": "https://www.tiktok.com/@cloud_sports",
+        "views_count": 1910
+      },
+      {
+        "href": "https://www.tiktok.com/@badminton4kids/video/7589092244829883704",
+        "handle": "badminton4kids",
+        "caption": "How to correctly defend badminton smash down your forehand side",
+        "views_text": "43.6K",
+        "creator_url": "https://www.tiktok.com/@badminton4kids",
+        "views_count": 43600
+      },
+      {
+        "href": "https://www.tiktok.com/@featherballer_/video/7596172267084729630",
+        "handle": "featherballer_",
+        "caption": "How to Smash in Badminton for Beginners 🏸 | Step-by-Step Smash Tutorial 🌟",
+        "views_text": "9613",
+        "creator_url": "https://www.tiktok.com/@featherballer_",
+        "views_count": 9613
+      }
+    ]
+  },
+  "details": [
+    {
+      "url": "https://www.tiktok.com/@alliedbadmintoncl/video/7427038481274146055",
+      "duration_seconds": 46,
+      "duration_source": "ssr_json",
+      "like_count": 324,
+      "comment_count": 6,
+      "share_count": 29,
+      "favorite_count": 144,
+      "caption": "🏸 A forehand jumping smash is often used to finish a rally. It can be challenging to return due to its speed and steep angle. With consistent practice and focus on the technique, you will have improvement and progress. 💪#badminton #badmintonlovers #badmintonplayer #badmintonvideo #tiktok #tiktoktips #smash #jumpsmash #sports",
+      "creator_handle": "alliedbadmintoncl",
+      "creator_url": "https://www.tiktok.com/@alliedbadmintoncl",
+      "music": null,
+      "_raw_text": {
+        "like_text": "324",
+        "comment_text": "6",
+        "share_text": "29",
+        "favorite_text": "144",
+        "caption_text": "🏸 A forehand jumping smash is often used to finish a rally. It can be challenging to return due to its speed and steep angle. With consistent practice and focus on the technique, you will have improvement and progress. 💪#badminton #badmintonlovers #badmintonplayer #badmintonvideo #tiktok #tiktoktips #smash #jumpsmash #sports",
+        "avatar_href_text": "/@alliedbadmintoncl",
+        "music_text": null
+      },
+      "_selector_hits": {
+        "like": "strong[data-e2e=\"like-count\"]",
+        "comment": "strong[data-e2e=\"comment-count\"]",
+        "share": "strong[data-e2e=\"share-count\"]",
+        "favorite": "strong[data-e2e=\"favorite-count\"]",
+        "caption": "[data-e2e=\"video-desc\"]",
+        "avatar_href": "a[data-e2e=\"video-author-avatar\"]",
+        "music": null
+      }
+    },
+    {
+      "url": "https://www.tiktok.com/@basicfeather/video/7033492736888032518",
+      "duration_seconds": 33,
+      "duration_source": "ssr_json",
+      "like_count": null,
+      "comment_count": null,
+      "share_count": null,
+      "favorite_count": null,
+      "caption": null,
+      "creator_handle": null,
+      "creator_url": null,
+      "music": null,
+      "_raw_text": {
+        "like_text": null,
+        "comment_text": null,
+        "share_text": null,
+        "favorite_text": null,
+        "caption_text": null,
+        "avatar_href_text": null,
+        "music_text": null
+      },
+      "_selector_hits": {
+        "like": null,
+        "comment": null,
+        "share": null,
+        "favorite": null,
+        "caption": null,
+        "avatar_href": null,
+        "music": null
+      }
+    },
+    {
+      "url": "https://www.tiktok.com/@featherballer_/video/7575115052009737503",
+      "duration_seconds": 158,
+      "duration_source": "ssr_json",
+      "like_count": 33900,
+      "comment_count": 117,
+      "share_count": 1168,
+      "favorite_count": 6934,
+      "caption": "The flat forehand shot in Badminton - fast, sharp, and straight to the point ⚡️It's not about power, it's about timing, finger power + precision 🎯Master this key badminton technique and you'll own the mid-court rallies, which will lead to a great attack🏆This badminton technique is for both very beginners as well as advanced Badminton Players!Follow along to be part of my From Beginner to Intermediate in 90 days Challenge!📍Fernvale Village#badminton #badmintontraining #featherballer #badmintonskills #badmintontips",
+      "creator_handle": "featherballer_",
+      "creator_url": "https://www.tiktok.com/@featherballer_",
+      "music": null,
+      "_raw_text": {
+        "like_text": "33.9K",
+        "comment_text": "117",
+        "share_text": "1168",
+        "favorite_text": "6934",
+        "caption_text": "The flat forehand shot in Badminton - fast, sharp, and straight to the point ⚡️It's not about power, it's about timing, finger power + precision 🎯Master this key badminton technique and you'll own the mid-court rallies, which will lead to a great attack🏆This badminton technique is for both very beginners as well as advanced Badminton Players!Follow along to be part of my From Beginner to Intermediate in 90 days Challenge!📍Fernvale Village#badminton #badmintontraining #featherballer #badmintonskills #badmintontips",
+        "avatar_href_text": "/@featherballer_",
+        "music_text": null
+      },
+      "_selector_hits": {
+        "like": "strong[data-e2e=\"like-count\"]",
+        "comment": "strong[data-e2e=\"comment-count\"]",
+        "share": "strong[data-e2e=\"share-count\"]",
+        "favorite": "strong[data-e2e=\"favorite-count\"]",
+        "caption": "[data-e2e=\"video-desc\"]",
+        "avatar_href": "a[data-e2e=\"video-author-avatar\"]",
+        "music": null
+      }
+    },
+    {
+      "url": "https://www.tiktok.com/@setbadmintonacademy/video/7355736796623293713",
+      "duration_seconds": 72,
+      "duration_source": "ssr_json",
+      "like_count": null,
+      "comment_count": null,
+      "share_count": null,
+      "favorite_count": null,
+      "caption": "Forehand Smash🏸 *Left Hand#setbadmintonacademy #badminton #Hoseh #leezs #BadmintonMalaysia #勿忘初心 #coachlee #smash #forehand",
+      "creator_handle": "setbadmintonacademy",
+      "creator_url": "https://www.tiktok.com/@setbadmintonacademy",
+      "music": null,
+      "_raw_text": {
+        "like_text": "Like",
+        "comment_text": "Comments",
+        "share_text": "Share",
+        "favorite_text": "Favourites",
+        "caption_text": "Forehand Smash🏸 *Left Hand#setbadmintonacademy #badminton #Hoseh #leezs #BadmintonMalaysia #勿忘初心 #coachlee #smash #forehand",
+        "avatar_href_text": "/@setbadmintonacademy",
+        "music_text": null
+      },
+      "_selector_hits": {
+        "like": "strong[data-e2e=\"like-count\"]",
+        "comment": "strong[data-e2e=\"comment-count\"]",
+        "share": "strong[data-e2e=\"share-count\"]",
+        "favorite": "strong[data-e2e=\"favorite-count\"]",
+        "caption": "[data-e2e=\"video-desc\"]",
+        "avatar_href": "a[data-e2e=\"video-author-avatar\"]",
+        "music": null
+      }
+    },
+    {
+      "url": "https://www.tiktok.com/@junbadmintonacademy/video/7613008708615851272",
+      "duration_seconds": 15,
+      "duration_source": "ssr_json",
+      "like_count": 130,
+      "comment_count": 1,
+      "share_count": 9,
+      "favorite_count": 20,
+      "caption": "#badminton #badmintonasmr #badmintonlovers #badmintonskills #badmintonvideo",
+      "creator_handle": "junbadmintonacademy",
+      "creator_url": "https://www.tiktok.com/@junbadmintonacademy",
+      "music": null,
+      "_raw_text": {
+        "like_text": "130",
+        "comment_text": "1",
+        "share_text": "9",
+        "favorite_text": "20",
+        "caption_text": "#badminton #badmintonasmr #badmintonlovers #badmintonskills #badmintonvideo",
+        "avatar_href_text": "/@junbadmintonacademy",
+        "music_text": null
+      },
+      "_selector_hits": {
+        "like": "strong[data-e2e=\"like-count\"]",
+        "comment": "strong[data-e2e=\"comment-count\"]",
+        "share": "strong[data-e2e=\"share-count\"]",
+        "favorite": "strong[data-e2e=\"favorite-count\"]",
+        "caption": "[data-e2e=\"video-desc\"]",
+        "avatar_href": "a[data-e2e=\"video-author-avatar\"]",
+        "music": null
+      }
+    }
+  ],
+  "creator_profiles": {
+    "alliedbadmintoncl": {
+      "url": "https://www.tiktok.com/@alliedbadmintoncl",
+      "handle": "alliedbadmintoncl",
+      "nickname": "ALLIED BADMINTON CLUB",
+      "bio": "Kepong Allied Badminton Academy\n🏸 provide tailored badminton classes",
+      "verified": false,
+      "bio_link": null,
+      "sec_uid": "MS4wLjABAAAABavBrXqFgMg1BOR-b_30Hq9-rgrL8hGzhhWTfLi1iX-kNMeaTkMLAZTCv65GKD6t",
+      "followers_count": 303,
+      "following_count": 13,
+      "hearts_count": 3652,
+      "videos_count": 99,
+      "_source": {
+        "json_available": true,
+        "dom_hits": {
+          "bio": "[data-e2e=\"user-bio\"]",
+          "nickname": "[data-e2e=\"user-title\"]",
+          "followers": "strong[data-e2e=\"followers-count\"]",
+          "following": "strong[data-e2e=\"following-count\"]",
+          "likes": "strong[data-e2e=\"likes-count\"]"
+        }
+      }
+    },
+    "basicfeather": {
+      "url": "https://www.tiktok.com/@basicfeather",
+      "handle": "basicfeather",
+      "nickname": "Basic Feather",
+      "bio": "High quality badminton products with a minimalistic design🏸",
+      "verified": false,
+      "bio_link": "basicfeather.com",
+      "sec_uid": "MS4wLjABAAAAtqXDa6LPN78_zvbxxNpbZkeGrDQhDUAcQKEc8ukYvC1REh1syRfpob6yh6-A0HEl",
+      "followers_count": 39500,
+      "following_count": 0,
+      "hearts_count": 439100,
+      "videos_count": 279,
+      "_source": {
+        "json_available": true,
+        "dom_hits": {
+          "bio": "[data-e2e=\"user-bio\"]",
+          "nickname": "[data-e2e=\"user-title\"]",
+          "followers": "strong[data-e2e=\"followers-count\"]",
+          "following": "strong[data-e2e=\"following-count\"]",
+          "likes": "strong[data-e2e=\"likes-count\"]"
+        }
+      }
+    },
+    "featherballer_": {
+      "url": "https://www.tiktok.com/@featherballer_",
+      "handle": "featherballer_",
+      "nickname": "Featherballer | BadmintonCoach",
+      "bio": "🇮🇹 Ex-National Team 🏸 \n🎯Learn Badminton in 90-Days\n🏆Level Up & Join Along\n🌍Asia Based | Singapore 🇸🇬",
+      "verified": false,
+      "bio_link": null,
+      "sec_uid": "MS4wLjABAAAAVBJkIIx0TwVEbZujhaZbJGL5g0ZBTdIjCuRPvI1uj_wzQNy09ebgdRVZITw9OBtp",
+      "followers_count": 96300,
+      "following_count": 82,
+      "hearts_count": 1800000,
+      "videos_count": 115,
+      "_source": {
+        "json_available": true,
+        "dom_hits": {
+          "bio": "[data-e2e=\"user-bio\"]",
+          "nickname": "[data-e2e=\"user-title\"]",
+          "followers": "strong[data-e2e=\"followers-count\"]",
+          "following": "strong[data-e2e=\"following-count\"]",
+          "likes": "strong[data-e2e=\"likes-count\"]"
+        }
+      }
+    },
+    "setbadmintonacademy": {
+      "url": "https://www.tiktok.com/@setbadmintonacademy",
+      "handle": "setbadmintonacademy",
+      "nickname": "SET Badminton Academy",
+      "bio": "📌202403278485(MA0323211-H)\n📍Melaka，Malaysia\n🟢1 to 1｜Group Training｜Beginner to State Player\n🟢Head Coach with BAM Coaching Course L1",
+      "verified": false,
+      "bio_link": null,
+      "sec_uid": "MS4wLjABAAAAOOhRY2GBZlwrkSkEVmn1ahKJ92LGqhMJixUHQFFknmI",
+      "followers_count": 152800,
+      "following_count": 405,
+      "hearts_count": 3100000,
+      "videos_count": 1260,
+      "_source": {
+        "json_available": true,
+        "dom_hits": {
+          "bio": "[data-e2e=\"user-bio\"]",
+          "nickname": "[data-e2e=\"user-title\"]",
+          "followers": "strong[data-e2e=\"followers-count\"]",
+          "following": "strong[data-e2e=\"following-count\"]",
+          "likes": "strong[data-e2e=\"likes-count\"]"
+        }
+      }
+    },
+    "junbadmintonacademy": {
+      "url": "https://www.tiktok.com/@junbadmintonacademy",
+      "handle": "junbadmintonacademy",
+      "nickname": "Junbadmintonacademy",
+      "bio": "KL/SELANGOR Badminton Training(Group/Private)\n✅Junior/Kids\n✅Senior/Adults\nFB/IG:JUNBadmintonAcademy\n📲 0175407411 Coach JUN",
+      "verified": false,
+      "bio_link": "https://linktr.ee/junbadmintonacademy",
+      "sec_uid": "MS4wLjABAAAAsZndK_WSzJmHivcAfu6VV0zisETHvDmpm1F_zDE0NEfSAS3cstxPO_YO-upVryEL",
+      "followers_count": 7196,
+      "following_count": 86,
+      "hearts_count": 151900,
+      "videos_count": 238,
+      "_source": {
+        "json_available": true,
+        "dom_hits": {
+          "bio": "[data-e2e=\"user-bio\"]",
+          "nickname": "[data-e2e=\"user-title\"]",
+          "followers": "strong[data-e2e=\"followers-count\"]",
+          "following": "strong[data-e2e=\"following-count\"]",
+          "likes": "strong[data-e2e=\"likes-count\"]"
+        }
+      }
+    },
+    "korrsaofficial": {
+      "url": "https://www.tiktok.com/@korrsaofficial",
+      "handle": "korrsaofficial",
+      "nickname": "Korrsa",
+      "bio": "Here for those who love the sport of badminton.",
+      "verified": false,
+      "bio_link": null,
+      "sec_uid": "MS4wLjABAAAAix1Yn54AYh7JBhkPB2eFEQUtQcAchhnFGlU3lU7hMjib2q3fk5NclgLurmIraw5x",
+      "followers_count": 12700,
+      "following_count": 15,
+      "hearts_count": 158300,
+      "videos_count": 21,
+      "_source": {
+        "json_available": true,
+        "dom_hits": {
+          "bio": "[data-e2e=\"user-bio\"]",
+          "nickname": "[data-e2e=\"user-title\"]",
+          "followers": "strong[data-e2e=\"followers-count\"]",
+          "following": "strong[data-e2e=\"following-count\"]",
+          "likes": "strong[data-e2e=\"likes-count\"]"
+        }
+      }
+    },
+    "morethanaswing": {
+      "url": "https://www.tiktok.com/@morethanaswing",
+      "handle": "morethanaswing",
+      "nickname": "MORE THAN A SWING",
+      "bio": "Badminton Academy in 🇸🇬\nJoin us to level up your badminton game💪🏼🏸",
+      "verified": false,
+      "bio_link": "mtas.sg",
+      "sec_uid": "MS4wLjABAAAAEhFTo88qnNQABAbQHHLUnSxaPcKZVw_-bPHlo4sVezBKtzuAgVvsVP6rXgjaUAmU",
+      "followers_count": 5374,
+      "following_count": 8,
+      "hearts_count": 185700,
+      "videos_count": 218,
+      "_source": {
+        "json_available": true,
+        "dom_hits": {
+          "bio": "[data-e2e=\"user-bio\"]",
+          "nickname": "[data-e2e=\"user-title\"]",
+          "followers": "strong[data-e2e=\"followers-count\"]",
+          "following": "strong[data-e2e=\"following-count\"]",
+          "likes": "strong[data-e2e=\"likes-count\"]"
+        }
+      }
+    },
+    "bulutangkisrally": {
+      "url": "https://www.tiktok.com/@bulutangkisrally",
+      "handle": "bulutangkisrally",
+      "nickname": "Bulutangkis Rally",
+      "bio": "Follow Tips & Update Badminton Terkini! \n🤝 Mau Kolaborasi/Promosi? Silahkan DM",
+      "verified": false,
+      "bio_link": "https://lynk.id/bulutangkisrally",
+      "sec_uid": "MS4wLjABAAAAqXDawEsJAOFRv1TE0m9eFkH4G0LiP_6PhNmJVNBvCYo_1hvQKff_oPhGSEUomB70",
+      "followers_count": 43200,
+      "following_count": 1,
+      "hearts_count": 910200,
+      "videos_count": 516,
+      "_source": {
+        "json_available": true,
+        "dom_hits": {
+          "bio": "[data-e2e=\"user-bio\"]",
+          "nickname": "[data-e2e=\"user-title\"]",
+          "followers": "strong[data-e2e=\"followers-count\"]",
+          "following": "strong[data-e2e=\"following-count\"]",
+          "likes": "strong[data-e2e=\"likes-count\"]"
+        }
+      }
+    },
+    "cloud_sports": {
+      "url": "https://www.tiktok.com/@cloud_sports",
+      "handle": "cloud_sports",
+      "nickname": "Cloud Sports Singapore",
+      "bio": "🏸 Badminton content\n📬 DM for coaching enquiry\n\napparel coming soon 🔜",
+      "verified": false,
+      "bio_link": "https://www.cloudsports.org",
+      "sec_uid": "MS4wLjABAAAAPhf5yqYzGwTeFJRtQB8u_fg95ZtYEMD-cxE_ONYLTSkp8qMJrcgRuzIfWPdyYfb0",
+      "followers_count": 6010,
+      "following_count": 2,
+      "hearts_count": 144400,
+      "videos_count": 57,
+      "_source": {
+        "json_available": true,
+        "dom_hits": {
+          "bio": "[data-e2e=\"user-bio\"]",
+          "nickname": "[data-e2e=\"user-title\"]",
+          "followers": "strong[data-e2e=\"followers-count\"]",
+          "following": "strong[data-e2e=\"following-count\"]",
+          "likes": "strong[data-e2e=\"likes-count\"]"
+        }
+      }
+    },
+    "badminton4kids": {
+      "url": "https://www.tiktok.com/@badminton4kids",
+      "handle": "badminton4kids",
+      "nickname": "Badminton 4 Kids - Big & Small",
+      "bio": "🎯100 Days Badminton Challenge\n🏸 IN-DEPTH Tutorials\n🔥 Fun Badminton Content",
+      "verified": false,
+      "bio_link": null,
+      "sec_uid": "MS4wLjABAAAAmpbj390S6r_b74AT32xEYqjeJHqN4e0-hWGQQDTVblLOT2osUTGKugx-GjwZIe35",
+      "followers_count": 14900,
+      "following_count": 54,
+      "hearts_count": 255600,
+      "videos_count": 1083,
+      "_source": {
+        "json_available": true,
+        "dom_hits": {
+          "bio": "[data-e2e=\"user-bio\"]",
+          "nickname": "[data-e2e=\"user-title\"]",
+          "followers": "strong[data-e2e=\"followers-count\"]",
+          "following": "strong[data-e2e=\"following-count\"]",
+          "likes": "strong[data-e2e=\"likes-count\"]"
+        }
+      }
+    }
+  }
+}

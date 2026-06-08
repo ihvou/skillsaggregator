@@ -7,6 +7,7 @@ import { createRunLogger } from "../_shared/logger.ts";
 import { normalizeCanonicalUrl } from "../_shared/normalization.ts";
 import { corsForbiddenResponse, errorResponse, isAllowedCorsOrigin, jsonResponse, optionsResponse, readJson } from "../_shared/responses.ts";
 import { callFunction, getServiceClient } from "../_shared/supabase.ts";
+import { scoreTikTokCandidate } from "../_shared/tiktok-scoring.ts";
 import { fetchTranscript, TranscriptFetchError, TranscriptUnavailableError } from "../_shared/youtube.ts";
 
 function thresholds() {
@@ -60,7 +61,7 @@ Deno.serve(async (request) => {
 
     const { data: relation, error: relationError } = await supabase
       .from("link_skill_relations")
-      .select("id, link_id, skill_id, upvote_count, links(id, url, canonical_url, title, description, domain, content_type, thumbnail_url, is_active), skills(id, name, description, category_id)")
+      .select("id, link_id, skill_id, upvote_count, links(id, url, canonical_url, title, description, domain, content_type, thumbnail_url, duration_seconds, like_count, comment_count, share_count, favorite_count, creator_handle, creator_url, scoring_strategy, is_active, creator:creators(id, platform, handle, bio, bio_link, followers_count, following_count, videos_count, verified)), skills(id, name, description, category_id)")
       .eq("id", body.relation_id)
       .single();
     if (relationError) throw relationError;
@@ -68,6 +69,102 @@ Deno.serve(async (request) => {
     const link = Array.isArray(relation.links) ? relation.links[0] : relation.links;
     const skill = Array.isArray(relation.skills) ? relation.skills[0] : relation.skills;
     if (!link || !skill) throw new Error("Relation is missing link or skill");
+
+    if (link.scoring_strategy === "engagement_authority") {
+      const creator = Array.isArray(link.creator) ? link.creator[0] : link.creator;
+      const verdict = scoreTikTokCandidate(
+        {
+          url: link.url,
+          href: link.canonical_url ?? link.url,
+          caption: [link.title, link.description].filter(Boolean).join("\n\n"),
+          creator_handle: link.creator_handle,
+          creator_url: link.creator_url,
+          duration_seconds: link.duration_seconds,
+          like_count: link.like_count,
+          comment_count: link.comment_count,
+          share_count: link.share_count,
+          favorite_count: link.favorite_count,
+        },
+        creator ?? null,
+        { query: `${skill.name} ${skill.description ?? ""}` },
+      );
+
+      await logger.info("relation_scored_engagement_authority", "Existing relation re-scored with TikTok engagement authority rubric", {
+        relation_id: relation.id,
+        link_id: link.id,
+        skill_id: skill.id,
+        verdict,
+      });
+
+      const suggestion =
+        verdict.verdict === "REJECT"
+          ? {
+              type: "LINK_DETACH_SKILL",
+              payload_json: {
+                link_id: link.id,
+                target_skill_id: skill.id,
+                reason: verdict.layer === 1
+                  ? `TikTok engagement check rejected this relation: ${verdict.reasons.join(", ")}.`
+                  : `TikTok authority score ${verdict.authority_total} fell below gate ${verdict.gate}.`,
+              },
+              confidence: 0.85,
+            }
+          : {
+              type: "LINK_UPVOTE_SKILL",
+              payload_json: {
+                link_id: link.id,
+                target_skill_id: skill.id,
+                reason: `TikTok authority ${verdict.authority_total}, rank ${verdict.ranking_total}.`,
+              },
+              confidence: 0.8,
+            };
+
+      const submitted = await callFunction<{ suggestion_id: string; duplicate?: boolean }>(
+        "submit-suggestion",
+        {
+          type: suggestion.type,
+          status: "pending",
+          origin_type: "agent",
+          origin_name: "link-checker",
+          category_id: skill.category_id,
+          skill_id: skill.id,
+          link_id: link.id,
+          payload_json: suggestion.payload_json,
+          evidence_json: {
+            source: "relation_recheck_tiktok_engagement_authority",
+            current_upvote_count: relation.upvote_count,
+            link_title: link.title,
+            verdict,
+          },
+          confidence: suggestion.confidence,
+        },
+      );
+      const suggestionsCreated = submitted.duplicate ? 0 : 1;
+
+      await supabase
+        .from("link_skill_relations")
+        .update({ last_checked_at: new Date().toISOString() })
+        .eq("id", body.relation_id);
+
+      const { error: updateError } = await supabase
+        .from("agent_runs")
+        .update({
+          status: "completed",
+          suggestions_created: suggestionsCreated,
+          cost_usd: 0,
+          completed_at: new Date().toISOString(),
+        })
+        .eq("id", runId);
+      if (updateError) throw updateError;
+
+      await logger.info("run_completed", "Link checker completed", {
+        suggestions_created: suggestionsCreated,
+        emitted_suggestion_id: submitted.suggestion_id,
+        duplicate: Boolean(submitted.duplicate),
+      });
+
+      return jsonResponse({ run_id: runId, suggestions_created: suggestionsCreated }, 200, request);
+    }
 
     let evidenceText = [link.title, link.description].filter(Boolean).join("\n\n");
     const videoId = youtubeVideoId(link.canonical_url ?? link.url);

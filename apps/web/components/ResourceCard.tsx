@@ -41,6 +41,11 @@ function formatCount(value: number): string {
   return String(value);
 }
 
+function isPortraitResource(resource: SkillResource) {
+  const domain = resource.link.domain?.toLowerCase() ?? "";
+  return domain.includes("tiktok") || resource.link.thumbnail_storage_path?.includes("/tiktok/") === true;
+}
+
 /**
  * Web counterpart to the mobile ResourceCard row.
  *  - 16/9 thumbnail (left, click → opens link)
@@ -62,6 +67,7 @@ export function ResourceCard({ resource }: ResourceCardProps) {
 
   const dateLabel = formatDate(resource.created_at);
   const thumbnail = resource.link.thumbnail_url;
+  const portrait = isPortraitResource(resource);
   const url = resource.link.url;
   const contributor = resource.link.contributor_profile;
 
@@ -100,14 +106,14 @@ export function ResourceCard({ resource }: ResourceCardProps) {
         rel="noreferrer"
         aria-label={resource.link.title ?? "Open resource"}
         className="focus-ring relative shrink-0 overflow-hidden rounded-[14px] bg-bgGroup shadow-thumb transition hover:opacity-90"
-        style={{ aspectRatio: "16 / 9", width: 240 }}
+        style={{ aspectRatio: portrait ? "9 / 16" : "16 / 9", width: portrait ? 108 : 240 }}
       >
         {thumbnail ? (
           <Image
             src={thumbnail}
             alt={resource.link.title ?? ""}
             fill
-            sizes="240px"
+            sizes={portrait ? "108px" : "240px"}
             className="object-cover"
           />
         ) : null}

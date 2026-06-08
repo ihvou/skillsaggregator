@@ -28,13 +28,14 @@ export interface CategoryResourceListingOptions {
 }
 
 const RESOURCE_LINK_SELECT =
-  "id, url, canonical_url, domain, title, description, thumbnail_url, content_type, created_at, contributor_profile:contributor_profiles(id, slug, display_name, avatar_url, accepted_count)";
+  "id, url, canonical_url, domain, title, description, thumbnail_url, thumbnail_storage_path, duration_seconds, like_count, comment_count, share_count, favorite_count, creator_handle, creator_url, scoring_strategy, content_type, created_at, contributor_profile:contributor_profiles(id, slug, display_name, avatar_url, accepted_count)";
 const RELATION_VOTE_SELECT = "upvote_count, downvote_count, vote_score";
 
 function shapeLinkWithContributor<
   TLink extends {
     contributor_profile?: unknown;
     thumbnail_url?: string | null;
+    thumbnail_storage_path?: string | null;
     canonical_url?: string | null;
     url?: string | null;
   },
@@ -45,8 +46,9 @@ function shapeLinkWithContributor<
   return {
     ...link,
     thumbnail_url: normalizeThumbnailUrl(
-      link.thumbnail_url,
+      link.thumbnail_storage_path ?? link.thumbnail_url,
       link.canonical_url ?? link.url ?? null,
+      link.thumbnail_storage_path ? link.thumbnail_url : null,
     ),
     contributor_profile: contributor ?? null,
   };
@@ -418,7 +420,7 @@ export async function getDiscoverSections(perCategorySkills = 12): Promise<Disco
       }
       const { data: relations } = await supabase
         .from("link_skill_relations")
-        .select("skill_id, created_at, links!inner(thumbnail_url, canonical_url, url)")
+        .select("skill_id, created_at, links!inner(thumbnail_url, thumbnail_storage_path, canonical_url, url)")
         .in("skill_id", skillsWithResources.map((skill) => skill.id))
         .eq("is_active", true)
         .eq("links.is_active", true)
@@ -430,7 +432,11 @@ export async function getDiscoverSections(perCategorySkills = 12): Promise<Disco
         const link = Array.isArray(relation.links) ? relation.links[0] : relation.links;
         latestThumbBySkill.set(
           relation.skill_id,
-          normalizeThumbnailUrl(link?.thumbnail_url ?? null, link?.canonical_url ?? link?.url ?? null),
+          normalizeThumbnailUrl(
+            link?.thumbnail_storage_path ?? link?.thumbnail_url ?? null,
+            link?.canonical_url ?? link?.url ?? null,
+            link?.thumbnail_storage_path ? link?.thumbnail_url ?? null : null,
+          ),
         );
       }
 
@@ -539,7 +545,7 @@ export interface AdminSuggestion {
   created_at: string;
   category: { name: string; slug: string } | null;
   skill: { name: string; slug: string } | null;
-  link: { title: string | null; domain: string | null; thumbnail_url: string | null } | null;
+  link: { title: string | null; domain: string | null; thumbnail_url: string | null; thumbnail_storage_path?: string | null } | null;
   author: { display_name: string } | null;
 }
 
@@ -668,7 +674,7 @@ export async function getPendingSuggestions(): Promise<AdminSuggestion[]> {
 
   const { data, error } = await supabase
     .from("suggestions")
-    .select("id, type, status, origin_type, origin_name, payload_json, evidence_json, triangulation_json, confidence, created_at, categories(name, slug), skills(name, slug), links(title, domain, thumbnail_url), internal_users(display_name)")
+    .select("id, type, status, origin_type, origin_name, payload_json, evidence_json, triangulation_json, confidence, created_at, categories(name, slug), skills(name, slug), links(title, domain, thumbnail_url, thumbnail_storage_path), internal_users(display_name)")
     .eq("status", "pending")
     .order("created_at", { ascending: false });
 

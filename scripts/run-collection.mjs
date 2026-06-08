@@ -55,6 +55,9 @@
  *   COLLECT_TRANSCRIPT_FALLBACK_CANDIDATES default 5
  *   COLLECT_TRANSCRIPT_FALLBACK_RELEVANCE_MULTIPLIER default 0.7
  *   COLLECT_SUBMIT_TIMEOUT_MS     default 15000
+ *   COLLECT_TIKTOK_SEARCH_LIMIT   default 12
+ *   COLLECT_TIKTOK_QUERY_GAP_MS   default 60000
+ *   COLLECT_TIKTOK_PROBE_GAP_MS   default 1500
  */
 import { execFile, spawn } from "node:child_process";
 import { mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
@@ -68,6 +71,25 @@ import {
   fetchTranscriptBrowser,
   preflightTranscriptBrowser,
 } from "./_lib/transcript-fetcher-browser.mjs";
+import {
+  closeTikTokBrowser,
+  fetchCreatorProfile,
+  fetchVideoDetail,
+  getTikTokBrowserContext,
+  preflightTikTokBrowser,
+  searchTikTok,
+} from "./_lib/tiktok-fetcher-browser.mjs";
+import {
+  mergeTikTokCardDetail,
+  scoreTikTokCandidate,
+  VERTICALS,
+} from "./_lib/tiktok-scoring.mjs";
+import { tiktokVideoIdFromUrl } from "../supabase/functions/_shared/tiktok-url.mjs";
+
+// TikTok scoring stays local in the collector for the same reason YouTube
+// transcript fetching does: nightly collection should survive Edge/runtime
+// hiccups until the final submit call. The Edge TS scorer mirrors this module
+// and is fixture-tested for parity.
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const execFileP = promisify(execFile);
@@ -194,6 +216,10 @@ const config = {
   ytdlpTranscriptTimeoutMs: Number(process.env.COLLECT_YTDLP_TRANSCRIPT_TIMEOUT_MS ?? 15_000),
   ollamaTimeoutMs: Number(process.env.COLLECT_OLLAMA_TIMEOUT_MS ?? 90_000),
   submitTimeoutMs: Number(process.env.COLLECT_SUBMIT_TIMEOUT_MS ?? 15_000),
+  tiktokEnabled: envFlag("COLLECT_TIKTOK_ENABLED", true),
+  tiktokSearchLimit: Number(process.env.COLLECT_TIKTOK_SEARCH_LIMIT ?? 12),
+  tiktokQueryGapMs: Number(process.env.COLLECT_TIKTOK_QUERY_GAP_MS ?? 60_000),
+  tiktokProbeGapMs: Number(process.env.COLLECT_TIKTOK_PROBE_GAP_MS ?? 1_500),
   submit503CircuitThreshold: Number(process.env.COLLECT_SUBMIT_503_CIRCUIT_THRESHOLD ?? 5),
   preflightTimeoutMs: Number(process.env.COLLECT_PREFLIGHT_TIMEOUT_MS ?? 15_000),
   dbQueryTimeoutMs: Number(process.env.COLLECT_DB_TIMEOUT_MS ?? 30_000),
@@ -701,6 +727,34 @@ async function loadChannels(categoryId) {
   return rows.map(([identifier, display_name]) => ({ identifier, display_name }));
 }
 
+async function loadTikTokSources() {
+  const params = categorySlugFilter ? [categorySlugFilter] : [];
+  const rows = await dbQuery(
+    `select
+       ts.identifier,
+       ts.display_name,
+       ts.category_id,
+       c.slug,
+       c.name,
+       coalesce(ts.discovery_evidence_json ->> 'target_skill_slug', '')
+     from public.trusted_sources ts
+     left join public.categories c on c.id = ts.category_id
+     where ts.source_type = 'tiktok_search'
+       and ts.is_active
+       ${categorySlugFilter ? "and c.slug = $1" : ""}
+     order by c.slug nulls last, ts.display_name`,
+    params,
+  );
+  return rows.map(([identifier, display_name, categoryId, categorySlug, categoryName, targetSkillSlug]) => ({
+    identifier,
+    display_name,
+    category_id: categoryId,
+    category_slug: categorySlug,
+    category_name: categoryName,
+    target_skill_slug: targetSkillSlug || null,
+  }));
+}
+
 async function loadKnownCanonicalUrls(skillId) {
   const rows = await dbQuery(
     `select l.canonical_url
@@ -1083,6 +1137,26 @@ function termsForSkill(skill) {
     ...skill.name.toLowerCase().split(/[^a-z0-9]+/).filter((t) => t.length > 2 && !stop.has(t)),
     ...skill.slug.split("-").filter((t) => t.length > 2 && !stop.has(t)),
   ])].filter(Boolean);
+}
+
+function normalizedTokens(value) {
+  return normalizeSearchQuery(value).split(" ").filter(Boolean);
+}
+
+function tiktokSkillMatchScore(source, skill) {
+  if (source.target_skill_slug && source.target_skill_slug === skill.slug) return 100;
+  const queryTokens = new Set(normalizedTokens(source.identifier));
+  const skillTokens = normalizedTokens(`${skill.name} ${skill.slug}`);
+  return skillTokens.reduce((score, token) => score + (queryTokens.has(token) ? 1 : 0), 0);
+}
+
+function matchTikTokSourceSkill(source, categorySkills, selectedSkillIds) {
+  const candidates = categorySkills
+    .filter((skill) => !selectedSkillIds || selectedSkillIds.has(skill.id))
+    .map((skill) => ({ skill, score: tiktokSkillMatchScore(source, skill) }))
+    .sort((a, b) => b.score - a.score || a.skill.name.localeCompare(b.skill.name));
+  const best = candidates[0];
+  return best && best.score > 0 ? best.skill : null;
 }
 
 function relevanceForQuery(candidate, terms) {
@@ -1611,7 +1685,7 @@ function functionUrl(path) {
 
 function submitFailureStatus(error) {
   const message = errorMessage(error);
-  const status = message.match(/submit-(?:suggestion|secondary)\s+(\d{3})/)?.[1];
+  const status = message.match(/submit-(?:suggestion|secondary|tiktok)\s+(\d{3})/)?.[1];
   return status ? Number(status) : null;
 }
 
@@ -1861,6 +1935,87 @@ async function postSuggestion(skill, candidate, transcript, score, viewCount) {
   return JSON.parse(text);
 }
 
+function tiktokConfidence(verdict) {
+  if (verdict.verdict !== "ACCEPT") return 0;
+  const raw = 0.72 + (verdict.authority_total ?? 0) * 0.025 + (verdict.ranking_total ?? 0) * 0.015;
+  return Math.max(0.7, Math.min(0.98, Math.round(raw * 1000) / 1000));
+}
+
+function tiktokPublicNote(verdict, candidate) {
+  if (verdict.verdict !== "ACCEPT") return "Rejected by TikTok engagement-authority rubric.";
+  const handle = candidate.creator_handle ? `@${candidate.creator_handle}` : "creator";
+  return `${handle}: authority ${verdict.authority_total}, rank ${verdict.ranking_total}.`.slice(0, 140);
+}
+
+async function postTikTokSuggestion(skill, source, candidate, profile, verdict) {
+  const confidence = tiktokConfidence(verdict);
+  const requestAutoApprove =
+    Boolean(config.internalFunctionToken) && confidence >= config.autoApproveConfidenceFloor;
+  const canonicalUrl = candidate.url ?? candidate.href;
+  const videoId = tiktokVideoIdFromUrl(canonicalUrl);
+  const title = String(candidate.caption ?? `${skill.name} TikTok tutorial`).replace(/\s+/g, " ").trim().slice(0, 180);
+  const payload = {
+    type: "LINK_ADD",
+    origin_type: "agent",
+    origin_name: "local-collection-tiktok",
+    category_id: skill.category_id,
+    skill_id: skill.id,
+    payload_json: {
+      url: canonicalUrl,
+      canonical_url: canonicalUrl,
+      domain: "tiktok.com",
+      title,
+      description: candidate.caption ?? null,
+      thumbnail_url: candidate.thumbnail_url ?? null,
+      thumbnail_dynamic_url: candidate.thumbnail_dynamic_url ?? null,
+      content_type: "video",
+      language: "en",
+      target_skill_id: skill.id,
+      public_note: tiktokPublicNote(verdict, candidate),
+      skill_level: null,
+      duration_seconds: candidate.duration_seconds ?? null,
+      like_count: candidate.like_count ?? null,
+      comment_count: candidate.comment_count ?? null,
+      share_count: candidate.share_count ?? null,
+      favorite_count: candidate.favorite_count ?? null,
+      creator_handle: candidate.creator_handle ?? candidate.handle ?? profile?.handle ?? null,
+      creator_url: candidate.creator_url ?? profile?.url ?? null,
+      creator_platform: "tiktok",
+      creator_profile: profile ? {
+        ...profile,
+        authority_score: verdict.authority_total ?? null,
+      } : null,
+      scoring_strategy: "engagement_authority",
+    },
+    evidence_json: {
+      source: "tiktok_local_collection",
+      source_identifier: source.identifier,
+      source_display_name: source.display_name,
+      video_id: videoId,
+      scoring_strategy: "engagement_authority",
+      verdict,
+      creator_profile_available: Boolean(profile && !profile.error),
+      raw_candidate: candidate,
+    },
+    confidence,
+    ...(requestAutoApprove ? { requested_status: "auto_approved" } : {}),
+  };
+
+  const headers = {
+    Authorization: `Bearer ${config.serviceRoleKey}`,
+    "Content-Type": "application/json",
+    ...(config.internalFunctionToken ? { "x-internal-token": config.internalFunctionToken } : {}),
+  };
+  const response = await fetchWithTimeout(`${config.supabaseUrl}/functions/v1/submit-suggestion`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(payload),
+  }, config.submitTimeoutMs, "submit_tiktok");
+  const text = await response.text();
+  if (!response.ok) throw new Error(`submit-tiktok ${response.status}: ${text}`);
+  return JSON.parse(text);
+}
+
 async function ensureLinkPlaceholder(candidate) {
   const thumbnailUrl = `https://i.ytimg.com/vi/${candidate.video_id}/hqdefault.jpg`;
   const rows = await dbQuery(
@@ -2060,7 +2215,10 @@ function installTerminationHandlers() {
       if (shuttingDown) process.exit(signal === "SIGTERM" ? 143 : 130);
       shuttingDown = true;
       abortActiveRun(signal.toLowerCase()).finally(() => {
-        closeTranscriptBrowser()
+        Promise.all([
+          closeTranscriptBrowser().catch(() => undefined),
+          closeTikTokBrowser().catch(() => undefined),
+        ])
           .catch(() => undefined)
           .then(() => finalizeCollectionCache())
           .catch(() => undefined)
@@ -2562,6 +2720,280 @@ async function processSkill(skill, summary) {
   }
 }
 
+async function processTikTokCollection(selectedSkills, summary) {
+  if (!config.tiktokEnabled) {
+    log("info", "tiktok_collection_disabled", "TikTok collection disabled by COLLECT_TIKTOK_ENABLED=0");
+    return { status: "skipped_disabled" };
+  }
+
+  const selectedSkillIds = new Set(selectedSkills.map((skill) => skill.id));
+  const sources = await loadTikTokSources();
+  if (!sources.length) {
+    log("info", "tiktok_sources_empty", "No active TikTok search sources found", {
+      category: categorySlugFilter,
+    });
+    return { status: "skipped_no_sources" };
+  }
+
+  const runId = await startAgentRun();
+  activeRunId = runId;
+  activeRunState = { runId, phase: "tiktok_collection", suggestionsCreated: 0, finalized: false };
+
+  const stats = {
+    queries_attempted: 0,
+    candidates_seen: 0,
+    details_fetched: 0,
+    creators_probed: 0,
+    accepted: 0,
+    submitted: 0,
+    duplicates: 0,
+    rejected: 0,
+    rejected_by_reason: {},
+    errors: 0,
+    candidates_by_query: {},
+  };
+  const knownBySkillId = new Map();
+  const categorySkillsById = new Map();
+
+  try {
+    log("info", "tiktok_collection_started", "Starting TikTok search collection", {
+      run_id: runId,
+      source_count: sources.length,
+      selected_skill_count: selectedSkillIds.size,
+      search_limit: config.tiktokSearchLimit,
+      query_gap_ms: config.tiktokQueryGapMs,
+      probe_gap_ms: config.tiktokProbeGapMs,
+    });
+
+    let preflight;
+    try {
+      preflight = await preflightTikTokBrowser();
+    } catch (error) {
+      log("warn", "tiktok_preflight_failed", "TikTok browser preflight failed; skipping TikTok collection", {
+        cause: errorMessage(error),
+      });
+      await finishAgentRun(runId, { suggestionsCreated: 0 });
+      activeRunState.finalized = true;
+      summary.push({ source: "tiktok", status: "skipped_preflight_failed", ...stats, error: errorMessage(error) });
+      return { status: "skipped_preflight_failed" };
+    }
+
+    log("info", "tiktok_preflight_completed", "TikTok browser preflight completed", preflight);
+    if (preflight.auth_wall || preflight.captcha || preflight.logged_in === false) {
+      log("warn", "tiktok_preflight_auth_required", "TikTok session needs login or captcha before collection can run", {
+        auth_wall: preflight.auth_wall,
+        captcha: preflight.captcha,
+        logged_in: preflight.logged_in,
+      });
+      await finishAgentRun(runId, { suggestionsCreated: 0 });
+      activeRunState.finalized = true;
+      summary.push({ source: "tiktok", status: "skipped_auth_required", ...stats, preflight });
+      return { status: "skipped_auth_required" };
+    }
+
+    const ctx = await getTikTokBrowserContext();
+    const seenUrls = new Set();
+    const creatorProfileCache = new Map();
+    const warnedUnmappedVerticals = new Set();
+    let firstQuery = true;
+
+    for (const source of sources) {
+      if (!source.category_id) {
+        log("warn", "tiktok_source_missing_category", "TikTok source has no category; skipping", {
+          source_identifier: source.identifier,
+        });
+        continue;
+      }
+      let categorySkills = categorySkillsById.get(source.category_id);
+      if (!categorySkills) {
+        categorySkills = await loadCategorySkills(source.category_id);
+        categorySkillsById.set(source.category_id, categorySkills);
+      }
+      const skill = matchTikTokSourceSkill(source, categorySkills, selectedSkillIds);
+      if (!skill) {
+        log("warn", "tiktok_source_skill_unmatched", "Could not map TikTok query to an active selected skill", {
+          source_identifier: source.identifier,
+          target_skill_slug: source.target_skill_slug,
+          category_slug: source.category_slug,
+        });
+        continue;
+      }
+      if (source.category_slug && !VERTICALS[source.category_slug] && !warnedUnmappedVerticals.has(source.category_slug)) {
+        warnedUnmappedVerticals.add(source.category_slug);
+        log("warn", "tiktok_vertical_unmapped", "TikTok category has no explicit engagement scoring vertical; using generic fallback", {
+          category_slug: source.category_slug,
+          source_identifier: source.identifier,
+        });
+      }
+
+      if (!firstQuery) await sleep(config.tiktokQueryGapMs);
+      firstQuery = false;
+      stats.queries_attempted += 1;
+
+      let searchResult;
+      try {
+        searchResult = await searchTikTok(ctx, source.identifier, { dumpHtml: false });
+      } catch (error) {
+        stats.errors += 1;
+        log("warn", "tiktok_search_failed", errorMessage(error), {
+          source_identifier: source.identifier,
+          skill: skill.slug,
+        });
+        continue;
+      }
+
+      const cards = searchResult.cards.slice(0, config.tiktokSearchLimit);
+      stats.candidates_by_query[source.identifier] = cards.length;
+      log("info", "tiktok_search_completed", "TikTok search completed", {
+        source_identifier: source.identifier,
+        skill: skill.slug,
+        total_cards: searchResult.cards.length,
+        will_probe: cards.length,
+        wall: searchResult.wall,
+      });
+
+      if (!knownBySkillId.has(skill.id)) {
+        knownBySkillId.set(skill.id, await loadKnownCanonicalUrls(skill.id));
+      }
+      const knownCanonicalUrls = knownBySkillId.get(skill.id);
+
+      for (let index = 0; index < cards.length; index += 1) {
+        const card = cards[index];
+        const canonicalUrl = card.href;
+        stats.candidates_seen += 1;
+        if (!canonicalUrl || seenUrls.has(canonicalUrl) || knownCanonicalUrls.has(canonicalUrl)) {
+          stats.duplicates += 1;
+          log("debug", "tiktok_candidate_skipped_known_url", "TikTok candidate already seen or known", {
+            source_identifier: source.identifier,
+            skill: skill.slug,
+            canonical_url: canonicalUrl,
+          });
+          continue;
+        }
+        seenUrls.add(canonicalUrl);
+
+        let detail = null;
+        try {
+          detail = await fetchVideoDetail(ctx, canonicalUrl, { dumpHtml: false });
+          stats.details_fetched += 1;
+        } catch (error) {
+          stats.errors += 1;
+          log("warn", "tiktok_detail_failed", errorMessage(error), {
+            source_identifier: source.identifier,
+            skill: skill.slug,
+            canonical_url: canonicalUrl,
+          });
+        }
+        if (index < cards.length - 1) await sleep(config.tiktokProbeGapMs);
+
+        const candidate = mergeTikTokCardDetail(card, detail);
+        let profile = null;
+        const handle = candidate.creator_handle ?? candidate.handle;
+        if (handle) {
+          const cacheKey = String(handle).replace(/^@/, "").trim().toLowerCase();
+          if (creatorProfileCache.has(cacheKey)) {
+            profile = creatorProfileCache.get(cacheKey);
+            log("debug", "tiktok_creator_profile_cache_hit", "Reused TikTok creator profile probe result", {
+              source_identifier: source.identifier,
+              skill: skill.slug,
+              handle,
+              cached: Boolean(profile),
+            });
+          } else {
+            try {
+              profile = await fetchCreatorProfile(ctx, handle);
+              creatorProfileCache.set(cacheKey, profile);
+              stats.creators_probed += 1;
+            } catch (error) {
+              stats.errors += 1;
+              creatorProfileCache.set(cacheKey, null);
+              log("warn", "tiktok_creator_profile_failed", errorMessage(error), {
+                source_identifier: source.identifier,
+                skill: skill.slug,
+                handle,
+                canonical_url: canonicalUrl,
+              });
+            }
+            if (index < cards.length - 1) await sleep(config.tiktokProbeGapMs);
+          }
+        }
+
+        const verdict = scoreTikTokCandidate(candidate, profile, {
+          query: source.identifier,
+          categorySlug: source.category_slug,
+        });
+        log("info", "tiktok_candidate_scored", "TikTok candidate scored", {
+          source_identifier: source.identifier,
+          skill: skill.slug,
+          canonical_url: canonicalUrl,
+          handle,
+          verdict,
+          duration_seconds: candidate.duration_seconds,
+          like_count: candidate.like_count,
+          followers_count: profile?.followers_count ?? null,
+        });
+
+        if (verdict.verdict !== "ACCEPT") {
+          stats.rejected += 1;
+          const reason = verdict.layer === 1
+            ? verdict.reasons.join(",")
+            : `authority_below_gate:${verdict.authority_total}<${verdict.gate}`;
+          stats.rejected_by_reason[reason] = (stats.rejected_by_reason[reason] ?? 0) + 1;
+          continue;
+        }
+
+        stats.accepted += 1;
+        try {
+          const result = await postTikTokSuggestion(skill, source, candidate, profile, verdict);
+          if (result.duplicate) {
+            stats.duplicates += 1;
+          } else {
+            stats.submitted += 1;
+            activeRunState.suggestionsCreated = stats.submitted;
+            knownCanonicalUrls.add(canonicalUrl);
+          }
+          log("info", "tiktok_suggestion_submitted", "TikTok suggestion submitted", {
+            collect_target: config.collectTarget,
+            suggestion_id: result.suggestion_id,
+            duplicate: Boolean(result.duplicate),
+            skill: skill.slug,
+            canonical_url: canonicalUrl,
+          });
+        } catch (error) {
+          stats.errors += 1;
+          log("error", "tiktok_submit_failed", errorMessage(error), {
+            source_identifier: source.identifier,
+            skill: skill.slug,
+            canonical_url: canonicalUrl,
+            http_status: submitFailureStatus(error),
+          });
+        }
+      }
+    }
+
+    await finishAgentRun(runId, { suggestionsCreated: stats.submitted });
+    activeRunState.finalized = true;
+    const item = { source: "tiktok", status: "completed", ...stats };
+    summary.push(item);
+    log("info", "tiktok_collection_completed", "TikTok collection completed", item);
+    await flushAgentRunEvents();
+    return item;
+  } catch (error) {
+    const message = errorMessage(error);
+    stats.errors += 1;
+    log("error", "tiktok_collection_failed", message, stats);
+    await finishAgentRun(runId, { status: "failed", suggestionsCreated: stats.submitted, errorMessage: message });
+    activeRunState.finalized = true;
+    const item = { source: "tiktok", status: "failed", error: message, ...stats };
+    summary.push(item);
+    await flushAgentRunEvents();
+    return item;
+  } finally {
+    activeRunId = null;
+    activeRunState = null;
+  }
+}
+
 async function main() {
   installTerminationHandlers();
   await mkdir(config.outputDir, { recursive: true });
@@ -2623,6 +3055,7 @@ async function main() {
         summary.push({ skill: skill.slug, status: "failed", transcript_fetcher: config.transcriptFetcher, error: errorMessage(error) });
       }
     }
+    await processTikTokCollection(skills, summary);
 
     const outputPath = join(config.outputDir, `${new Date().toISOString().replace(/[:.]/g, "-")}.json`);
     const event_persistence = eventPersistenceSummary();
@@ -2650,6 +3083,14 @@ async function main() {
         ts: new Date().toISOString(),
         level: "warn",
         event: "browser_transcript_close_failed",
+        message: errorMessage(error),
+      }));
+    });
+    await closeTikTokBrowser().catch((error) => {
+      console.warn(JSON.stringify({
+        ts: new Date().toISOString(),
+        level: "warn",
+        event: "browser_tiktok_close_failed",
         message: errorMessage(error),
       }));
     });

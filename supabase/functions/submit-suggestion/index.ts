@@ -4,6 +4,8 @@ import { corsForbiddenResponse, errorResponse, isAllowedCorsOrigin, jsonResponse
 import { submitSuggestionSchema, suggestionPayloadByType } from "../_shared/schemas.ts";
 import { chooseInternalAuthor } from "../_shared/database.ts";
 import { callFunction, getServiceClient } from "../_shared/supabase.ts";
+import { cacheThumbnail } from "../_shared/thumbnail-storage.ts";
+import { tiktokVideoIdFromUrl } from "../_shared/tiktok-url.mjs";
 import { finalSuggestionStatus, isInternalRequest, resolveSubmittedByUserId } from "./security.ts";
 
 const HUMAN_RATE_LIMIT_WINDOW_SECONDS = 60 * 60;
@@ -72,6 +74,42 @@ function validateHumanLinkUrl(value: string) {
   }
 }
 
+async function cacheInternalTikTokThumbnailIfNeeded(
+  payload: Record<string, unknown>,
+  internalRequest: boolean,
+) {
+  if (!internalRequest) return;
+  if (payload.scoring_strategy !== "engagement_authority") return;
+  if (typeof payload.thumbnail_storage_path === "string" && payload.thumbnail_storage_path) return;
+  if (typeof payload.thumbnail_url !== "string" || !payload.thumbnail_url) return;
+
+  const videoId = tiktokVideoIdFromUrl(
+    typeof payload.canonical_url === "string" ? payload.canonical_url : typeof payload.url === "string" ? payload.url : null,
+  );
+  if (!videoId) return;
+
+  try {
+    const attemptedAt = new Date().toISOString();
+    payload.thumbnail_storage_path = await cacheThumbnail(payload.thumbnail_url, `tiktok/${videoId}.jpg`);
+    payload.thumbnail_cache_status = "cached";
+    payload.thumbnail_cache_error = null;
+    payload.thumbnail_cache_attempted_at = attemptedAt;
+    console.info("submit_suggestion_tiktok_thumbnail_cached", {
+      video_id: videoId,
+      thumbnail_storage_path: payload.thumbnail_storage_path,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    payload.thumbnail_cache_status = "failed";
+    payload.thumbnail_cache_error = message.slice(0, 500);
+    payload.thumbnail_cache_attempted_at = new Date().toISOString();
+    console.warn("submit_suggestion_tiktok_thumbnail_cache_failed", {
+      video_id: videoId,
+      message,
+    });
+  }
+}
+
 async function verifyTurnstileIfConfigured(token: string | null | undefined, ip: string) {
   const siteKey = Deno.env.get("SUGGEST_TURNSTILE_SITE_KEY");
   const secret = Deno.env.get("SUGGEST_TURNSTILE_SECRET_KEY");
@@ -109,15 +147,16 @@ async function enforceHumanRateLimit(
   }).single();
   if (error) throw error;
   if (!data) throw new Error("Rate limit check returned no result.");
+  const result = data as { allowed: boolean; request_count: number; window_start: string };
 
   console.info("submit_suggestion_rate_limit_checked", {
     ip,
-    allowed: data.allowed,
-    count: data.request_count,
-    window_start: data.window_start,
+    allowed: result.allowed,
+    count: result.request_count,
+    window_start: result.window_start,
   });
 
-  if (!data.allowed) {
+  if (!result.allowed) {
     throw Object.assign(new Error("Slow down. Please try again in about an hour."), { status: 429 });
   }
 }
@@ -171,6 +210,7 @@ Deno.serve(async (request) => {
       if (isHuman) validateHumanLinkUrl(String(payload.url));
       payload.canonical_url = normalizeCanonicalUrl(String(payload.canonical_url));
       payload.domain = getDomain(String(payload.canonical_url));
+      await cacheInternalTikTokThumbnailIfNeeded(payload, internalRequest);
     }
 
     const targetSkillId = "target_skill_id" in payload ? String(payload.target_skill_id) : input.skill_id;
