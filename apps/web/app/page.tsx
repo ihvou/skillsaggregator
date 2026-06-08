@@ -1,3 +1,4 @@
+import { AppDownloadButtons } from "@/components/AppDownloadButtons";
 import { PageHeader } from "@/components/PageHeader";
 import { SectionHeader } from "@/components/SectionHeader";
 import { SkillTile } from "@/components/SkillTile";
@@ -13,16 +14,18 @@ export default async function HomePage() {
     <div className="pb-20">
       <PageHeader
         title="The best free tutorials, sorted by skill."
-        subtitle="A curated library of YouTube, blog and podcast picks for every sub-skill across sports and training."
+        subtitle="Curated free tutorials for every sub-skill across sports and training."
       />
 
-      <section className="mx-auto mt-10 max-w-5xl px-4">
-        <p className="max-w-3xl text-base leading-7 text-muted md:text-lg">
-          Want to nail a forehand smash? Master the padel bandeja? Build a stronger squat? We
-          organize the web&rsquo;s best free tutorials by the exact skill they teach — so you skip
-          the search rabbit hole and get straight to practicing.
+      <section className="mx-auto mt-8 max-w-5xl px-4">
+        <p className="max-w-2xl text-base leading-7 text-muted md:text-lg">
+          Skip the search rabbit hole — go straight to the best free tutorial for the exact
+          skill you&rsquo;re working on.
         </p>
-        <div className="mt-5">
+        <div className="mt-6">
+          <AppDownloadButtons />
+        </div>
+        <div className="mt-4">
           <SuggestLinkButton />
         </div>
       </section>
