@@ -10,6 +10,7 @@ import {
   type SkillSummary,
 } from "@skillsaggregator/shared";
 import { getPublicSupabase, getServiceSupabase } from "./supabase";
+import { normalizeThumbnailUrl } from "./thumbnails";
 
 export interface CatalogData {
   category: CategorySummary;
@@ -17,17 +18,36 @@ export interface CatalogData {
 }
 
 export type ResourceSort = "newest" | "popular";
+export interface CatalogOptions {
+  publicOnly?: boolean;
+}
+export interface CategoryResourceListingOptions {
+  skillSlugs: string[];
+  level?: SkillResource["skill_level"] | null;
+  sort?: ResourceSort;
+}
 
 const RESOURCE_LINK_SELECT =
   "id, url, canonical_url, domain, title, description, thumbnail_url, content_type, created_at, contributor_profile:contributor_profiles(id, slug, display_name, avatar_url, accepted_count)";
 const RELATION_VOTE_SELECT = "upvote_count, downvote_count, vote_score";
 
-function shapeLinkWithContributor<TLink extends { contributor_profile?: unknown }>(link: TLink) {
+function shapeLinkWithContributor<
+  TLink extends {
+    contributor_profile?: unknown;
+    thumbnail_url?: string | null;
+    canonical_url?: string | null;
+    url?: string | null;
+  },
+>(link: TLink) {
   const contributor = Array.isArray(link.contributor_profile)
     ? link.contributor_profile[0]
     : link.contributor_profile;
   return {
     ...link,
+    thumbnail_url: normalizeThumbnailUrl(
+      link.thumbnail_url,
+      link.canonical_url ?? link.url ?? null,
+    ),
     contributor_profile: contributor ?? null,
   };
 }
@@ -50,6 +70,39 @@ function categorySkills(categorySlug: string) {
   return fallbackSkills.filter((skill) => skill.category_slug === categorySlug);
 }
 
+function withFallbackResourceCounts(skills: SkillSummary[]) {
+  return skills.map((skill) => ({
+    ...skill,
+    resource_count: fallbackResources[skill.slug]?.length ?? skill.resource_count ?? 0,
+  }));
+}
+
+export function getPublishMinResources() {
+  const raw = process.env.COLLECT_PUBLISH_MIN_RESOURCES ?? process.env.PUBLISH_MIN_RESOURCES;
+  const parsed = Number(raw ?? 3);
+  return Number.isFinite(parsed) && parsed >= 0 ? Math.floor(parsed) : 3;
+}
+
+export function isPublishedSkill(skill: Pick<SkillSummary, "resource_count">) {
+  return skill.resource_count >= getPublishMinResources();
+}
+
+function filterPublicSkills(skills: SkillSummary[], publicOnly?: boolean) {
+  return publicOnly ? skills.filter(isPublishedSkill) : skills;
+}
+
+function toSortTime(value: string | null | undefined) {
+  const parsed = Date.parse(value ?? "");
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
+
+function resourceSorter(sort: ResourceSort) {
+  return (a: SkillResource, b: SkillResource) => {
+    if (sort === "popular") return (b.vote_score ?? b.upvote_count) - (a.vote_score ?? a.upvote_count);
+    return toSortTime(b.created_at) - toSortTime(a.created_at);
+  };
+}
+
 export async function getCategories(): Promise<CategorySummary[]> {
   const supabase = getPublicSupabase();
   if (!supabase) return fallbackCategories;
@@ -63,11 +116,17 @@ export async function getCategories(): Promise<CategorySummary[]> {
   return data?.length ? data : fallbackCategories;
 }
 
-export async function getCatalog(categorySlug = badmintonCategory.slug): Promise<CatalogData> {
+export async function getCatalog(
+  categorySlug = badmintonCategory.slug,
+  options: CatalogOptions = {},
+): Promise<CatalogData> {
   const supabase = getPublicSupabase();
   if (!supabase) {
     const category = fallbackCategories.find((item) => item.slug === categorySlug) ?? badmintonCategory;
-    return { category, skills: categorySkills(category.slug) };
+    return {
+      category,
+      skills: filterPublicSkills(withFallbackResourceCounts(categorySkills(category.slug)), options.publicOnly),
+    };
   }
 
   const { data: category } = await supabase
@@ -96,47 +155,28 @@ export async function getCatalog(categorySlug = badmintonCategory.slug): Promise
 
   return {
     category: category ?? badmintonCategory,
-    skills: (skills ?? categorySkills(categorySlug)).map((skill) => ({
-      ...skill,
-      category_slug: category?.slug ?? categorySlug,
-      resource_count: counts.get(skill.id) ?? 0,
-    })),
+    skills: filterPublicSkills(
+      (skills ?? categorySkills(categorySlug)).map((skill) => ({
+        ...skill,
+        category_slug: category?.slug ?? categorySlug,
+        resource_count: counts.get(skill.id) ?? 0,
+      })),
+      options.publicOnly,
+    ),
   };
 }
 
-export async function getAllCatalogs(): Promise<Array<CatalogData>> {
+export async function getAllCatalogs(options: CatalogOptions = {}): Promise<Array<CatalogData>> {
   const supabase = getPublicSupabase();
   if (!supabase) {
     return fallbackCategories.map((category) => ({
       category,
-      skills: categorySkills(category.slug),
+      skills: filterPublicSkills(withFallbackResourceCounts(categorySkills(category.slug)), options.publicOnly),
     }));
   }
 
   const categories = await getCategories();
-  const { data: skills } = await supabase
-    .from("skills")
-    .select("id, category_id, slug, name, description, updated_at")
-    .eq("is_active", true)
-    .order("name");
-  const categoryById = new Map(categories.map((category) => [category.id, category]));
-  const skillsByCategory = new Map<string, SkillSummary[]>();
-
-  for (const skill of skills ?? []) {
-    const category = categoryById.get(skill.category_id);
-    if (!category) continue;
-    const shaped = {
-      ...skill,
-      category_slug: category.slug,
-      resource_count: 0,
-    };
-    skillsByCategory.set(category.id, [...(skillsByCategory.get(category.id) ?? []), shaped]);
-  }
-
-  return categories.map((category) => ({
-    category,
-    skills: skillsByCategory.get(category.id) ?? [],
-  }));
+  return Promise.all(categories.map((category) => getCatalog(category.slug, options)));
 }
 
 export async function getSkillPage(categorySlug: string, skillSlug: string) {
@@ -147,10 +187,16 @@ export async function getSkillPage(categorySlug: string, skillSlug: string) {
     const skill = skills.find((item) => item.slug === skillSlug) ?? null;
     return {
       category,
-      skill,
+      skill: skill
+        ? {
+            ...skill,
+            resource_count: fallbackResources[skillSlug]?.length ?? 0,
+          }
+        : null,
       resources: skill
         ? (fallbackResources[skillSlug] ?? []).map((resource) => ({
             ...resource,
+            link: shapeLinkWithContributor(resource.link),
             skill: {
               id: skill.id,
               slug: skill.slug,
@@ -160,7 +206,11 @@ export async function getSkillPage(categorySlug: string, skillSlug: string) {
             },
           }))
         : [],
-      relatedSkills: skill ? skills.filter((item) => item.slug !== skillSlug).slice(0, 4) : [],
+      relatedSkills: skill
+        ? filterPublicSkills(withFallbackResourceCounts(skills), true)
+            .filter((item) => item.slug !== skillSlug)
+            .slice(0, 4)
+        : [],
     };
   }
 
@@ -236,6 +286,87 @@ export async function getSkillPage(categorySlug: string, skillSlug: string) {
   };
 }
 
+export async function getCategoryResourceListing(
+  categorySlug: string,
+  options: CategoryResourceListingOptions,
+): Promise<{ category: CategorySummary | null; skills: SkillSummary[]; resources: SkillResource[] }> {
+  const sort = options.sort === "newest" ? "newest" : "popular";
+  const selectedSlugs = new Set(options.skillSlugs.filter(Boolean));
+  const { category, skills } = await getCatalog(categorySlug, { publicOnly: true });
+  if (!category) return { category: null, skills: [], resources: [] };
+
+  const selectedSkills = selectedSlugs.size
+    ? skills.filter((skill) => selectedSlugs.has(skill.slug))
+    : skills;
+  if (selectedSkills.length === 0) return { category, skills, resources: [] };
+
+  const supabase = getPublicSupabase();
+  if (!supabase) {
+    const resources = selectedSkills
+      .flatMap((skill) =>
+        (fallbackResources[skill.slug] ?? []).map((resource) => ({
+          ...resource,
+          skill: {
+            id: skill.id,
+            slug: skill.slug,
+            name: skill.name,
+            category_slug: skill.category_slug,
+            category_name: category.name,
+          },
+          link: shapeLinkWithContributor(resource.link),
+        })),
+      )
+      .filter((resource) => !options.level || resource.skill_level === options.level)
+      .sort(resourceSorter(sort));
+    return { category, skills, resources };
+  }
+
+  const { data: relations } = await supabase
+    .from("link_skill_relations")
+    .select(
+      `id, skill_id, public_note, skill_level, ${RELATION_VOTE_SELECT}, created_at, links!inner(${RESOURCE_LINK_SELECT})`,
+    )
+    .in("skill_id", selectedSkills.map((skill) => skill.id))
+    .eq("is_active", true)
+    .eq("links.is_active", true)
+    .order(sort === "newest" ? "created_at" : "vote_score", { ascending: false });
+
+  const skillById = new Map(selectedSkills.map((skill) => [skill.id, skill]));
+  const byLink = new Map<string, SkillResource>();
+  for (const relation of relations ?? []) {
+    if (options.level && relation.skill_level !== options.level) continue;
+    const link = Array.isArray(relation.links) ? relation.links[0] : relation.links;
+    if (!link) continue;
+    const skill = skillById.get(relation.skill_id);
+    if (!skill) continue;
+    const resource: SkillResource = {
+      id: relation.id,
+      public_note: relation.public_note,
+      skill_level: relation.skill_level,
+      ...relationVotes(relation),
+      created_at: relation.created_at ?? link.created_at ?? null,
+      link: shapeLinkWithContributor(link),
+      skill: {
+        id: skill.id,
+        slug: skill.slug,
+        name: skill.name,
+        category_slug: skill.category_slug,
+        category_name: category.name,
+      },
+    };
+    const existing = byLink.get(resource.link.id);
+    if (!existing || (resource.vote_score ?? resource.upvote_count) > (existing.vote_score ?? existing.upvote_count)) {
+      byLink.set(resource.link.id, resource);
+    }
+  }
+
+  return {
+    category,
+    skills,
+    resources: [...byLink.values()].sort(resourceSorter(sort)),
+  };
+}
+
 export interface DiscoverSkillTile {
   skill: SkillSummary;
   latest_thumbnail: string | null;
@@ -261,12 +392,17 @@ export async function getDiscoverSections(perCategorySkills = 12): Promise<Disco
 
   if (!supabase) {
     return categories.map((category) => {
-      const skills = categorySkills(category.slug);
+      const skills = filterPublicSkills(withFallbackResourceCounts(categorySkills(category.slug)), true);
       return {
         category,
         skills: skills.slice(0, perCategorySkills).map((skill) => {
           const resources = fallbackResources[skill.slug] ?? [];
-          const latest = resources.find((resource) => resource.link.thumbnail_url)?.link.thumbnail_url ?? null;
+          const latest =
+            resources
+              .map((resource) =>
+                normalizeThumbnailUrl(resource.link.thumbnail_url, resource.link.canonical_url),
+              )
+              .find(Boolean) ?? null;
           return { skill, latest_thumbnail: latest };
         }),
       };
@@ -275,16 +411,14 @@ export async function getDiscoverSections(perCategorySkills = 12): Promise<Disco
 
   const sections = await Promise.all(
     categories.map(async (category): Promise<DiscoverCategorySection> => {
-      const { skills } = await getCatalog(category.slug);
-      const skillsWithResources = skills
-        .filter((skill) => skill.resource_count > 0)
-        .slice(0, perCategorySkills);
+      const { skills } = await getCatalog(category.slug, { publicOnly: true });
+      const skillsWithResources = skills.slice(0, perCategorySkills);
       if (skillsWithResources.length === 0) {
         return { category, skills: [] };
       }
       const { data: relations } = await supabase
         .from("link_skill_relations")
-        .select("skill_id, created_at, links!inner(thumbnail_url)")
+        .select("skill_id, created_at, links!inner(thumbnail_url, canonical_url, url)")
         .in("skill_id", skillsWithResources.map((skill) => skill.id))
         .eq("is_active", true)
         .eq("links.is_active", true)
@@ -294,7 +428,10 @@ export async function getDiscoverSections(perCategorySkills = 12): Promise<Disco
       for (const relation of relations ?? []) {
         if (latestThumbBySkill.has(relation.skill_id)) continue;
         const link = Array.isArray(relation.links) ? relation.links[0] : relation.links;
-        latestThumbBySkill.set(relation.skill_id, link?.thumbnail_url ?? null);
+        latestThumbBySkill.set(
+          relation.skill_id,
+          normalizeThumbnailUrl(link?.thumbnail_url ?? null, link?.canonical_url ?? link?.url ?? null),
+        );
       }
 
       return {
@@ -319,7 +456,7 @@ export async function getCategoryWithSkillResources(
   perSkill = 12,
 ): Promise<{ category: CategorySummary | null; sections: SkillSection[] }> {
   const supabase = getPublicSupabase();
-  const { category, skills } = await getCatalog(categorySlug);
+  const { category, skills } = await getCatalog(categorySlug, { publicOnly: true });
   if (!category) return { category: null, sections: [] };
 
   if (!supabase) {
@@ -328,6 +465,7 @@ export async function getCategoryWithSkillResources(
       .map((skill) => {
         const resources = (fallbackResources[skill.slug] ?? []).map((resource) => ({
           ...resource,
+          link: shapeLinkWithContributor(resource.link),
           skill: {
             id: skill.id,
             slug: skill.slug,

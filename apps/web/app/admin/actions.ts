@@ -15,8 +15,12 @@ async function callEdgeFunction(functionName: string, body: unknown) {
     {
       method: "POST",
       headers: {
+        apikey: process.env.SUPABASE_SERVICE_ROLE_KEY!,
         Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY!}`,
         "Content-Type": "application/json",
+        ...(process.env.INTERNAL_FUNCTION_TOKEN
+          ? { "x-internal-token": process.env.INTERNAL_FUNCTION_TOKEN }
+          : {}),
       },
       body: JSON.stringify(body),
       cache: "no-store",

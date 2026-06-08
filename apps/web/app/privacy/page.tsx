@@ -1,0 +1,74 @@
+export const metadata = {
+  title: "Privacy Policy",
+  description: "Privacy policy for Skills Aggregator.",
+};
+
+const sections = [
+  {
+    title: "Data We Store On Your Device",
+    body: "The mobile app stores saved-resource IDs, saved-resource snapshots, completion flags, and local voting flags on your device so the Library can work after a cold start without network access. This local data stays on your device unless you remove the app or clear app data.",
+  },
+  {
+    title: "Account And Contribution Data",
+    body: "If contribution or moderation features are enabled, Skills Aggregator may use Supabase authentication to identify contributors and store submitted links, skill suggestions, moderation decisions, display names, and contribution history.",
+  },
+  {
+    title: "Network Data",
+    body: "The app requests public catalog data from Skills Aggregator services, including categories, skills, links, vote counts, thumbnails, and contributor summaries. Opening a resource link leaves the app and is governed by the destination site's privacy policy.",
+  },
+  {
+    title: "Analytics And Tracking",
+    body: "The current mobile app does not include third-party advertising SDKs or cross-app tracking. If analytics are added later, this policy should be updated before release.",
+  },
+  {
+    title: "Children's Privacy",
+    body: "Skills Aggregator is not directed to children under 13. Do not submit personal information if you are under 13.",
+  },
+  {
+    title: "Data Deletion",
+    body: "You can remove local saved data by unsaving resources or deleting the app. For server-side contribution data, open a request through the project issue tracker.",
+  },
+  {
+    title: "Changes",
+    body: 'We may update this policy as the app changes. The updated policy will include a new "Last updated" date.',
+  },
+];
+
+export default function PrivacyPage() {
+  return (
+    <div className="mx-auto max-w-3xl px-4 pb-20 pt-10">
+      <p className="text-sm font-semibold uppercase tracking-wide text-muted">Last updated May 29, 2026</p>
+      <h1 className="mt-4 text-4xl font-extrabold tracking-tight text-ink md:text-5xl">
+        Privacy Policy
+      </h1>
+      <p className="mt-5 text-base leading-7 text-muted md:text-lg">
+        Skills Aggregator helps people discover and save sport learning resources. This policy
+        explains what data the app uses and how it is handled.
+      </p>
+
+      <div className="mt-10 space-y-8">
+        {sections.map((section) => (
+          <section key={section.title}>
+            <h2 className="text-xl font-bold text-ink">{section.title}</h2>
+            <p className="mt-3 text-base leading-7 text-muted">{section.body}</p>
+          </section>
+        ))}
+      </div>
+
+      <section className="mt-8">
+        <h2 className="text-xl font-bold text-ink">Contact</h2>
+        <p className="mt-3 text-base leading-7 text-muted">
+          For privacy questions, open an issue at{" "}
+          <a
+            className="focus-ring font-semibold text-ink underline decoration-divider underline-offset-4 transition hover:decoration-ink"
+            href="https://github.com/ihvou/skillsaggregator/issues"
+          >
+            github.com/ihvou/skillsaggregator/issues
+          </a>
+          .
+        </p>
+      </section>
+    </div>
+  );
+}
+

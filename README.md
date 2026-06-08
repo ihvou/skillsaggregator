@@ -23,20 +23,23 @@ The local Postgres volume carries **all agent-collected content** (currently ~70
 **Backup command** (always safe to run, fast, idempotent):
 
 ```bash
-mkdir -p .collection/backups
-docker exec supabase_db_skillsaggregator pg_dump -U postgres -Fc -f /tmp/db.dump
-docker cp supabase_db_skillsaggregator:/tmp/db.dump .collection/backups/db-$(date -u +%Y%m%dT%H%M%SZ).dump
+scripts/db-backup.sh
 ```
 
-**If the catalog gets wiped anyway**, the `.collection/logs/nightly-*.log` files preserve every `candidate_scored` + `suggestion_submitted` event from past nightly runs (R20 design). Run `node scripts/replay-from-logs.mjs` to rebuild — takes ~5 seconds, idempotent, no LLM/YouTube calls needed. R26 (open) tracks productizing the backup-before-migration wrapper.
+Use `npm run db:migrate:safe` instead of bare `supabase db reset` when applying local migrations.
+
+**If the catalog gets wiped anyway**, the `.collection/logs/nightly-*.log` files preserve every `candidate_scored` + `suggestion_submitted` event from past nightly runs (R20 design). Run `npm run db:replay-logs` to rebuild — takes ~5 seconds, idempotent, no LLM/YouTube calls needed.
 
 ## Architecture
 
-The default MVP workflow is local collection plus human moderation:
+The production collection path is now Option A: the collector still runs on the local machine, but writes directly to hosted Supabase (`vqxsaabskkkjdljxiyqi`) as the single source of truth. Local Supabase remains for development.
 
-- Local collection scripts gather resources and POST them to `submit-suggestion` with `requested_status: "pending"`.
+- Hosted nightly collection sources local tuning from `apps/web/.env.local`, then hosted credentials from `.env.hosted`.
+- Direct SQL reads/writes use hosted Postgres through `COLLECT_DB_URL` (Supabase session pooler) when set; otherwise the collector falls back to the local `supabase_db_skillsaggregator` container.
+- Hosted runs default `COLLECT_SKIP_EVENT_PERSIST=1`: full JSON logs stay in `.collection/logs`, small `agent_runs` rows remain in Postgres, and the noisy `agent_run_events` table stays empty.
+- Collection scripts gather resources and POST them to `submit-suggestion` with `requested_status: "auto_approved"` when the internal score passes.
 - `submit-suggestion` stores public and unauthenticated requests as `pending`; `auto_approved` is honored only for internal requests carrying `x-internal-token` that matches `INTERNAL_FUNCTION_TOKEN`.
-- Moderators apply accepted suggestions through `apply-suggestion`, which writes links and relations in Postgres.
+- Moderators apply accepted suggestions through `apply-suggestion`, which writes links and relations in Postgres. Hosted `apply-suggestion` is deployed with gateway JWT verification disabled and protected by the same internal-token guard.
 - The `notify_revalidation()` trigger posts directly to the Vercel `/api/revalidate` route using Vault `revalidate_url` and `revalidate_secret`; there is no separate `revalidate-web` Edge Function.
 - Cloud collection functions `link-searcher`, `link-checker`, and `triangulate` are dormant for this phase. They stay in the repo for a future deployed-agent mode, but migration `0006_disable_cron.sql` unschedules their automatic cron jobs.
 
@@ -57,6 +60,7 @@ npm run dev:mobile
 - Node.js 20.11+ and npm 10+.
 - Docker Desktop running before `supabase start`.
 - Supabase CLI: `brew install supabase/tap/supabase`.
+- Hosted collection direct SQL: `brew install libpq` (`scripts/nightly-collect.sh` adds Homebrew's keg-only `libpq/bin` path).
 - `yt-dlp`: `brew install yt-dlp` for the video collector workstream.
 - Ollama with a local scoring model: `ollama pull qwen2.5:7b`.
 
@@ -67,7 +71,11 @@ Copy `.env.example` values into the relevant app and Supabase environments.
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 - `SUPABASE_SERVICE_ROLE_KEY`
-- `INTERNAL_FUNCTION_TOKEN` (optional; enables internal `auto_approved` submit-suggestion calls)
+- `INTERNAL_FUNCTION_TOKEN` (required for hosted/admin `apply-suggestion` and internal `auto_approved` submit-suggestion calls)
+- `COLLECT_TARGET` (`hosted` for nightly production, `local` for local Supabase dev)
+- `COLLECT_DB_URL` (hosted Postgres/session-pooler URL; for this project the working host is `aws-1-ap-southeast-2.pooler.supabase.com`)
+- `SUPABASE_DB_PASSWORD` (optional fallback; collector can derive `COLLECT_DB_URL` from it plus hosted `SUPABASE_URL`)
+- `COLLECT_SKIP_EVENT_PERSIST` (defaults to `1` for hosted, `0` for local)
 - `NEXT_PUBLIC_BASE_URL`
 - `BASE_URL`
 - `ALLOWED_ORIGINS`
@@ -88,7 +96,7 @@ Copy `.env.example` values into the relevant app and Supabase environments.
 ## Setup
 
 1. Create a Supabase project, copy the URL, anon key, and service role key into `.env.local`, and keep `DEMO_MODE` unset for any real environment.
-2. Run the migrations and seed locally with `supabase db reset`.
+2. Run the migrations and seed locally with `npm run db:migrate:safe`.
 3. Add moderators in both Supabase Auth and `public.moderators`; admin access is fail-closed and no longer trusts `MODERATOR_EMAILS` or user-editable auth metadata. Public signup is enabled for contributor profiles, but moderator access still requires the allowlist row. The helper does both:
 
 ```bash
@@ -144,7 +152,7 @@ supabase secrets set \
 
 ```bash
 supabase start
-supabase db reset
+npm run db:migrate:safe
 supabase functions serve
 ```
 
@@ -174,7 +182,7 @@ brew install yt-dlp
 
 ```bash
 supabase start
-supabase db reset
+npm run db:migrate:safe
 ```
 
 4. Copy the local keys printed by `supabase start` into `.env.local`:
@@ -227,6 +235,16 @@ Video collection can target one category across the seeded taxonomy:
 node scripts/run-collection.mjs --category padel --all
 node scripts/run-collection.mjs --category surfing --skill pop-up
 ```
+
+Hosted nightly collection is wrapped by target-specific aliases:
+
+```bash
+npm run collect:hosted:smoke
+npm run collect:hosted
+npm run collect:local
+```
+
+`scripts/nightly-collect.sh` defaults to `COLLECT_TARGET=hosted`. It sources `apps/web/.env.local` first for tuning and `INTERNAL_FUNCTION_TOKEN`, then `.env.hosted` so hosted `SUPABASE_URL`, service role, and `COLLECT_DB_URL` win. Use `COLLECT_TARGET=local` when you intentionally want the old local-container path.
 
 Weekly source discovery expands the trusted source graph before nightly collection:
 

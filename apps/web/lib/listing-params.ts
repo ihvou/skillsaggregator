@@ -22,3 +22,11 @@ export function parsePage(searchParams: PageSearchParams) {
   const page = Number(first(searchParams.page));
   return Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
 }
+
+export function parseSkillSlugs(searchParams: PageSearchParams) {
+  const values = Array.isArray(searchParams.skills) ? searchParams.skills : [searchParams.skills];
+  return values
+    .flatMap((value) => (value ?? "").split(","))
+    .map((value) => value.trim().toLowerCase())
+    .filter((value, index, all) => value.length > 0 && all.indexOf(value) === index);
+}

@@ -10,7 +10,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { ResourceCard } from "@/components/ResourceCard";
 import { SortFilterMenu } from "@/components/SortFilterMenu";
 import { SuggestLinkButton } from "@/components/SuggestLinkButton";
-import { getAllCatalogs, getSkillPage } from "@/lib/data";
+import { getAllCatalogs, getSkillPage, isPublishedSkill } from "@/lib/data";
 import { getBaseUrl } from "@/lib/env";
 import {
   type PageSearchParams,
@@ -21,7 +21,7 @@ import {
 export const revalidate = 3600;
 
 export async function generateStaticParams() {
-  const catalogs = await getAllCatalogs();
+  const catalogs = await getAllCatalogs({ publicOnly: true });
   return catalogs.flatMap(({ category, skills }) =>
     skills.map((skill) => ({ category: category.slug, skill: skill.slug })),
   );
@@ -43,6 +43,7 @@ export async function generateMetadata({
   return {
     title,
     description,
+    robots: isPublishedSkill(data.skill) ? undefined : { index: false, follow: false },
     alternates: { canonical },
     openGraph: {
       title,

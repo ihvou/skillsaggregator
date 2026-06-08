@@ -3,7 +3,7 @@ import { getAllCatalogs } from "@/lib/data";
 import { getBaseUrl } from "@/lib/env";
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const catalogs = await getAllCatalogs();
+  const catalogs = await getAllCatalogs({ publicOnly: true });
   const base = getBaseUrl();
   return [
     { url: base, lastModified: new Date(), changeFrequency: "weekly", priority: 1 },
