@@ -14,9 +14,13 @@
  * Required env (or .env.local):
  *   SUPABASE_URL                  default http://127.0.0.1:54321
  *   SUPABASE_SERVICE_ROLE_KEY     local default printed by `supabase status`
+ *   COLLECT_TARGET                local|hosted; defaults local unless COLLECT_DB_URL is set
+ *   COLLECT_DB_URL                optional hosted Postgres/session-pooler URL for direct SQL
+ *   SUPABASE_DB_PASSWORD          optional; used to derive COLLECT_DB_URL for hosted Supabase
+ *   COLLECT_SKIP_EVENT_PERSIST    default true when COLLECT_TARGET=hosted
  *   OLLAMA_URL                    default http://localhost:11434
  *   OLLAMA_MODEL                  default qwen2.5:7b
- *   YTDLP_BIN                     default ./bin/yt-dlp
+ *   YTDLP_BIN                     default Homebrew yt-dlp when present, then ./bin/yt-dlp
  *   NODE_BIN_FOR_YTDLP            default $(which node) (yt-dlp uses it as JS runtime)
  *   STAGE2_RELEVANCE_THRESHOLD    default 0.7
  *   STAGE2_QUALITY_THRESHOLD      default 0.6
@@ -28,6 +32,8 @@
  *   COLLECT_FRESH_UPLOAD_AGE_DAYS default 30
  *   COLLECT_LEVEL_TARGET_PER_SKILL default 3
  *   COLLECT_SATURATION_COOLDOWN_DAYS default 7
+ *   COLLECT_ZERO_YIELD_CONSECUTIVE_THRESHOLD default 3 (consecutive 0-sub runs)
+ *   COLLECT_ZERO_YIELD_COOLDOWN_DAYS default 7
  *   COLLECT_SECONDARY_RELEVANCE_THRESHOLD default 0.6
  *   COLLECT_MAX_SECONDARY_SKILLS   default 4
  *   COLLECT_TRANSCRIPT_TMP_DIR    default .collection/transcripts
@@ -39,7 +45,12 @@
  *   COLLECT_OLLAMA_TIMEOUT_MS     default 90000
  *   COLLECT_YTDLP_LIST_TIMEOUT_MS default 60000
  *   COLLECT_YTDLP_TRANSCRIPT_TIMEOUT_MS default 15000
+ *   COLLECT_TRANSCRIPT_FETCHER default ytdlp (set browser for Playwright)
+ *   COLLECT_BROWSER_PROFILE_DIR default .collection/browser-profile
+ *   COLLECT_BROWSER_HEADLESS default 1
  *   COLLECT_TRANSCRIPT_GLOBAL_MIN_GAP_MS default YTDLP_SLEEP_SUBTITLES * 1000
+ *   COLLECT_YTDLP_IMPERSONATE_TARGET default chrome
+ *   COLLECT_YTDLP_DISABLE_IMPERSONATION set to 1 to skip yt-dlp impersonation
  *   COLLECT_TRANSCRIPT_RATE_LIMIT_CONSECUTIVE default 5
  *   COLLECT_TRANSCRIPT_FALLBACK_CANDIDATES default 5
  *   COLLECT_TRANSCRIPT_FALLBACK_RELEVANCE_MULTIPLIER default 0.7
@@ -52,18 +63,85 @@ import { platform } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import {
+  closeTranscriptBrowser,
+  fetchTranscriptBrowser,
+  preflightTranscriptBrowser,
+} from "./_lib/transcript-fetcher-browser.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const execFileP = promisify(execFile);
 
+function defaultYtdlpBin() {
+  return [
+    "/opt/homebrew/bin/yt-dlp",
+    "/usr/local/bin/yt-dlp",
+    join(root, "bin", "yt-dlp"),
+  ].find((candidate) => existsSync(candidate)) ?? join(root, "bin", "yt-dlp");
+}
+
+function envFlag(name, fallback = false) {
+  const raw = process.env[name];
+  if (raw === undefined || raw === "") return fallback;
+  return ["1", "true", "yes", "on"].includes(String(raw).toLowerCase());
+}
+
+function supabaseRefFromUrl(url) {
+  try {
+    const hostname = new URL(url).hostname;
+    const suffix = ".supabase.co";
+    return hostname.endsWith(suffix) ? hostname.slice(0, -suffix.length) : null;
+  } catch (_error) {
+    return null;
+  }
+}
+
+function buildCollectDbUrlFromEnv() {
+  if (process.env.COLLECT_DB_URL) return process.env.COLLECT_DB_URL;
+  const password = process.env.SUPABASE_DB_PASSWORD;
+  if (!password) return "";
+
+  const projectRef = process.env.SUPABASE_PROJECT_REF
+    ?? supabaseRefFromUrl(process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? "");
+  if (!projectRef) return "";
+
+  const host = process.env.COLLECT_DB_POOLER_HOST ?? "aws-1-ap-southeast-2.pooler.supabase.com";
+  const port = process.env.COLLECT_DB_POOLER_PORT ?? "5432";
+  return `postgresql://postgres.${encodeURIComponent(projectRef)}:${encodeURIComponent(password)}@${host}:${port}/postgres`;
+}
+
+function collectTargetFromEnv(collectDbUrl) {
+  const explicit = String(process.env.COLLECT_TARGET ?? "").trim().toLowerCase();
+  if (explicit) return explicit;
+  return collectDbUrl ? "hosted" : "local";
+}
+
+function dbUrlHost(dbUrl) {
+  if (!dbUrl) return null;
+  try {
+    return new URL(dbUrl).host;
+  } catch (_error) {
+    return "invalid-url";
+  }
+}
+
+const collectDbUrl = buildCollectDbUrlFromEnv();
+const collectTarget = collectTargetFromEnv(collectDbUrl);
+
 const config = {
   supabaseUrl: process.env.SUPABASE_URL ?? "http://127.0.0.1:54321",
   serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY ?? "",
+  collectTarget,
+  collectDbUrl,
+  collectDbHost: dbUrlHost(collectDbUrl),
+  psqlBin: process.env.PSQL_BIN ?? "psql",
+  localDbContainer: process.env.SUPABASE_DB_CONTAINER ?? process.env.COLLECT_LOCAL_DB_CONTAINER ?? "supabase_db_skillsaggregator",
+  skipEventPersist: envFlag("COLLECT_SKIP_EVENT_PERSIST", collectTarget === "hosted"),
   internalFunctionToken: process.env.INTERNAL_FUNCTION_TOKEN ?? "",
   autoApproveConfidenceFloor: Number(process.env.COLLECT_AUTO_APPROVE_FLOOR ?? 0.7),
   ollamaUrl: process.env.OLLAMA_URL ?? "http://localhost:11434",
   ollamaModel: process.env.OLLAMA_MODEL ?? "qwen2.5:7b",
-  ytdlpBin: process.env.YTDLP_BIN ?? join(root, "bin", "yt-dlp"),
+  ytdlpBin: process.env.YTDLP_BIN ?? defaultYtdlpBin(),
   // Path to a Netscape-format cookies.txt exported from your browser (preferred).
   // Best path because it avoids macOS Keychain lookups entirely — `cookies-from-browser`
   // only works for yt-dlp's supported browsers (brave / chrome / chromium / edge /
@@ -80,6 +158,8 @@ const config = {
   // for the encrypted cookies. If both this and ytdlpCookiesFile are set, the file
   // wins (it's the more reliable signal). Leave unset for anonymous.
   ytdlpCookiesFromBrowser: process.env.COLLECT_YTDLP_COOKIES_FROM_BROWSER ?? "",
+  ytdlpImpersonateTarget: process.env.COLLECT_YTDLP_IMPERSONATE_TARGET || "chrome",
+  disableYtdlpImpersonation: process.env.COLLECT_YTDLP_DISABLE_IMPERSONATION === "1",
   nodeBin: process.env.NODE_BIN_FOR_YTDLP ?? process.execPath,
   relevanceThreshold: Number(process.env.STAGE2_RELEVANCE_THRESHOLD ?? 0.7),
   qualityThreshold: Number(process.env.STAGE2_QUALITY_THRESHOLD ?? 0.6),
@@ -90,6 +170,9 @@ const config = {
   secondaryRelevanceThreshold: Number(process.env.COLLECT_SECONDARY_RELEVANCE_THRESHOLD ?? 0.6),
   maxSecondarySkills: Number(process.env.COLLECT_MAX_SECONDARY_SKILLS ?? 4),
   transcriptDir: process.env.COLLECT_TRANSCRIPT_TMP_DIR ?? join(root, ".collection", "transcripts"),
+  transcriptFetcher: ["browser", "ytdlp"].includes(String(process.env.COLLECT_TRANSCRIPT_FETCHER ?? "ytdlp").toLowerCase())
+    ? String(process.env.COLLECT_TRANSCRIPT_FETCHER ?? "ytdlp").toLowerCase()
+    : "ytdlp",
   outputDir: process.env.COLLECT_OUTPUT_DIR ?? join(root, ".collection", "runs"),
   cacheDir: process.env.COLLECT_CACHE_DIR ?? join(root, ".collection", "cache"),
   cacheDate: process.env.COLLECT_CACHE_DATE ?? localDateStamp(),
@@ -101,6 +184,12 @@ const config = {
   levelTargetPerSkill: Number(process.env.COLLECT_LEVEL_TARGET_PER_SKILL ?? 3),
   saturationDuplicateThreshold: Number(process.env.COLLECT_SATURATION_DUPLICATE_THRESHOLD ?? 0.9),
   saturationCooldownDays: Number(process.env.COLLECT_SATURATION_COOLDOWN_DAYS ?? 7),
+  // Chronic zero-submission cooldown (R30/staleness lever). A skill that has
+  // completed >= N consecutive recent runs with 0 submissions is deprioritized
+  // for the cooldown window — without this, R24's coverage-aware ordering loops
+  // forever on skills the current trusted-source pool can't serve content for.
+  zeroYieldConsecutiveThreshold: Number(process.env.COLLECT_ZERO_YIELD_CONSECUTIVE_THRESHOLD ?? 3),
+  zeroYieldCooldownDays: Number(process.env.COLLECT_ZERO_YIELD_COOLDOWN_DAYS ?? 7),
   ytdlpListTimeoutMs: Number(process.env.COLLECT_YTDLP_LIST_TIMEOUT_MS ?? 60_000),
   ytdlpTranscriptTimeoutMs: Number(process.env.COLLECT_YTDLP_TRANSCRIPT_TIMEOUT_MS ?? 15_000),
   ollamaTimeoutMs: Number(process.env.COLLECT_OLLAMA_TIMEOUT_MS ?? 90_000),
@@ -145,6 +234,14 @@ if (!config.serviceRoleKey) {
   console.error("SUPABASE_SERVICE_ROLE_KEY is not set. Get it from `npx supabase status` and export it.");
   process.exit(1);
 }
+if (!["local", "hosted"].includes(config.collectTarget)) {
+  console.error(`COLLECT_TARGET must be "local" or "hosted" (got "${config.collectTarget}").`);
+  process.exit(1);
+}
+if (config.collectTarget === "hosted" && !config.collectDbUrl) {
+  console.error("COLLECT_TARGET=hosted requires COLLECT_DB_URL or SUPABASE_DB_PASSWORD plus a hosted SUPABASE_URL.");
+  process.exit(1);
+}
 if (!existsSync(config.ytdlpBin)) {
   console.error(`yt-dlp binary not found at ${config.ytdlpBin}`);
   process.exit(1);
@@ -156,6 +253,19 @@ let activeRunState = null;
 let runEventQueue = Promise.resolve();
 let shuttingDown = false;
 let lastTranscriptFetchStartedAt = 0;
+const runtimeEventStats = {
+  logged: 0,
+  persisted: 0,
+  skipped_persist: 0,
+  by_event: {},
+  by_level: {},
+};
+const ytdlpImpersonation = {
+  checked: false,
+  targets: [],
+  selectedTarget: null,
+  error: null,
+};
 
 const collectionCache = {
   path: null,
@@ -199,6 +309,23 @@ function errorMessage(error) {
 
 function errorMetadata(error) {
   return error instanceof InfrastructureError || error instanceof SkillAbortError ? error.metadata : {};
+}
+
+function rememberRuntimeEvent(level, event) {
+  runtimeEventStats.logged += 1;
+  runtimeEventStats.by_event[event] = (runtimeEventStats.by_event[event] ?? 0) + 1;
+  runtimeEventStats.by_level[level] = (runtimeEventStats.by_level[level] ?? 0) + 1;
+}
+
+function eventPersistenceSummary() {
+  return {
+    skip_event_persist: config.skipEventPersist,
+    logged: runtimeEventStats.logged,
+    persisted: runtimeEventStats.persisted,
+    skipped_persist: runtimeEventStats.skipped_persist,
+    by_level: runtimeEventStats.by_level,
+    by_event: runtimeEventStats.by_event,
+  };
 }
 
 function localDateStamp(date = new Date()) {
@@ -343,6 +470,7 @@ async function flushAgentRunEvents() {
 function log(level, event, message, metadata = {}) {
   const ts = new Date().toISOString();
   const line = JSON.stringify({ ...metadata, ts, level, event, message });
+  rememberRuntimeEvent(level, event);
   if (level === "error") console.error(line);
   else if (level === "warn") console.warn(line);
   else console.log(line);
@@ -369,7 +497,8 @@ if (!skillSlugFilter && !runAll) {
 }
 
 async function dbQuery(sql, params = []) {
-  // PostgREST RPC is awkward for arbitrary queries — we shell into docker exec psql.
+  // PostgREST RPC is awkward for arbitrary queries, so direct SQL uses either
+  // hosted psql via COLLECT_DB_URL or the local Supabase Docker Postgres.
   const sqlValue = (value) => {
     if (value === null) return "null";
     if (typeof value === "number" || typeof value === "bigint") return String(value);
@@ -380,11 +509,14 @@ async function dbQuery(sql, params = []) {
     (acc, value, idx) => acc.replaceAll(`$${idx + 1}`, sqlValue(value)),
     sql,
   );
-  const { stdout } = await execFileP(
-    "docker",
-    ["exec", "-i", "supabase_db_skillsaggregator", "psql", "-U", "postgres", "-A", "-t", "-F", "|||", "-c", expanded],
-    { maxBuffer: 32 * 1024 * 1024, timeout: config.dbQueryTimeoutMs },
-  );
+  const command = config.collectDbUrl ? config.psqlBin : "docker";
+  const args = config.collectDbUrl
+    ? [config.collectDbUrl, "-A", "-t", "-F", "|||", "-c", expanded]
+    : ["exec", "-i", config.localDbContainer, "psql", "-U", "postgres", "-A", "-t", "-F", "|||", "-c", expanded];
+  const { stdout } = await execFileP(command, args, {
+    maxBuffer: 32 * 1024 * 1024,
+    timeout: config.dbQueryTimeoutMs,
+  });
   return stdout
     .trim()
     .split("\n")
@@ -465,6 +597,25 @@ async function loadSkills(slug) {
        where ar.target_type = 'skill'
          and e.event_type = 'skill_saturated'
          and e.created_at >= now() - (${config.saturationCooldownDays}::text || ' days')::interval
+     ),
+     recent_zero_yield as (
+       -- Skills that completed >= N consecutive runs with 0 submissions inside
+       -- the cooldown window. Source pool can't serve these skills today; come
+       -- back after K days (or after operator adds sources for them).
+       select t.skill_id
+       from (
+         select ar.target_id as skill_id,
+                ar.suggestions_created,
+                row_number() over (partition by ar.target_id order by ar.started_at desc) as rn
+         from public.agent_runs ar
+         where ar.target_type = 'skill'
+           and ar.status = 'completed'
+           and ar.started_at >= now() - (${config.zeroYieldCooldownDays}::text || ' days')::interval
+       ) t
+       where t.rn <= ${config.zeroYieldConsecutiveThreshold}
+       group by t.skill_id
+       having count(*) >= ${config.zeroYieldConsecutiveThreshold}
+          and bool_and(coalesce(t.suggestions_created, 0) = 0)
      )
      select
        s.id, s.slug, s.name, coalesce(s.description, ''), s.category_id, c.slug, c.name,
@@ -479,8 +630,10 @@ async function loadSkills(slug) {
      left join relation_counts rc on rc.skill_id = s.id
      left join last_runs lr on lr.skill_id = s.id
      left join recent_saturation rs on rs.skill_id = s.id
+     left join recent_zero_yield rzy on rzy.skill_id = s.id
      where s.is_active
        and rs.skill_id is null
+       and rzy.skill_id is null
        ${categorySlugFilter ? "and c.slug = $1" : ""}
      order by coalesce(rc.link_count, 0) asc, lr.last_run_at asc nulls first, c.slug, s.name`,
     params,
@@ -601,12 +754,24 @@ function rememberAcceptedLevel(skill, level) {
   skill.link_count = clampFinite(skill.link_count) + 1;
 }
 
+// Even when COLLECT_SKIP_EVENT_PERSIST is on (the hosted default), these event
+// types must still be written: the collection logic reads them back from the DB.
+// `skill_saturated` feeds the recent_saturation cooldown CTE in loadSkills() — if
+// it is skipped, saturated skills are never cooled down and get re-processed every
+// night. The volume is a handful of rows/night, so this does not bloat hosted.
+const ALWAYS_PERSIST_EVENT_TYPES = new Set(["skill_saturated"]);
+
 async function persistAgentRunEvent(runId, level, eventType, message, metadata) {
+  if (config.skipEventPersist && !ALWAYS_PERSIST_EVENT_TYPES.has(eventType)) {
+    runtimeEventStats.skipped_persist += 1;
+    return;
+  }
   await dbQuery(
     `insert into public.agent_run_events (run_id, level, event_type, message, metadata_json)
      values ($1, $2, $3, $4, $5::jsonb)`,
     [runId, level, eventType, message, JSON.stringify(metadata ?? {})],
   );
+  runtimeEventStats.persisted += 1;
 }
 
 async function startAgentRun(skill = null) {
@@ -630,7 +795,107 @@ async function finishAgentRun(runId, { status = "completed", suggestionsCreated 
   );
 }
 
-async function ytdlp(args, { timeoutMs = config.ytdlpListTimeoutMs, label = "ytdlp" } = {}) {
+async function assertDbConnectionHealthy() {
+  try {
+    const rows = await dbQuery("select 1");
+    if (rows[0]?.[0] !== "1") throw new Error("unexpected_db_preflight_response");
+    log("info", "collect_db_preflight_completed", "Direct collection DB preflight completed", {
+      collect_target: config.collectTarget,
+      db_access: config.collectDbUrl ? "postgres_url" : "local_docker",
+      db_host: config.collectDbHost,
+      local_db_container: config.collectDbUrl ? null : config.localDbContainer,
+      skip_event_persist: config.skipEventPersist,
+    });
+  } catch (error) {
+    throw new InfrastructureError("collect_db_unreachable", "collect_db_unreachable", {
+      collect_target: config.collectTarget,
+      db_access: config.collectDbUrl ? "postgres_url" : "local_docker",
+      db_host: config.collectDbHost,
+      local_db_container: config.collectDbUrl ? null : config.localDbContainer,
+      psql_bin: config.collectDbUrl ? config.psqlBin : null,
+      cause: errorMessage(error),
+    });
+  }
+}
+
+function parseYtdlpImpersonationTargets(output) {
+  const ignored = new Set([
+    "available",
+    "client",
+    "impersonate",
+    "impersonation",
+    "target",
+    "targets",
+  ]);
+  const targets = [];
+  for (const line of output.split("\n")) {
+    const firstToken = line
+      .trim()
+      .replace(/^[-*]\s*/, "")
+      .split(/\s+/)[0]
+      ?.replace(/[:,]$/, "");
+    if (!firstToken || ignored.has(firstToken.toLowerCase())) continue;
+    if (!/^(brave|chrome|chromium|edge|firefox|opera|safari|vivaldi|whale)([-_:][a-z0-9.]+)*$/i.test(firstToken)) continue;
+    targets.push(firstToken.toLowerCase());
+  }
+  return [...new Set(targets)];
+}
+
+function selectYtdlpImpersonationTarget(targets) {
+  if (!targets.length) return null;
+  const requested = config.ytdlpImpersonateTarget;
+  return targets.find((target) => target === requested)
+    ?? targets.find((target) => target === "chrome")
+    ?? targets.find((target) => target.startsWith("chrome"))
+    ?? targets[0];
+}
+
+async function detectYtdlpImpersonationTargets() {
+  if (ytdlpImpersonation.checked) return ytdlpImpersonation;
+  ytdlpImpersonation.checked = true;
+
+  if (config.disableYtdlpImpersonation) {
+    log("warn", "ytdlp_impersonation_disabled", "yt-dlp impersonation is disabled by COLLECT_YTDLP_DISABLE_IMPERSONATION", {
+      requested_target: config.ytdlpImpersonateTarget,
+    });
+    return ytdlpImpersonation;
+  }
+
+  try {
+    const { stdout, stderr } = await execFileP(
+      config.ytdlpBin,
+      ["--list-impersonate-targets"],
+      { timeout: config.systemCommandTimeoutMs, maxBuffer: 1024 * 1024 },
+    );
+    const targets = parseYtdlpImpersonationTargets(`${stdout}\n${stderr}`);
+    ytdlpImpersonation.targets = targets;
+    ytdlpImpersonation.selectedTarget = selectYtdlpImpersonationTarget(targets);
+    if (ytdlpImpersonation.selectedTarget) {
+      log("info", "ytdlp_impersonation_available", "yt-dlp impersonation target detected for transcript downloads", {
+        requested_target: config.ytdlpImpersonateTarget,
+        selected_target: ytdlpImpersonation.selectedTarget,
+        targets_count: targets.length,
+        targets_sample: targets.slice(0, 8),
+      });
+    } else {
+      log("warn", "ytdlp_impersonation_unavailable", "yt-dlp has no impersonation targets; install curl-cffi so subtitle downloads use a browser-like TLS fingerprint", {
+        requested_target: config.ytdlpImpersonateTarget,
+        install_hint: 'python3 -m pip install --user "curl-cffi>=0.5.10"',
+      });
+    }
+  } catch (error) {
+    ytdlpImpersonation.error = errorMessage(error);
+    log("warn", "ytdlp_impersonation_check_failed", "Could not list yt-dlp impersonation targets", {
+      requested_target: config.ytdlpImpersonateTarget,
+      error: ytdlpImpersonation.error,
+      install_hint: 'python3 -m pip install --user "curl-cffi>=0.5.10"',
+    });
+  }
+
+  return ytdlpImpersonation;
+}
+
+async function ytdlp(args, { timeoutMs = config.ytdlpListTimeoutMs, label = "ytdlp", impersonate = false } = {}) {
   return new Promise((resolveP, rejectP) => {
     // Cookies-file beats cookies-from-browser when both are set — the file is
     // the explicit, no-keychain path that actually carries the encrypted auth tokens.
@@ -639,9 +904,12 @@ async function ytdlp(args, { timeoutMs = config.ytdlpListTimeoutMs, label = "ytd
       : config.ytdlpCookiesFromBrowser
         ? ["--cookies-from-browser", config.ytdlpCookiesFromBrowser]
         : [];
+    const impersonateArgs = impersonate && ytdlpImpersonation.selectedTarget
+      ? ["--impersonate", ytdlpImpersonation.selectedTarget]
+      : [];
     const child = spawn(
       config.ytdlpBin,
-      ["--js-runtimes", `node:${config.nodeBin}`, ...cookiesArgs, ...args],
+      ["--js-runtimes", `node:${config.nodeBin}`, ...impersonateArgs, ...cookiesArgs, ...args],
       { stdio: ["ignore", "pipe", "pipe"] },
     );
     let stdout = "";
@@ -825,6 +1093,14 @@ function relevanceForQuery(candidate, terms) {
 }
 
 function passesSoftFilters(candidate) {
+  // Reject non-video IDs before any fetch work. A valid YouTube video ID is
+  // exactly 11 chars of [A-Za-z0-9_-]. yt-dlp channel listings occasionally
+  // emit a playlist ("PL…"), mix ("RD…"), or channel ("UC…") entry whose id is
+  // longer — fetching it as /watch?v=<id> just times out. Observed 2026-05-28:
+  // PL9xXG724dRtgagaiEsNkmRRIJ2E8kKzlh burned a 20s nav timeout for nothing.
+  if (!candidate.video_id || !/^[A-Za-z0-9_-]{11}$/.test(candidate.video_id)) {
+    return { ok: false, reason: "invalid_video_id" };
+  }
   if (candidate.duration_sec !== null) {
     if (candidate.duration_sec < config.minDurationSec) return { ok: false, reason: "duration_too_short" };
     if (candidate.duration_sec > config.maxDurationSec) return { ok: false, reason: "duration_too_long" };
@@ -841,7 +1117,9 @@ function passesSoftFilters(candidate) {
 }
 
 function isTranscriptTimeout(error) {
-  return errorMessage(error).toLowerCase().includes("ytdlp_transcript_timeout_after_");
+  const message = errorMessage(error).toLowerCase();
+  return message.includes("ytdlp_transcript_timeout_after_")
+    || message.includes("browser_transcript_timeout_after_");
 }
 
 function isYoutubeRateLimit(error) {
@@ -1109,18 +1387,27 @@ async function waitForTranscriptSlot(videoId) {
       video_id: videoId,
       wait_ms: waitMs,
       min_gap_ms: minGapMs,
+      transcript_fetcher: config.transcriptFetcher,
       cookies_file: config.ytdlpCookiesFile || null,
       cookies_from_browser: config.ytdlpCookiesFromBrowser || null,
+      impersonate_target: ytdlpImpersonation.selectedTarget,
     });
     await sleep(waitMs);
   }
   lastTranscriptFetchStartedAt = Date.now();
 }
 
-async function fetchTranscript(videoId) {
+async function fetchTranscriptYtdlp(videoId) {
   const baseOut = join(config.transcriptDir, videoId);
   await mkdir(config.transcriptDir, { recursive: true });
   await waitForTranscriptSlot(videoId);
+  log("debug", "transcript_fetch_started", "Starting yt-dlp transcript fetch", {
+    video_id: videoId,
+    timeout_ms: config.ytdlpTranscriptTimeoutMs,
+    impersonate_target: ytdlpImpersonation.selectedTarget,
+    cookies_file: config.ytdlpCookiesFile || null,
+    cookies_from_browser: config.ytdlpCookiesFromBrowser || null,
+  });
   await ytdlp([
     "--skip-download",
     "--write-auto-subs", "--write-subs",
@@ -1137,7 +1424,7 @@ async function fetchTranscript(videoId) {
     // are redundant AND fatal to the wall timeout.
     "-o", `${baseOut}.%(ext)s`,
     `https://www.youtube.com/watch?v=${videoId}`,
-  ], { timeoutMs: config.ytdlpTranscriptTimeoutMs, label: "ytdlp_transcript" });
+  ], { timeoutMs: config.ytdlpTranscriptTimeoutMs, label: "ytdlp_transcript", impersonate: true });
 
   // yt-dlp may write any of en.vtt, en-orig.vtt, en-en.vtt depending on availability.
   const dirEntries = await readdir(config.transcriptDir);
@@ -1148,10 +1435,20 @@ async function fetchTranscript(videoId) {
   return vttToText(vtt);
 }
 
+async function fetchTranscript(videoId) {
+  if (config.transcriptFetcher === "browser") {
+    await waitForTranscriptSlot(videoId);
+    log("debug", "browser_transcript_fetch_started", "Starting browser transcript fetch", {
+      video_id: videoId,
+    });
+    return fetchTranscriptBrowser(videoId);
+  }
+  return fetchTranscriptYtdlp(videoId);
+}
+
 function vttToText(vtt) {
   const lines = vtt.split("\n");
   const out = [];
-  let prevText = "";
   for (const line of lines) {
     const trimmed = line.trim();
     if (!trimmed) continue;
@@ -1160,12 +1457,44 @@ function vttToText(vtt) {
     if (/^\d{2}:\d{2}/.test(trimmed) || trimmed.includes("-->")) continue;
     if (trimmed.startsWith("NOTE")) continue;
     const stripped = trimmed.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#39;/g, "'");
-    if (stripped !== prevText) {
-      out.push(stripped);
-      prevText = stripped;
-    }
+    appendCaptionLine(out, stripped);
   }
   return out.join(" ").replace(/\s+/g, " ").trim();
+}
+
+function appendCaptionLine(out, line) {
+  const current = line.replace(/\s+/g, " ").trim();
+  if (!current) return;
+  const previous = out.at(-1);
+  if (!previous) {
+    out.push(current);
+    return;
+  }
+  // Note: do NOT drop `current` just because it is a prefix of `previous`
+  // (`previous.startsWith(current)`) — a genuinely new short line can coincide
+  // with the start of the prior line and would be silently lost. Exact repeats
+  // are caught above; rolling-caption growth is handled by the next branch.
+  if (current === previous) return;
+  if (current.startsWith(previous)) {
+    out[out.length - 1] = current;
+    return;
+  }
+
+  const overlap = overlappingCaptionText(previous, current);
+  if (overlap) out[out.length - 1] = overlap;
+  else out.push(current);
+}
+
+function overlappingCaptionText(previous, current) {
+  const max = Math.min(previous.length, current.length);
+  for (let length = max; length >= 12; length -= 1) {
+    const previousSuffix = previous.slice(previous.length - length).toLowerCase();
+    const currentPrefix = current.slice(0, length).toLowerCase();
+    if (previousSuffix === currentPrefix) {
+      return `${previous}${current.slice(length)}`;
+    }
+  }
+  return null;
 }
 
 function promptSystem(skill) {
@@ -1501,6 +1830,7 @@ async function postSuggestion(skill, candidate, transcript, score, viewCount) {
       video_id: candidate.video_id,
       view_count: viewCount,
       scoring_mode: scoringMode,
+      transcript_fetcher: config.transcriptFetcher,
       transcript_available: hasTranscript,
       metadata_fallback: scoringMode === "metadata_fallback"
         ? {
@@ -1612,9 +1942,15 @@ async function postAttachSuggestion(primarySkill, secondary, candidate, transcri
 async function preflightCheck() {
   log("info", "preflight_started", "Checking Supabase, Ollama, and yt-dlp before collection", {
     supabase_url: config.supabaseUrl,
+    collect_target: config.collectTarget,
+    db_access: config.collectDbUrl ? "postgres_url" : "local_docker",
+    db_host: config.collectDbHost,
+    skip_event_persist: config.skipEventPersist,
     ollama_url: config.ollamaUrl,
     preflight_channel_id: config.preflightChannelId,
   });
+
+  await assertDbConnectionHealthy();
 
   const supabaseResponse = await fetchWithTimeout(config.supabaseUrl, {
     headers: {
@@ -1627,6 +1963,22 @@ async function preflightCheck() {
   }
 
   const edgeRuntime = await assertFunctionRuntimeHealthy();
+  const impersonationStatus = await detectYtdlpImpersonationTargets();
+  let browserTranscriptPreflight = null;
+  if (config.transcriptFetcher === "browser") {
+    try {
+      browserTranscriptPreflight = await preflightTranscriptBrowser();
+      log("info", "browser_transcript_preflight_completed", "Browser transcript fetcher preflight completed", {
+        transcript_fetcher: config.transcriptFetcher,
+        ...browserTranscriptPreflight,
+      });
+    } catch (error) {
+      throw new InfrastructureError("browser_transcript_preflight_failed", "browser_transcript_preflight_failed", {
+        transcript_fetcher: config.transcriptFetcher,
+        cause: errorMessage(error),
+      });
+    }
+  }
 
   const ollamaResponse = await fetchWithTimeout(`${config.ollamaUrl}/api/tags`, {}, config.preflightTimeoutMs, "preflight_ollama");
   if (!ollamaResponse.ok) {
@@ -1645,6 +1997,13 @@ async function preflightCheck() {
     supabase_status: supabaseResponse.status,
     edge_runtime_status: edgeRuntime.status,
     yt_dlp_sample_video: stdout.trim().split("\n")[0],
+    ytdlp_impersonation_target: impersonationStatus.selectedTarget,
+    ytdlp_impersonation_targets_count: impersonationStatus.targets.length,
+    ytdlp_impersonation_error: impersonationStatus.error,
+    transcript_fetcher: config.transcriptFetcher,
+    browser_transcript_preflight: browserTranscriptPreflight,
+    collect_target: config.collectTarget,
+    skip_event_persist: config.skipEventPersist,
   });
 }
 
@@ -1659,6 +2018,7 @@ async function persistPreflightFailure(error) {
       supabase_url: config.supabaseUrl,
       ollama_url: config.ollamaUrl,
       preflight_channel_id: config.preflightChannelId,
+      transcript_fetcher: config.transcriptFetcher,
       ...errorMetadata(error),
     });
     await finishAgentRun(runId, { status: "failed", suggestionsCreated: 0, errorMessage: message });
@@ -1700,7 +2060,9 @@ function installTerminationHandlers() {
       if (shuttingDown) process.exit(signal === "SIGTERM" ? 143 : 130);
       shuttingDown = true;
       abortActiveRun(signal.toLowerCase()).finally(() => {
-        finalizeCollectionCache()
+        closeTranscriptBrowser()
+          .catch(() => undefined)
+          .then(() => finalizeCollectionCache())
           .catch(() => undefined)
           .finally(() => process.exit(signal === "SIGTERM" ? 143 : 130));
       });
@@ -1842,6 +2204,7 @@ async function processSkill(skill, summary) {
         if (transcriptFallbackRemaining <= 0) {
           throw new SkillAbortError("youtube_rate_limit_circuit_open", "YouTube transcript rate-limit circuit opened", {
             rate_limit_window: lastTranscriptRateStatus,
+            transcript_fetcher: config.transcriptFetcher,
             transcript_failures: transcriptFailures,
             transcript_rate_limit_equivalent_failures: transcriptRateLimitEquivalentFailures,
             metadata_fallback_scored_count: metadataFallbackScoredCount,
@@ -1864,11 +2227,14 @@ async function processSkill(skill, summary) {
           log("debug", "transcript_fetch_completed", "Transcript fetched", {
             video_id: candidate.video_id,
             length: transcript?.length ?? 0,
+            transcript_fetcher: config.transcriptFetcher,
             rate_limit_window: rateStatus,
           });
           if (!transcript || transcript.length < 200) {
             log("debug", "candidate_skipped_no_transcript", "Transcript missing or too short", {
-              video_id: candidate.video_id, length: transcript?.length ?? 0,
+              video_id: candidate.video_id,
+              length: transcript?.length ?? 0,
+              transcript_fetcher: config.transcriptFetcher,
             });
             continue;
           }
@@ -1881,6 +2247,7 @@ async function processSkill(skill, summary) {
           if (rateLimited) transcriptRateLimitEquivalentFailures += 1;
           log("warn", "transcript_failed", errorMessage(error), {
             video_id: candidate.video_id,
+            transcript_fetcher: config.transcriptFetcher,
             youtube_rate_limited: rateLimited,
             transcript_timed_out: transcriptTimedOut,
             rate_limit_window: rateStatus,
@@ -1893,6 +2260,7 @@ async function processSkill(skill, summary) {
             log("error", "transcript_rate_limit_circuit_open", "YouTube transcript rate-limit circuit opened", {
               skill: skill.slug,
               video_id: candidate.video_id,
+              transcript_fetcher: config.transcriptFetcher,
               rate_limit_window: rateStatus,
               consecutive_threshold: config.transcriptRateLimitConsecutiveThreshold,
               fallback_candidate_budget: transcriptFallbackRemaining,
@@ -1901,6 +2269,7 @@ async function processSkill(skill, summary) {
             if (transcriptFallbackRemaining > 0) {
               log("warn", "transcript_optional_fallback_activated", "Transcript fetches are failing; trying metadata-only scoring for the next candidates", {
                 skill: skill.slug,
+                transcript_fetcher: config.transcriptFetcher,
                 fallback_candidate_budget: transcriptFallbackRemaining,
                 relevance_multiplier: config.transcriptFallbackRelevanceMultiplier,
                 rate_limit_window: rateStatus,
@@ -1909,6 +2278,7 @@ async function processSkill(skill, summary) {
             }
             throw new SkillAbortError("youtube_rate_limit_circuit_open", "YouTube transcript rate-limit circuit opened", {
               rate_limit_window: rateStatus,
+              transcript_fetcher: config.transcriptFetcher,
               transcript_failures: transcriptFailures,
               transcript_rate_limit_equivalent_failures: transcriptRateLimitEquivalentFailures,
               metadata_fallback_scored_count: metadataFallbackScoredCount,
@@ -1928,6 +2298,7 @@ async function processSkill(skill, summary) {
         log("warn", "score_failed", errorMessage(error), {
           video_id: candidate.video_id,
           scoring_mode: scoringMode,
+          transcript_fetcher: config.transcriptFetcher,
         });
         continue;
       }
@@ -1943,6 +2314,7 @@ async function processSkill(skill, summary) {
         title_relevance: candidate.title_relevance,
         scoring_mode: score.scoring_mode ?? scoringMode,
         transcript_available: Boolean(transcript),
+        transcript_fetcher: config.transcriptFetcher,
       });
       scoredCount += 1;
 
@@ -1982,7 +2354,8 @@ async function processSkill(skill, summary) {
         } else {
           duplicateCount += 1;
         }
-        log("info", "suggestion_submitted", "Suggestion submitted to local DB", {
+        log("info", "suggestion_submitted", "Suggestion submitted", {
+          collect_target: config.collectTarget,
           suggestion_id: result.suggestion_id, duplicate: Boolean(result.duplicate),
         });
       } catch (error) {
@@ -2048,6 +2421,7 @@ async function processSkill(skill, summary) {
               duplicateCount += 1;
             }
             log("info", "secondary_suggestion_submitted", "Secondary skill attach submitted", {
+              collect_target: config.collectTarget,
               suggestion_id: result.suggestion_id,
               duplicate: Boolean(result.duplicate),
               video_id: candidate.video_id,
@@ -2096,6 +2470,7 @@ async function processSkill(skill, summary) {
     if (transcriptCircuitOpen) {
       throw new SkillAbortError("youtube_rate_limit_circuit_open", "YouTube transcript rate-limit circuit opened", {
         rate_limit_window: lastTranscriptRateStatus,
+        transcript_fetcher: config.transcriptFetcher,
         transcript_failures: transcriptFailures,
         transcript_rate_limit_equivalent_failures: transcriptRateLimitEquivalentFailures,
         metadata_fallback_scored_count: metadataFallbackScoredCount,
@@ -2118,6 +2493,7 @@ async function processSkill(skill, summary) {
     activeRunState.finalized = true;
     log("info", "skill_run_completed", "Skill run complete", {
       skill: skill.slug,
+      transcript_fetcher: config.transcriptFetcher,
       submitted,
       primary_submitted: primarySubmitted,
       secondary_submitted: secondarySubmitted,
@@ -2131,6 +2507,7 @@ async function processSkill(skill, summary) {
     const item = {
       skill: skill.slug,
       status: "completed",
+      transcript_fetcher: config.transcriptFetcher,
       submitted,
       primary_submitted: primarySubmitted,
       secondary_submitted: secondarySubmitted,
@@ -2154,6 +2531,7 @@ async function processSkill(skill, summary) {
       skill: skill.slug,
       run_id: runId,
       submitted,
+      transcript_fetcher: config.transcriptFetcher,
       scored_count: scoredCount,
       metadata_fallback_scored_count: metadataFallbackScoredCount,
       transcript_failures: transcriptFailures,
@@ -2166,6 +2544,7 @@ async function processSkill(skill, summary) {
       skill: skill.slug,
       status,
       error: message,
+      transcript_fetcher: config.transcriptFetcher,
       submitted,
       primary_submitted: primarySubmitted,
       secondary_submitted: secondarySubmitted,
@@ -2202,8 +2581,17 @@ async function main() {
       category: categorySlugFilter,
       model: config.ollamaModel,
       supabase_url: config.supabaseUrl,
+      collect_target: config.collectTarget,
+      db_access: config.collectDbUrl ? "postgres_url" : "local_docker",
+      db_host: config.collectDbHost,
+      local_db_container: config.collectDbUrl ? null : config.localDbContainer,
+      skip_event_persist: config.skipEventPersist,
+      transcript_fetcher: config.transcriptFetcher,
       ytdlp_cookies_file: config.ytdlpCookiesFile || null,
       ytdlp_cookies_from_browser: config.ytdlpCookiesFromBrowser || null,
+      ytdlp_impersonation_target: ytdlpImpersonation.selectedTarget,
+      ytdlp_impersonation_targets_count: ytdlpImpersonation.targets.length,
+      ytdlp_impersonation_check_error: ytdlpImpersonation.error,
       collection_cache_path: collectionCache.path,
       collection_cache_date: config.cacheDate,
       transcript_global_min_gap_ms: config.transcriptGlobalMinGapMs,
@@ -2211,6 +2599,8 @@ async function main() {
       transcript_rate_limit_consecutive_threshold: config.transcriptRateLimitConsecutiveThreshold,
       transcript_fallback_candidates: config.transcriptFallbackCandidates,
       transcript_fallback_relevance_multiplier: config.transcriptFallbackRelevanceMultiplier,
+      zero_yield_consecutive_threshold: config.zeroYieldConsecutiveThreshold,
+      zero_yield_cooldown_days: config.zeroYieldCooldownDays,
     });
     const summary = [];
     let consecutiveRateLimitCircuits = 0;
@@ -2230,15 +2620,39 @@ async function main() {
       } catch (error) {
         consecutiveRateLimitCircuits = 0;
         log("error", "skill_run_failed", errorMessage(error), { skill: skill.slug });
-        summary.push({ skill: skill.slug, status: "failed", error: errorMessage(error) });
+        summary.push({ skill: skill.slug, status: "failed", transcript_fetcher: config.transcriptFetcher, error: errorMessage(error) });
       }
     }
 
     const outputPath = join(config.outputDir, `${new Date().toISOString().replace(/[:.]/g, "-")}.json`);
-    await writeFile(outputPath, JSON.stringify({ ts: new Date().toISOString(), stopped_by_rate_limit_circuit: stoppedByRateLimitCircuit, summary }, null, 2));
-    log("info", "collection_finished", "Collection finished", { output: outputPath, stopped_by_rate_limit_circuit: stoppedByRateLimitCircuit, summary });
+    const event_persistence = eventPersistenceSummary();
+    await writeFile(
+      outputPath,
+      JSON.stringify({
+        ts: new Date().toISOString(),
+        collect_target: config.collectTarget,
+        stopped_by_rate_limit_circuit: stoppedByRateLimitCircuit,
+        event_persistence,
+        summary,
+      }, null, 2),
+    );
+    log("info", "collection_finished", "Collection finished", {
+      output: outputPath,
+      collect_target: config.collectTarget,
+      stopped_by_rate_limit_circuit: stoppedByRateLimitCircuit,
+      event_persistence,
+      summary,
+    });
     if (stoppedByRateLimitCircuit) process.exitCode = 1;
   } finally {
+    await closeTranscriptBrowser().catch((error) => {
+      console.warn(JSON.stringify({
+        ts: new Date().toISOString(),
+        level: "warn",
+        event: "browser_transcript_close_failed",
+        message: errorMessage(error),
+      }));
+    });
     await finalizeCollectionCache().catch((error) => {
       console.warn(JSON.stringify({
         ts: new Date().toISOString(),

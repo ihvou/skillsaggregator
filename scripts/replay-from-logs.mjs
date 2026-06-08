@@ -26,7 +26,7 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 
 const LOGS_DIR = ".collection/logs";
-const PG_CONTAINER = "supabase_db_skillsaggregator";
+const PG_CONTAINER = process.env.SUPABASE_DB_CONTAINER ?? "supabase_db_skillsaggregator";
 const QUALITY_FLOOR = 0.6;
 
 const args = new Set(process.argv.slice(2));

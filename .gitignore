@@ -18,3 +18,4 @@ supabase/.temp
 # The mobile app uses apps/mobile/tsconfig.json; this top-level file is harmless
 # but recreates itself on every install, so we keep it untracked.
 /tsconfig.json
+.env.hosted

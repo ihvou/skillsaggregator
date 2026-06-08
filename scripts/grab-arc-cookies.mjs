@@ -50,7 +50,11 @@ const config = {
   ),
   keychainService: arg("keychain", "Arc Safe Storage"),
   out: arg("out", join(ROOT, ".collection", "youtube-cookies.txt")),
-  domainMatch: arg("domain", "youtube.com"),
+  // Comma-separated list of host suffixes to include. YouTube's get_transcript
+  // precondition checks identity signals across both youtube.com AND google.com
+  // (the accounts/oauth cookies live on .google.com). Exporting only youtube.com
+  // cookies passes basic SAPISID auth but fails the cross-domain precondition.
+  domainMatch: arg("domain", "youtube.com,google.com"),
 };
 
 // ---------- Chromium v10 decryption ----------
@@ -136,10 +140,14 @@ async function readCookieRows(dbPath, domainMatch) {
     // ciphertext don't break our row/column split. Multi-char "|||" is safe — cookie
     // names + paths + hex strings don't contain "|||".
     const sep = "|||";
+    const domains = domainMatch.split(",").map((d) => d.trim()).filter(Boolean);
+    const whereClause = domains
+      .map((d) => `host_key LIKE '%${d.replace(/'/g, "''")}%'`)
+      .join(" OR ");
     const sql = `
       SELECT host_key, path, name, value, hex(encrypted_value), expires_utc, is_secure, is_httponly, has_expires
       FROM cookies
-      WHERE host_key LIKE '%${domainMatch.replace(/'/g, "''")}%';
+      WHERE ${whereClause};
     `;
     const { stdout } = await execFileP("/usr/bin/sqlite3", [tmpDb, "-separator", sep, sql], {
       maxBuffer: 32 * 1024 * 1024,

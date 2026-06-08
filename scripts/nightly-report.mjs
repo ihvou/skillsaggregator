@@ -9,8 +9,34 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const execFileP = promisify(execFile);
 const fieldSep = "\u001f";
 
+function supabaseRefFromUrl(url) {
+  try {
+    const hostname = new URL(url).hostname;
+    const suffix = ".supabase.co";
+    return hostname.endsWith(suffix) ? hostname.slice(0, -suffix.length) : null;
+  } catch (_error) {
+    return null;
+  }
+}
+
+function buildCollectDbUrlFromEnv() {
+  if (process.env.COLLECT_DB_URL) return process.env.COLLECT_DB_URL;
+  const password = process.env.SUPABASE_DB_PASSWORD;
+  if (!password) return "";
+  const projectRef = process.env.SUPABASE_PROJECT_REF
+    ?? supabaseRefFromUrl(process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? "");
+  if (!projectRef) return "";
+  const host = process.env.COLLECT_DB_POOLER_HOST ?? "aws-1-ap-southeast-2.pooler.supabase.com";
+  const port = process.env.COLLECT_DB_POOLER_PORT ?? "5432";
+  return `postgresql://postgres.${encodeURIComponent(projectRef)}:${encodeURIComponent(password)}@${host}:${port}/postgres`;
+}
+
+const collectDbUrl = buildCollectDbUrlFromEnv();
+
 const config = {
   dbContainer: process.env.SUPABASE_DB_CONTAINER ?? "supabase_db_skillsaggregator",
+  collectDbUrl,
+  psqlBin: process.env.PSQL_BIN ?? "psql",
   dbTimeoutMs: Number(process.env.NIGHTLY_REPORT_DB_TIMEOUT_MS ?? 30_000),
   reportTz: process.env.NIGHTLY_REPORT_TZ ?? Intl.DateTimeFormat().resolvedOptions().timeZone ?? "UTC",
   reportsDir: process.env.NIGHTLY_REPORT_DIR ?? join(root, ".collection", "reports"),
@@ -39,11 +65,14 @@ async function dbRows(sql, params = []) {
     (acc, value, index) => acc.replaceAll(`$${index + 1}`, sqlValue(value)),
     sql,
   );
-  const { stdout } = await execFileP(
-    "docker",
-    ["exec", "-i", config.dbContainer, "psql", "-U", "postgres", "-A", "-t", "-F", fieldSep, "-c", expanded],
-    { maxBuffer: 32 * 1024 * 1024, timeout: config.dbTimeoutMs },
-  );
+  const command = config.collectDbUrl ? config.psqlBin : "docker";
+  const args = config.collectDbUrl
+    ? [config.collectDbUrl, "-A", "-t", "-F", fieldSep, "-c", expanded]
+    : ["exec", "-i", config.dbContainer, "psql", "-U", "postgres", "-A", "-t", "-F", fieldSep, "-c", expanded];
+  const { stdout } = await execFileP(command, args, {
+    maxBuffer: 32 * 1024 * 1024,
+    timeout: config.dbTimeoutMs,
+  });
   return stdout
     .trim()
     .split("\n")
@@ -226,7 +255,15 @@ function renderReport({ date, start, end, runs, events, suggestionStatusCounts, 
   const skillRuns = runs.filter((run) => run.skill_slug);
   const runStatusCounts = countBy(skillRuns, (run) => run.status);
   const scored = events.filter((event) => event.event_type === "candidate_scored").length;
+  const scoredByTranscriptFetcher = countBy(
+    events.filter((event) => event.event_type === "candidate_scored"),
+    (event) => event.metadata.transcript_fetcher ?? "unknown",
+  );
   const transcriptFailures = events.filter((event) => event.event_type === "transcript_failed");
+  const transcriptFailuresByFetcher = countBy(
+    transcriptFailures,
+    (event) => event.metadata.transcript_fetcher ?? "unknown",
+  );
   const transcriptTimeoutFailures = transcriptFailures.filter((event) =>
     event.metadata.transcript_timed_out === true
     || String(event.message).includes("ytdlp_transcript_timeout_after_")
@@ -268,7 +305,9 @@ function renderReport({ date, start, end, runs, events, suggestionStatusCounts, 
     "",
     "## Candidates And Suggestions",
     `Candidates scored: ${scored}`,
+    `Scored by transcript fetcher: ${formatCountMap(scoredByTranscriptFetcher)}`,
     `Transcript failed: ${transcriptFailures.length}`,
+    `Transcript failures by fetcher: ${formatCountMap(transcriptFailuresByFetcher)}`,
     `Transcript timeouts: ${transcriptTimeoutFailures}`,
     `Transcript rate-limit-equivalent failures: ${transcriptRateLimitEquivalentFailures}`,
     `Transcript circuits opened: ${transcriptCircuitOpens}`,

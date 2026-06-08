@@ -10,6 +10,51 @@ type SourceAddPayload = {
   discovery_evidence_json?: Record<string, unknown> | null;
 };
 
+function isInternalApplyRequest(request: Request) {
+  const expected = Deno.env.get("INTERNAL_FUNCTION_TOKEN");
+  if (!expected) {
+    console.error("apply_suggestion_internal_token_missing");
+    return false;
+  }
+  return request.headers.get("x-internal-token") === expected;
+}
+
+function youtubeVideoIdFromUrl(value: string | null | undefined) {
+  if (!value) return null;
+  try {
+    const parsed = new URL(value);
+    const hostname = parsed.hostname.replace(/^www\./, "").toLowerCase();
+    if (hostname === "youtu.be") return parsed.pathname.split("/").filter(Boolean)[0] ?? null;
+    if (hostname === "youtube.com" || hostname.endsWith(".youtube.com")) {
+      if (parsed.pathname.startsWith("/shorts/")) return parsed.pathname.split("/")[2] ?? null;
+      if (parsed.pathname.startsWith("/embed/")) return parsed.pathname.split("/")[2] ?? null;
+      return parsed.searchParams.get("v");
+    }
+    if (hostname === "i.ytimg.com" || hostname.endsWith(".ytimg.com") || hostname === "img.youtube.com") {
+      const parts = parsed.pathname.split("/").filter(Boolean);
+      const videoIndex = parts.findIndex((part) => part === "vi");
+      return videoIndex >= 0 ? parts[videoIndex + 1] ?? null : null;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+function storageKeyFromPublicUrl(value: string | null | undefined) {
+  if (!value) return null;
+  const marker = "/storage/v1/object/public/";
+  try {
+    const parsed = new URL(value);
+    const markerIndex = parsed.pathname.indexOf(marker);
+    return markerIndex === -1
+      ? null
+      : decodeURIComponent(parsed.pathname.slice(markerIndex + marker.length));
+  } catch {
+    return value.startsWith("link-thumbnails/") ? value : null;
+  }
+}
+
 async function cacheThumbnailIfNeeded(suggestionId: string) {
   const supabase = getServiceClient();
   const { data: suggestion, error } = await supabase
@@ -24,7 +69,41 @@ async function cacheThumbnailIfNeeded(suggestionId: string) {
     thumbnail_url?: string | null;
     canonical_url?: string;
   };
-  if (!payload.thumbnail_url || payload.thumbnail_url.includes("/storage/v1/object/public/")) return;
+  if (!payload.thumbnail_url) return;
+  const existingStorageKey = storageKeyFromPublicUrl(payload.thumbnail_url);
+  if (existingStorageKey) {
+    if (existingStorageKey !== payload.thumbnail_url) {
+      await supabase
+        .from("suggestions")
+        .update({ payload_json: { ...payload, thumbnail_url: existingStorageKey } })
+        .eq("id", suggestionId);
+      if (suggestion.link_id) {
+        await supabase
+          .from("links")
+          .update({ thumbnail_url: existingStorageKey })
+          .eq("id", suggestion.link_id);
+      }
+    }
+    return;
+  }
+  if (youtubeVideoIdFromUrl(payload.canonical_url) || youtubeVideoIdFromUrl(payload.thumbnail_url)) {
+    const thumbnailUrl = `https://i.ytimg.com/vi/${youtubeVideoIdFromUrl(payload.canonical_url) ?? youtubeVideoIdFromUrl(payload.thumbnail_url)}/hqdefault.jpg`;
+    await supabase
+      .from("suggestions")
+      .update({ payload_json: { ...payload, thumbnail_url: thumbnailUrl } })
+      .eq("id", suggestionId);
+    if (suggestion.link_id) {
+      await supabase
+        .from("links")
+        .update({
+          thumbnail_url: thumbnailUrl,
+          preview_status: "fetched",
+          fetched_at: new Date().toISOString(),
+        })
+        .eq("id", suggestion.link_id);
+    }
+    return;
+  }
 
   try {
     const imageResponse = await fetch(payload.thumbnail_url);
@@ -33,6 +112,7 @@ async function cacheThumbnailIfNeeded(suggestionId: string) {
     const extension = contentType.includes("png") ? "png" : "jpg";
     const bytes = await imageResponse.arrayBuffer();
     const objectPath = `${suggestionId}.${extension}`;
+    const storedThumbnailKey = `link-thumbnails/${objectPath}`;
 
     const { error: uploadError } = await supabase.storage
       .from("link-thumbnails")
@@ -42,13 +122,12 @@ async function cacheThumbnailIfNeeded(suggestionId: string) {
       });
     if (uploadError) return;
 
-    const { data } = supabase.storage.from("link-thumbnails").getPublicUrl(objectPath);
     await supabase
       .from("suggestions")
       .update({
         payload_json: {
           ...payload,
-          thumbnail_url: data.publicUrl,
+          thumbnail_url: storedThumbnailKey,
         },
       })
       .eq("id", suggestionId);
@@ -56,7 +135,7 @@ async function cacheThumbnailIfNeeded(suggestionId: string) {
       await supabase
         .from("links")
         .update({
-          thumbnail_url: data.publicUrl,
+          thumbnail_url: storedThumbnailKey,
           preview_status: "fetched",
           fetched_at: new Date().toISOString(),
         })
@@ -141,6 +220,7 @@ Deno.serve(async (request) => {
   if (request.method === "OPTIONS") return optionsResponse(request);
   if (!isAllowedCorsOrigin(request)) return corsForbiddenResponse(request);
   if (request.method !== "POST") return jsonResponse({ error: "Method not allowed" }, 405, request);
+  if (!isInternalApplyRequest(request)) return jsonResponse({ error: "Unauthorized" }, 401, request);
 
   try {
     const body = await readJson<{ suggestion_id: string; moderator_user_id?: string | null }>(request);

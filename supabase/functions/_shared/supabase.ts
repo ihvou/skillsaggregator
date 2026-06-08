@@ -20,6 +20,7 @@ export async function callFunction<TResponse>(
 ): Promise<TResponse> {
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  const internalFunctionToken = Deno.env.get("INTERNAL_FUNCTION_TOKEN");
   if (!supabaseUrl || !serviceRoleKey) {
     throw new Error("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required");
   }
@@ -27,8 +28,10 @@ export async function callFunction<TResponse>(
   const response = await fetch(`${supabaseUrl}/functions/v1/${name}`, {
     method: "POST",
     headers: {
+      apikey: serviceRoleKey,
       Authorization: `Bearer ${serviceRoleKey}`,
       "Content-Type": "application/json",
+      ...(internalFunctionToken ? { "x-internal-token": internalFunctionToken } : {}),
       ...options.headers,
     },
     body: JSON.stringify(body),
