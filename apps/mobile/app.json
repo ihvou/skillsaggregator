@@ -1,19 +1,50 @@
 {
   "expo": {
     "name": "Skills Aggregator",
-    "slug": "skills-aggregator",
+    "slug": "skillsaggregator",
     "scheme": "skillsaggregator",
     "version": "0.1.0",
     "orientation": "portrait",
+    "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0f3d2e"
+    },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.skillsaggregator.mobile"
+      "bundleIdentifier": "com.skillsaggregator.mobile",
+      "icon": "./assets/icon.png"
     },
     "android": {
-      "package": "com.skillsaggregator.mobile"
+      "package": "com.skillsaggregator.mobile",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0f3d2e"
+      }
     },
-    "plugins": ["expo-router"]
+    "plugins": [
+      "expo-router",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ]
+    ],
+    "web": {
+      "favicon": "./assets/icon.png"
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "b28d7bb9-b600-4b38-b0ee-5caedf659448"
+      }
+    },
+    "owner": "ihvou"
   }
 }

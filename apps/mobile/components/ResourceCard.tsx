@@ -6,13 +6,20 @@ import {
   Bookmark,
   BookmarkCheck,
   CircleCheck,
+  Globe,
+  PlaySquare,
   ThumbsDown,
   ThumbsUp,
   UserRound,
 } from "lucide-react-native";
 import { Swipeable } from "react-native-gesture-handler";
 import type { SkillResource } from "@skillsaggregator/shared";
-import { getFlag, setFlag } from "@/lib/localState";
+import {
+  getFlag,
+  removeSavedResourceSnapshot,
+  setFlag,
+  setSavedResourceSnapshot,
+} from "@/lib/localState";
 import { colors, radius, shadows, spacing, typography } from "@/lib/theme";
 
 interface ResourceCardProps {
@@ -56,6 +63,15 @@ function formatCount(value: number): string {
   return String(value);
 }
 
+// Small platform icon shown top-left, before the date, in place of the domain text.
+function SourceIcon({ domain }: { domain?: string | null }) {
+  const host = (domain ?? "").toLowerCase();
+  if (host.includes("youtube") || host.includes("youtu.be")) {
+    return <PlaySquare size={15} color="#FF0000" />;
+  }
+  return <Globe size={12} color={colors.faint} />;
+}
+
 /**
  * Skill-screen resource row.
  *  - 16/9 thumbnail on the left at row-height (so its bottom aligns with
@@ -75,6 +91,8 @@ export function ResourceCard({ resource }: ResourceCardProps) {
     const next = !isSaved;
     setIsSaved(next);
     setFlag(`saved:${resource.link.id}`, next);
+    if (next) setSavedResourceSnapshot(resource);
+    else removeSavedResourceSnapshot(resource.link.id);
     triggerSelectionHaptic();
   }
 
@@ -177,7 +195,10 @@ export function ResourceCard({ resource }: ResourceCardProps) {
         </View>
         <View style={styles.body}>
           <View style={styles.topRow}>
-            {dateLabel ? <Text style={styles.date}>{dateLabel}</Text> : <View />}
+            <View style={styles.dateGroup}>
+              <SourceIcon domain={resource.link.domain} />
+              {dateLabel ? <Text style={styles.date}>{dateLabel}</Text> : null}
+            </View>
             {resource.skill_level ? (
               <View style={styles.levelPill}>
                 <Text style={styles.levelText}>{capitalize(resource.skill_level)}</Text>
@@ -189,9 +210,6 @@ export function ResourceCard({ resource }: ResourceCardProps) {
           </Text>
           <View style={styles.bottomRow}>
             <View style={styles.metaLine}>
-              <Text style={styles.domain} numberOfLines={1}>
-                {resource.link.domain}
-              </Text>
               {contributor ? (
                 <View style={styles.contributorPill}>
                   <UserRound size={11} color={colors.muted} />
@@ -329,6 +347,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     minHeight: 22,
   },
+  dateGroup: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+  },
   date: {
     ...typography.date,
     fontSize: 12,
@@ -356,12 +379,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: spacing.xs,
     minHeight: 22,
-  },
-  domain: {
-    ...typography.meta,
-    fontSize: 12,
-    color: colors.faint,
-    flex: 1,
   },
   metaLine: {
     flex: 1,

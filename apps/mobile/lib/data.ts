@@ -9,6 +9,7 @@ import {
   type SkillSummary,
 } from "@skillsaggregator/shared";
 import { getSupabase } from "./supabase";
+import { normalizeThumbnailUrl } from "./thumbnails";
 
 export type SkillSection = {
   skill: SkillSummary;
@@ -29,12 +30,23 @@ const RESOURCE_LINK_SELECT =
   "id, url, canonical_url, domain, title, description, thumbnail_url, content_type, created_at, contributor_profile:contributor_profiles(id, slug, display_name, avatar_url, accepted_count)";
 const RELATION_VOTE_SELECT = "upvote_count, downvote_count, vote_score";
 
-function shapeLinkWithContributor<TLink extends { contributor_profile?: unknown }>(link: TLink) {
+function shapeLinkWithContributor<
+  TLink extends {
+    contributor_profile?: unknown;
+    thumbnail_url?: string | null;
+    canonical_url?: string | null;
+    url?: string | null;
+  },
+>(link: TLink) {
   const contributor = Array.isArray(link.contributor_profile)
     ? link.contributor_profile[0]
     : link.contributor_profile;
   return {
     ...link,
+    thumbnail_url: normalizeThumbnailUrl(
+      link.thumbnail_url,
+      link.canonical_url ?? link.url ?? null,
+    ),
     contributor_profile: contributor ?? null,
   };
 }
@@ -78,10 +90,15 @@ function normalizeSort(sort: ResourceSort | undefined): ResourceSort {
   return sort === "newest" ? "newest" : "popular";
 }
 
+function toSortTime(value: string | null | undefined) {
+  const parsed = Date.parse(value ?? "");
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
+
 function resourceSorter(sort: ResourceSort) {
   return (a: SkillResource, b: SkillResource) => {
     if (sort === "popular") return (b.vote_score ?? b.upvote_count) - (a.vote_score ?? a.upvote_count);
-    return Date.parse(b.created_at ?? "") - Date.parse(a.created_at ?? "");
+    return toSortTime(b.created_at) - toSortTime(a.created_at);
   };
 }
 
@@ -169,10 +186,11 @@ export async function getSkillsForCategory(categorySlug: string): Promise<{
   for (const relation of relations ?? []) {
     counts.set(relation.skill_id, (counts.get(relation.skill_id) ?? 0) + 1);
     const link = Array.isArray(relation.links) ? relation.links[0] : relation.links;
-    if (!link?.thumbnail_url) continue;
+    const thumbnail = normalizeThumbnailUrl(link?.thumbnail_url, null);
+    if (!thumbnail) continue;
     const current = previews.get(relation.skill_id) ?? [];
     if (current.length >= 3) continue;
-    current.push(link.thumbnail_url);
+    current.push(thumbnail);
     previews.set(relation.skill_id, current);
   }
 
@@ -279,7 +297,10 @@ export async function getDiscoverSections(perCategorySkills = 12): Promise<Disco
         category,
         skills: skills.slice(0, perCategorySkills).map((skill) => {
           const resources = fallbackResources[skill.slug] ?? [];
-          const latest = resources.find((resource) => resource.link.thumbnail_url)?.link.thumbnail_url ?? null;
+          const latestResource = resources.find((resource) => resource.link.thumbnail_url);
+          const latest = latestResource
+            ? normalizeThumbnailUrl(latestResource.link.thumbnail_url, latestResource.link.url ?? null)
+            : null;
           return { skill, latest_thumbnail: latest };
         }),
       };
@@ -307,7 +328,7 @@ export async function getDiscoverSections(perCategorySkills = 12): Promise<Disco
       for (const relation of relations ?? []) {
         if (latestThumbBySkill.has(relation.skill_id)) continue;
         const link = Array.isArray(relation.links) ? relation.links[0] : relation.links;
-        latestThumbBySkill.set(relation.skill_id, link?.thumbnail_url ?? null);
+        latestThumbBySkill.set(relation.skill_id, normalizeThumbnailUrl(link?.thumbnail_url, null));
       }
 
       return {

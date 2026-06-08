@@ -1,5 +1,6 @@
 import type { PropsWithChildren } from "react";
-import { SafeAreaView, StyleSheet, View } from "react-native";
+import { StyleSheet, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { colors, spacing } from "@/lib/theme";
 
 interface ScreenProps extends PropsWithChildren {
@@ -13,15 +14,8 @@ interface ScreenProps extends PropsWithChildren {
 }
 
 export function Screen({ children, edges, padded = true }: ScreenProps) {
-  const allEdges = edges ?? ["top", "right", "bottom", "left"];
   return (
-    <SafeAreaView
-      style={[
-        styles.safe,
-        !allEdges.includes("top") && { paddingTop: 0 },
-        !allEdges.includes("bottom") && { paddingBottom: 0 },
-      ]}
-    >
+    <SafeAreaView style={styles.safe} edges={edges ?? ["top", "right", "bottom", "left"]}>
       <View style={[styles.content, !padded && styles.flush]}>{children}</View>
     </SafeAreaView>
   );

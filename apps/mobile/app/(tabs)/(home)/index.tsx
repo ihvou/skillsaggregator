@@ -1,6 +1,6 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { RefreshControl, ScrollView, StyleSheet, View } from "react-native";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 import { PageHeader } from "@/components/PageHeader";
 import { Screen } from "@/components/Screen";
@@ -9,18 +9,42 @@ import { SectionHeader } from "@/components/SectionHeader";
 import { SkeletonList } from "@/components/SkeletonList";
 import { SkillTile } from "@/components/SkillTile";
 import { getDiscoverSections } from "@/lib/data";
+import {
+  getOnboardingInterests,
+  hasCompletedOnboarding,
+} from "@/lib/localState";
+import { useOnboardingGate } from "@/lib/useOnboardingGate";
 import { colors, spacing } from "@/lib/theme";
 
 export default function DiscoverTab() {
   const router = useRouter();
   const [search, setSearch] = useState("");
+  const [interestSlugs, setInterestSlugs] = useState<string[]>([]);
   const query = useQuery({
     queryKey: ["discover-sections"],
     queryFn: () => getDiscoverSections(),
     staleTime: 300000,
   });
 
-  const sections = query.data ?? [];
+  useOnboardingGate();
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!hasCompletedOnboarding()) return;
+      setInterestSlugs(getOnboardingInterests());
+    }, []),
+  );
+
+  const sections = useMemo(() => {
+    const items = query.data ?? [];
+    if (interestSlugs.length === 0) return items;
+    const rank = new Map(interestSlugs.map((slug, index) => [slug, index]));
+    return [...items].sort((a, b) => {
+      const left = rank.get(a.category.slug) ?? Number.MAX_SAFE_INTEGER;
+      const right = rank.get(b.category.slug) ?? Number.MAX_SAFE_INTEGER;
+      return left - right;
+    });
+  }, [interestSlugs, query.data]);
 
   const visibleSections = useMemo(() => {
     const needle = search.trim().toLowerCase();

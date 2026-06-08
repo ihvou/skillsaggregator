@@ -115,6 +115,16 @@ export default function SuggestScreen() {
         <SkeletonList count={2} />
       ) : (
         <ScrollView contentContainerStyle={styles.form} showsVerticalScrollIndicator={false}>
+          {!session ? (
+            <Pressable
+              onPress={() => router.push("/account")}
+              style={({ pressed }) => [styles.signInCallout, pressed && styles.pressed]}
+              accessibilityRole="button"
+            >
+              <Text style={styles.signInText}>Sign in to get credit for accepted suggestions</Text>
+            </Pressable>
+          ) : null}
+
           <Text style={styles.label}>URL</Text>
           <TextInput
             value={url}
@@ -212,6 +222,21 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "800",
     color: colors.ink,
+  },
+  signInCallout: {
+    minHeight: 42,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.sm,
+    backgroundColor: colors.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.divider,
+  },
+  signInText: {
+    color: colors.ink,
+    fontSize: 13,
+    fontWeight: "800",
   },
   input: {
     minHeight: 46,

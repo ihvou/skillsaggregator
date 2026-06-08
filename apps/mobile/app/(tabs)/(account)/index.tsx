@@ -1,14 +1,19 @@
 import { useState } from "react";
 import { Alert, Linking, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { useRouter } from "expo-router";
 import { Mail } from "lucide-react-native";
 import { PageHeader } from "@/components/PageHeader";
 import { Screen } from "@/components/Screen";
 import { useAuth } from "@/lib/auth";
+import { setOnboardingCompleted } from "@/lib/localState";
+import { useOnboardingGate } from "@/lib/useOnboardingGate";
 import { colors, radius, spacing, typography } from "@/lib/theme";
 
 const WEB_BASE_URL = process.env.EXPO_PUBLIC_WEB_BASE_URL ?? "http://localhost:3000";
 
 export default function AccountScreen() {
+  const router = useRouter();
+  useOnboardingGate();
   const { profile, user, signInWithMagicLink, signInWithGoogle, signOut, isLoading } = useAuth();
   const [email, setEmail] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -37,6 +42,11 @@ export default function AccountScreen() {
   async function openPublicProfile() {
     if (!profile) return;
     await Linking.openURL(`${WEB_BASE_URL.replace(/\/+$/, "")}/contributors/${profile.slug}`);
+  }
+
+  function replayIntro() {
+    setOnboardingCompleted(false);
+    router.push("/onboarding");
   }
 
   return (
@@ -103,6 +113,17 @@ export default function AccountScreen() {
           </Pressable>
         </View>
       )}
+
+      <View style={[styles.card, styles.secondaryCard]}>
+        <Text style={styles.label}>Intro</Text>
+        <Pressable
+          onPress={replayIntro}
+          style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed]}
+          accessibilityRole="button"
+        >
+          <Text style={styles.secondaryButtonText}>Replay intro</Text>
+        </Pressable>
+      </View>
     </Screen>
   );
 }
@@ -118,6 +139,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 8,
     elevation: 2,
+  },
+  secondaryCard: {
+    marginTop: spacing.md,
   },
   label: {
     fontSize: 13,
