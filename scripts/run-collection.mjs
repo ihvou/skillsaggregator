@@ -58,6 +58,7 @@
  *   COLLECT_TIKTOK_SEARCH_LIMIT   default 12
  *   COLLECT_TIKTOK_QUERY_GAP_MS   default 60000
  *   COLLECT_TIKTOK_PROBE_GAP_MS   default 1500
+ *   COLLECT_PARALLEL_SOURCES      default 1 (set to 0 to run YouTube then TikTok sequentially)
  */
 import { execFile, spawn } from "node:child_process";
 import { mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
@@ -220,6 +221,7 @@ const config = {
   tiktokSearchLimit: Number(process.env.COLLECT_TIKTOK_SEARCH_LIMIT ?? 12),
   tiktokQueryGapMs: Number(process.env.COLLECT_TIKTOK_QUERY_GAP_MS ?? 60_000),
   tiktokProbeGapMs: Number(process.env.COLLECT_TIKTOK_PROBE_GAP_MS ?? 1_500),
+  parallelSources: envFlag("COLLECT_PARALLEL_SOURCES", true),
   submit503CircuitThreshold: Number(process.env.COLLECT_SUBMIT_503_CIRCUIT_THRESHOLD ?? 5),
   preflightTimeoutMs: Number(process.env.COLLECT_PREFLIGHT_TIMEOUT_MS ?? 15_000),
   dbQueryTimeoutMs: Number(process.env.COLLECT_DB_TIMEOUT_MS ?? 30_000),
@@ -3037,25 +3039,59 @@ async function main() {
     const summary = [];
     let consecutiveRateLimitCircuits = 0;
     let stoppedByRateLimitCircuit = false;
-    for (const skill of skills) {
-      try {
-        const result = await processSkill(skill, summary);
-        consecutiveRateLimitCircuits = result.circuitOpen ? consecutiveRateLimitCircuits + 1 : 0;
-        if (consecutiveRateLimitCircuits >= config.rateLimitConsecutiveSkillStop) {
-          stoppedByRateLimitCircuit = true;
-          log("error", "collection_rate_limit_circuit_stop", "Stopping collection after consecutive skill rate-limit circuits", {
-            consecutive_rate_limit_circuits: consecutiveRateLimitCircuits,
-            threshold: config.rateLimitConsecutiveSkillStop,
-          });
-          break;
+    // YouTube and TikTok talk to different external services, different cookies,
+    // different DOM, and different DB writers — so they're naturally parallelizable.
+    // CAVEAT: both share one CDP-attached Chrome and both call page.bringToFront().
+    // The YouTube transcript fetcher comment in scripts/_lib/transcript-fetcher-browser.mjs
+    // explicitly says focus is required for get_transcript to return 200 — if
+    // TikTok's bringToFront races and steals focus mid-transcript, a YouTube fetch
+    // can 4xx. If you see a spike in transcript failures after enabling parallel
+    // sources, set COLLECT_PARALLEL_SOURCES=0 to fall back to sequential (YouTube
+    // → TikTok). Promise.allSettled keeps a crash in one path from killing the other.
+    const runYouTubeCollection = async () => {
+      for (const skill of skills) {
+        try {
+          const result = await processSkill(skill, summary);
+          consecutiveRateLimitCircuits = result.circuitOpen ? consecutiveRateLimitCircuits + 1 : 0;
+          if (consecutiveRateLimitCircuits >= config.rateLimitConsecutiveSkillStop) {
+            stoppedByRateLimitCircuit = true;
+            log("error", "collection_rate_limit_circuit_stop", "Stopping collection after consecutive skill rate-limit circuits", {
+              consecutive_rate_limit_circuits: consecutiveRateLimitCircuits,
+              threshold: config.rateLimitConsecutiveSkillStop,
+            });
+            break;
+          }
+        } catch (error) {
+          consecutiveRateLimitCircuits = 0;
+          log("error", "skill_run_failed", errorMessage(error), { skill: skill.slug });
+          summary.push({ skill: skill.slug, status: "failed", transcript_fetcher: config.transcriptFetcher, error: errorMessage(error) });
         }
-      } catch (error) {
-        consecutiveRateLimitCircuits = 0;
-        log("error", "skill_run_failed", errorMessage(error), { skill: skill.slug });
-        summary.push({ skill: skill.slug, status: "failed", transcript_fetcher: config.transcriptFetcher, error: errorMessage(error) });
       }
+    };
+
+    if (config.parallelSources) {
+      log("info", "source_collection_mode", "Running YouTube and TikTok collections in parallel", {
+        parallel: true,
+      });
+      const results = await Promise.allSettled([
+        runYouTubeCollection(),
+        processTikTokCollection(skills, summary),
+      ]);
+      const labels = ["youtube", "tiktok"];
+      results.forEach((r, i) => {
+        if (r.status === "rejected") {
+          log("error", "source_collection_failed", errorMessage(r.reason), {
+            source: labels[i],
+          });
+        }
+      });
+    } else {
+      log("info", "source_collection_mode", "Running YouTube then TikTok collection sequentially (COLLECT_PARALLEL_SOURCES=0)", {
+        parallel: false,
+      });
+      await runYouTubeCollection();
+      await processTikTokCollection(skills, summary);
     }
-    await processTikTokCollection(skills, summary);
 
     const outputPath = join(config.outputDir, `${new Date().toISOString().replace(/[:.]/g, "-")}.json`);
     const event_persistence = eventPersistenceSummary();
