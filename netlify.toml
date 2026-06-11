@@ -4,12 +4,15 @@
 # installs from there, so `@skillsaggregator/shared` (consumed as TS source via
 # next.config `transpilePackages`) resolves without a separate build step.
 #
-# The Next.js runtime plugin handles SSR, ISR, Server Actions, and the .next
-# publish directory automatically — do not set `publish` manually.
+# The Next.js runtime plugin handles SSR, ISR, and Server Actions. `publish` is
+# set explicitly (relative to `base`, so it resolves to apps/web/.next) to
+# override a stale UI-set publish dir that doubled the path
+# (apps/web/apps/web/.next) and failed the first deploy.
 
 [build]
   base = "apps/web"
   command = "npm run build"
+  publish = ".next"
 
 [build.environment]
   NODE_VERSION = "20"

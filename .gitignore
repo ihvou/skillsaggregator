@@ -19,3 +19,4 @@ supabase/.temp
 # but recreates itself on every install, so we keep it untracked.
 /tsconfig.json
 .env.hosted
+.vercel
