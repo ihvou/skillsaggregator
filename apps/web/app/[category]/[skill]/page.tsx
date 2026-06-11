@@ -18,7 +18,17 @@ import {
   parseSort,
 } from "@/lib/listing-params";
 
-export const revalidate = 3600;
+// Daily content cadence — revalidate every 24h (see tasks.md MI23).
+export const revalidate = 86400;
+
+// Sorted/filtered variants (?level=, ?sort=) are duplicate content of the
+// canonical skill page — noindex them.
+function isFilteredSkillView(searchParams: PageSearchParams) {
+  return ["level", "sort", "page"].some((key) => {
+    const value = searchParams[key];
+    return Array.isArray(value) ? value.length > 0 : Boolean(value);
+  });
+}
 
 export async function generateStaticParams() {
   const catalogs = await getAllCatalogs({ publicOnly: true });
@@ -29,8 +39,10 @@ export async function generateStaticParams() {
 
 export async function generateMetadata({
   params,
+  searchParams,
 }: {
   params: Promise<{ category: string; skill: string }>;
+  searchParams?: Promise<PageSearchParams>;
 }): Promise<Metadata> {
   const { category: categorySlug, skill: skillSlug } = await params;
   const data = await getSkillPage(categorySlug, skillSlug);
@@ -39,11 +51,16 @@ export async function generateMetadata({
   const image = data.resources.find((resource) => resource.link.thumbnail_url)?.link.thumbnail_url;
   const canonical = makeCanonical(getBaseUrl(), data.category.slug, data.skill.slug);
   const title = `${data.skill.name} — ${data.category.name} | Subskills`;
+  const filtered = isFilteredSkillView((await searchParams) ?? {});
 
   return {
     title,
     description,
-    robots: isPublishedSkill(data.skill) ? undefined : { index: false, follow: false },
+    robots: !isPublishedSkill(data.skill)
+      ? { index: false, follow: false }
+      : filtered
+        ? { index: false, follow: true }
+        : undefined,
     alternates: { canonical },
     openGraph: {
       title,

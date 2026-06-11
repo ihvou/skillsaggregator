@@ -5,7 +5,9 @@ import { SkillTile } from "@/components/SkillTile";
 import { SuggestLinkButton } from "@/components/SuggestLinkButton";
 import { getDiscoverSections } from "@/lib/data";
 
-export const revalidate = 3600;
+// Daily content cadence — revalidate every 24h; on-demand revalidation
+// refreshes sooner when the nightly adds content (see tasks.md MI23).
+export const revalidate = 86400;
 
 export default async function HomePage() {
   const sections = await getDiscoverSections();

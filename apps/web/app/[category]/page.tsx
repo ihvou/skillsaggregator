@@ -20,25 +20,42 @@ import {
   parseSort,
 } from "@/lib/listing-params";
 
-export const revalidate = 3600;
+// Content publishes once daily (nightly collection), so revalidate every 24h
+// instead of hourly — the base pages serve from edge cache the rest of the
+// time (near-zero compute). On-demand revalidation refreshes sooner when the
+// nightly actually adds content (see tasks.md MI23).
+export const revalidate = 86400;
 
 export async function generateStaticParams() {
   const catalogs = await getAllCatalogs({ publicOnly: true });
   return catalogs.map(({ category }) => ({ category: category.slug }));
 }
 
+function isFilteredView(searchParams: PageSearchParams, keys: string[]) {
+  return keys.some((key) => {
+    const value = searchParams[key];
+    return Array.isArray(value) ? value.length > 0 : Boolean(value);
+  });
+}
+
 export async function generateMetadata({
   params,
+  searchParams,
 }: {
   params: Promise<{ category: string }>;
+  searchParams?: Promise<PageSearchParams>;
 }): Promise<Metadata> {
   const { category: slug } = await params;
   const { category } = await getCategoryWithSkillResources(slug);
   if (!category) return {};
+  // Filtered/sorted/paginated variants are duplicate content of the canonical
+  // category page — noindex them so crawlers don't index the permutation space.
+  const filtered = isFilteredView((await searchParams) ?? {}, ["skills", "level", "sort", "page"]);
   return {
     title: `${category.name} resources | Subskills`,
     description: category.description ?? `Curated resources for ${category.name}.`,
     alternates: { canonical: `${getBaseUrl()}/${category.slug}` },
+    ...(filtered ? { robots: { index: false, follow: true } } : {}),
   };
 }
 
@@ -140,6 +157,10 @@ export default async function CategoryPage({
               <Link
                 key={skill.id}
                 href={skillFilterHref(category.slug, resolvedSearchParams, skill.slug)}
+                // Don't let crawlers walk the filter-permutation graph (see
+                // robots.ts). Humans clicking chips is negligible compute; it
+                // was crawler enumeration that paused the deployment.
+                rel="nofollow"
                 aria-pressed={selected}
                 className={`focus-ring shrink-0 whitespace-nowrap rounded-full px-3 py-2 text-sm font-bold transition ${
                   selected
