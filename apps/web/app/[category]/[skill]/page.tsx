@@ -6,29 +6,12 @@ import {
   type SkillResource,
 } from "@skillsaggregator/shared";
 import { JsonLd } from "@/components/JsonLd";
-import { PageHeader } from "@/components/PageHeader";
-import { ResourceCard } from "@/components/ResourceCard";
-import { SortFilterMenu } from "@/components/SortFilterMenu";
-import { SuggestLinkButton } from "@/components/SuggestLinkButton";
+import { SkillResourceBrowser } from "@/components/SkillResourceBrowser";
 import { getAllCatalogs, getSkillPage, isPublishedSkill } from "@/lib/data";
 import { getBaseUrl } from "@/lib/env";
-import {
-  type PageSearchParams,
-  parseLevel,
-  parseSort,
-} from "@/lib/listing-params";
 
 // Daily content cadence — revalidate every 24h (see tasks.md MI23).
 export const revalidate = 86400;
-
-// Sorted/filtered variants (?level=, ?sort=) are duplicate content of the
-// canonical skill page — noindex them.
-function isFilteredSkillView(searchParams: PageSearchParams) {
-  return ["level", "sort", "page"].some((key) => {
-    const value = searchParams[key];
-    return Array.isArray(value) ? value.length > 0 : Boolean(value);
-  });
-}
 
 export async function generateStaticParams() {
   const catalogs = await getAllCatalogs({ publicOnly: true });
@@ -39,10 +22,8 @@ export async function generateStaticParams() {
 
 export async function generateMetadata({
   params,
-  searchParams,
 }: {
   params: Promise<{ category: string; skill: string }>;
-  searchParams?: Promise<PageSearchParams>;
 }): Promise<Metadata> {
   const { category: categorySlug, skill: skillSlug } = await params;
   const data = await getSkillPage(categorySlug, skillSlug);
@@ -51,16 +32,11 @@ export async function generateMetadata({
   const image = data.resources.find((resource) => resource.link.thumbnail_url)?.link.thumbnail_url;
   const canonical = makeCanonical(getBaseUrl(), data.category.slug, data.skill.slug);
   const title = `${data.skill.name} — ${data.category.name} | Subskills`;
-  const filtered = isFilteredSkillView((await searchParams) ?? {});
 
   return {
     title,
     description,
-    robots: !isPublishedSkill(data.skill)
-      ? { index: false, follow: false }
-      : filtered
-        ? { index: false, follow: true }
-        : undefined,
+    robots: isPublishedSkill(data.skill) ? undefined : { index: false, follow: false },
     alternates: { canonical },
     openGraph: {
       title,
@@ -102,47 +78,20 @@ function learningResourceJsonLd(resources: SkillResource[], pageUrl: string) {
   };
 }
 
-const LEVEL_LABELS = {
-  all: "All levels",
-  beginner: "Beginner",
-  intermediate: "Intermediate",
-  advanced: "Advanced",
-} as const;
-const SORT_LABELS = { popular: "Popular", newest: "Newest" } as const;
-
 export default async function SkillPage({
   params,
-  searchParams,
 }: {
   params: Promise<{ category: string; skill: string }>;
-  searchParams?: Promise<PageSearchParams>;
 }) {
   const { category: categorySlug, skill: skillSlug } = await params;
-  const resolvedSearchParams = (await searchParams) ?? {};
-  const level = parseLevel(resolvedSearchParams);
-  const sort = parseSort(resolvedSearchParams);
   const { category, skill, resources } = await getSkillPage(categorySlug, skillSlug);
   if (!category || !skill) notFound();
 
-  // Re-sort + filter client-side because getSkillPage doesn't accept them yet
-  // (avoids touching the broader data layer for this redesign).
-  const sortedResources = [...resources].sort((a, b) =>
-    sort === "popular"
-      ? (b.vote_score ?? b.upvote_count) - (a.vote_score ?? a.upvote_count)
-      : Date.parse(b.created_at ?? "") - Date.parse(a.created_at ?? ""),
-  );
-  const filteredResources = level
-    ? sortedResources.filter((resource) => resource.skill_level === level)
-    : sortedResources;
-
   const pageUrl = makeCanonical(getBaseUrl(), category.slug, skill.slug);
-  const pathname = `/${category.slug}/${skill.slug}`;
-  const subtitleParts: string[] = [`${category.name}`, SORT_LABELS[sort]];
-  if (level) subtitleParts.push(LEVEL_LABELS[level]);
 
   return (
-    <div className="pb-20">
-      <JsonLd data={learningResourceJsonLd(filteredResources, pageUrl)} />
+    <>
+      <JsonLd data={learningResourceJsonLd(resources, pageUrl)} />
       <JsonLd
         data={{
           "@context": "https://schema.org",
@@ -159,41 +108,7 @@ export default async function SkillPage({
           ],
         }}
       />
-      <PageHeader
-        title={skill.name}
-        subtitle={subtitleParts.join(" · ")}
-        backHref={`/${category.slug}`}
-        rightAccessory={
-          <>
-            <SuggestLinkButton categorySlug={category.slug} skillSlug={skill.slug} compact />
-            <SortFilterMenu pathname={pathname} currentLevel={level} currentSort={sort} />
-          </>
-        }
-      />
-
-      {skill.description ? (
-        <section className="mx-auto mt-6 max-w-5xl px-4">
-          <p className="max-w-3xl text-base leading-7 text-muted md:text-lg">
-            {skill.description}
-          </p>
-        </section>
-      ) : null}
-
-      <section className="mx-auto mt-10 max-w-5xl px-4">
-        {filteredResources.length === 0 ? (
-          <p className="text-sm text-muted">
-            No matches for this filter. Open the menu (…) to change sort or level.
-          </p>
-        ) : (
-          <div className="divide-y divide-divider">
-            {filteredResources.map((resource) => (
-              <div key={resource.id} className="py-5">
-                <ResourceCard resource={resource} />
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
-    </div>
+      <SkillResourceBrowser category={category} skill={skill} resources={resources} />
+    </>
   );
 }

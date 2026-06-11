@@ -1,15 +1,15 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
 import { Check, MoreHorizontal } from "lucide-react";
 import type { SkillLevel } from "@skillsaggregator/shared";
 import type { ResourceSort } from "@/lib/data";
 
 interface SortFilterMenuProps {
-  pathname: string;
   currentLevel: SkillLevel | null;
   currentSort: ResourceSort;
+  onLevelChange: (level: SkillLevel | null) => void;
+  onSortChange: (sort: ResourceSort) => void;
 }
 
 const SORTS: Array<{ value: ResourceSort; label: string }> = [
@@ -25,14 +25,18 @@ const LEVELS: Array<{ value: "all" | SkillLevel; label: string }> = [
 ];
 
 /**
- * Web counterpart to the mobile SortFilterSheet — a single dropdown anchored
- * to the `…` button that surfaces both Sort and Filter options at once.
- * Selecting an option commits via URL params (?sort=, ?level=) and keeps
- * SSR/ISR happy.
+   * Web counterpart to the mobile SortFilterSheet: a single dropdown anchored
+   * to the "more" button that surfaces both Sort and Filter options at once.
+ * Selecting an option updates client-side state only; the canonical category
+ * and skill pages stay static/ISR and filter clicks do not create server
+ * renders for query-string permutations.
  */
-export function SortFilterMenu({ pathname, currentLevel, currentSort }: SortFilterMenuProps) {
-  const router = useRouter();
-  const searchParams = useSearchParams();
+export function SortFilterMenu({
+  currentLevel,
+  currentSort,
+  onLevelChange,
+  onSortChange,
+}: SortFilterMenuProps) {
   const [open, setOpen] = useState(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -60,23 +64,14 @@ export function SortFilterMenu({ pathname, currentLevel, currentSort }: SortFilt
     };
   }, [open]);
 
-  function applyUpdate(updates: Record<string, string | null>) {
-    const next = new URLSearchParams(searchParams?.toString() ?? "");
-    for (const [key, value] of Object.entries(updates)) {
-      if (value === null) next.delete(key);
-      else next.set(key, value);
-    }
-    next.delete("page");
-    const query = next.toString();
-    router.push(query ? `${pathname}?${query}` : pathname, { scroll: false });
-  }
-
   function selectSort(value: ResourceSort) {
-    applyUpdate({ sort: value });
+    onSortChange(value);
+    setOpen(false);
   }
 
   function selectLevel(value: "all" | SkillLevel) {
-    applyUpdate({ level: value === "all" ? null : value });
+    onLevelChange(value === "all" ? null : value);
+    setOpen(false);
   }
 
   return (
