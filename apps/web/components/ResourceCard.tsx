@@ -99,27 +99,30 @@ export function ResourceCard({ resource }: ResourceCardProps) {
       : "text-muted";
 
   return (
-    <article className="flex items-stretch gap-4">
+    // Stacked (thumbnail above text) below `sm` — a fixed-width thumb in a row
+    // leaves too little room for the title/actions on phone screens.
+    <article className="flex flex-col gap-3 sm:flex-row sm:items-stretch sm:gap-4">
       <a
         href={url}
         target="_blank"
         rel="noreferrer"
         aria-label={resource.link.title ?? "Open resource"}
-        className="focus-ring relative shrink-0 overflow-hidden rounded-[14px] bg-bgGroup shadow-thumb transition hover:opacity-90"
-        style={{ aspectRatio: portrait ? "9 / 16" : "16 / 9", width: portrait ? 108 : 240 }}
+        className={`focus-ring relative shrink-0 overflow-hidden rounded-[14px] bg-bgGroup shadow-thumb transition hover:opacity-90 ${
+          portrait ? "aspect-[9/16] w-[140px] sm:w-[108px]" : "aspect-video w-full sm:w-[240px]"
+        }`}
       >
         {thumbnail ? (
           <Image
             src={thumbnail}
             alt={resource.link.title ?? ""}
             fill
-            sizes={portrait ? "108px" : "240px"}
+            sizes={portrait ? "140px" : "(max-width: 639px) 100vw, 240px"}
             className="object-cover"
           />
         ) : null}
       </a>
 
-      <div className="flex min-w-0 flex-1 flex-col justify-between py-1">
+      <div className="flex min-w-0 flex-1 flex-col justify-between gap-2 sm:gap-0 sm:py-1">
         <div className="flex items-center justify-between gap-2">
           {dateLabel ? <span className="text-sm text-muted">{dateLabel}</span> : <span />}
           {resource.skill_level ? (

@@ -17,14 +17,8 @@ export default async function HomePage() {
         subtitle="Curated free tutorials for every sub-skill across sports and training."
       />
 
-      <section className="mx-auto mt-8 max-w-5xl px-4">
-        <p className="max-w-2xl text-base leading-7 text-muted md:text-lg">
-          Skip the search rabbit hole — go straight to the best free tutorial for the exact
-          skill you&rsquo;re working on.
-        </p>
-        <div className="mt-6">
-          <AppDownloadButtons />
-        </div>
+      <section className="mx-auto mt-6 max-w-5xl px-4">
+        <AppDownloadButtons />
         <div className="mt-4">
           <SuggestLinkButton />
         </div>

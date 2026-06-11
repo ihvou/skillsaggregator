@@ -17,7 +17,7 @@ export async function generateMetadata({
   if (!profile) return {};
   return {
     title: `${profile.display_name} | Contributors`,
-    description: `${profile.display_name} has ${profile.accepted_count ?? 0} accepted Skills Aggregator suggestions.`,
+    description: `${profile.display_name} has ${profile.accepted_count ?? 0} accepted Subskills suggestions.`,
     alternates: { canonical: `${getBaseUrl()}/contributors/${profile.slug}` },
   };
 }

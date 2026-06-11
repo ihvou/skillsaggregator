@@ -36,7 +36,7 @@ export async function generateMetadata({
   const { category } = await getCategoryWithSkillResources(slug);
   if (!category) return {};
   return {
-    title: `${category.name} resources | Skills Aggregator`,
+    title: `${category.name} resources | Subskills`,
     description: category.description ?? `Curated resources for ${category.name}.`,
     alternates: { canonical: `${getBaseUrl()}/${category.slug}` },
   };
@@ -120,11 +120,13 @@ export default async function CategoryPage({
       />
 
       <section className="mx-auto mt-8 max-w-5xl px-4">
-        <div className="flex flex-wrap gap-2">
+        {/* One scrollable row on phones (the full pill cloud pushed resources
+            below the fold); wraps into a cloud from `sm` up. */}
+        <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 no-scrollbar sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:pb-0">
           <Link
             href={`/${category.slug}`}
             aria-pressed={!listingMode}
-            className={`focus-ring rounded-full px-3 py-2 text-sm font-bold transition ${
+            className={`focus-ring shrink-0 whitespace-nowrap rounded-full px-3 py-2 text-sm font-bold transition ${
               !listingMode
                 ? "bg-ink text-surface"
                 : "bg-surface text-muted ring-1 ring-divider hover:text-ink"
@@ -139,7 +141,7 @@ export default async function CategoryPage({
                 key={skill.id}
                 href={skillFilterHref(category.slug, resolvedSearchParams, skill.slug)}
                 aria-pressed={selected}
-                className={`focus-ring rounded-full px-3 py-2 text-sm font-bold transition ${
+                className={`focus-ring shrink-0 whitespace-nowrap rounded-full px-3 py-2 text-sm font-bold transition ${
                   selected
                     ? "bg-ink text-surface"
                     : "bg-surface text-muted ring-1 ring-divider hover:text-ink"

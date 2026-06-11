@@ -1,6 +1,6 @@
 export const metadata = {
   title: "Privacy Policy",
-  description: "Privacy policy for Skills Aggregator.",
+  description: "Privacy policy for Subskills.",
 };
 
 const sections = [
@@ -10,11 +10,11 @@ const sections = [
   },
   {
     title: "Account And Contribution Data",
-    body: "If contribution or moderation features are enabled, Skills Aggregator may use Supabase authentication to identify contributors and store submitted links, skill suggestions, moderation decisions, display names, and contribution history.",
+    body: "If contribution or moderation features are enabled, Subskills may use Supabase authentication to identify contributors and store submitted links, skill suggestions, moderation decisions, display names, and contribution history.",
   },
   {
     title: "Network Data",
-    body: "The app requests public catalog data from Skills Aggregator services, including categories, skills, links, vote counts, thumbnails, and contributor summaries. Opening a resource link leaves the app and is governed by the destination site's privacy policy.",
+    body: "The app requests public catalog data from Subskills services, including categories, skills, links, vote counts, thumbnails, and contributor summaries. Opening a resource link leaves the app and is governed by the destination site's privacy policy.",
   },
   {
     title: "Analytics And Tracking",
@@ -22,7 +22,7 @@ const sections = [
   },
   {
     title: "Children's Privacy",
-    body: "Skills Aggregator is not directed to children under 13. Do not submit personal information if you are under 13.",
+    body: "Subskills is not directed to children under 13. Do not submit personal information if you are under 13.",
   },
   {
     title: "Data Deletion",
@@ -42,7 +42,7 @@ export default function PrivacyPage() {
         Privacy Policy
       </h1>
       <p className="mt-5 text-base leading-7 text-muted md:text-lg">
-        Skills Aggregator helps people discover and save sport learning resources. This policy
+        Subskills helps people discover and save sport learning resources. This policy
         explains what data the app uses and how it is handled.
       </p>
 

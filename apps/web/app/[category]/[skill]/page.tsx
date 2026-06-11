@@ -38,7 +38,7 @@ export async function generateMetadata({
   const description = makeSkillMetaDescription(data.skill);
   const image = data.resources.find((resource) => resource.link.thumbnail_url)?.link.thumbnail_url;
   const canonical = makeCanonical(getBaseUrl(), data.category.slug, data.skill.slug);
-  const title = `${data.skill.name} — ${data.category.name} | Skills Aggregator`;
+  const title = `${data.skill.name} — ${data.category.name} | Subskills`;
 
   return {
     title,
