@@ -39,3 +39,13 @@ enabled = true
 enabled = true
 policy = "oneshot"
 inspector_port = 8083
+
+# apply-suggestion is internal-only: its sole auth boundary is the
+# x-internal-token check inside the function (see B1/W7 in tasks.md).
+# Gateway-level JWT verification must stay OFF because the hosted runtime's
+# injected SUPABASE_SERVICE_ROLE_KEY is a new-format sb_secret_* key (not a
+# JWT); callFunction() puts it in Authorization: Bearer, and with verify_jwt
+# on, the functions gateway 401s every function-to-function call — which
+# orphaned 37 auto-approved TikTok suggestions on 2026-06-09/10.
+[functions.apply-suggestion]
+verify_jwt = false
