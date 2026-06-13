@@ -2,8 +2,9 @@
 
 import { useMemo, useState } from "react";
 import {
-  resourceMatchesSource,
-  resourceValueScore,
+  buildLearningPathIndex,
+  buildSkillResourceSections,
+  filterLearningPathStages,
   type CategorySummary,
   type ResourceSourceFilter,
   type SkillLevel,
@@ -17,60 +18,19 @@ import { SectionHeader } from "@/components/SectionHeader";
 import { SkillSearch } from "@/components/SkillSearch";
 import { SortFilterMenu } from "@/components/SortFilterMenu";
 import { SuggestLinkButton } from "@/components/SuggestLinkButton";
-import type { ResourceSort, SkillSection } from "@/lib/data";
+import type { ResourceSort } from "@/lib/data";
 
 interface CategoryResourceBrowserProps {
   category: CategorySummary;
   skills: SkillSummary[];
-  sections: SkillSection[];
   resources: SkillResource[];
 }
 
 type CategoryTab = "subskills" | "path";
 
-const LEVELS: Array<{ value: SkillLevel; label: string }> = [
-  { value: "beginner", label: "Beginner" },
-  { value: "intermediate", label: "Intermediate" },
-  { value: "advanced", label: "Advanced" },
-];
-
-function matches(value: string | null | undefined, query: string) {
-  return value?.toLowerCase().includes(query) ?? false;
-}
-
-function sortTime(value: string | null | undefined) {
-  const parsed = Date.parse(value ?? "");
-  return Number.isNaN(parsed) ? 0 : parsed;
-}
-
-function sortResources(resources: SkillResource[], sort: ResourceSort) {
-  return [...resources].sort((a, b) =>
-    sort === "popular"
-      ? resourceValueScore(b) - resourceValueScore(a)
-      : sortTime(b.created_at) - sortTime(a.created_at),
-  );
-}
-
-function sortLearningPathResources(resources: SkillResource[]) {
-  return [...resources].sort((a, b) => {
-    const score = resourceValueScore(b) - resourceValueScore(a);
-    return score !== 0 ? score : sortTime(b.created_at) - sortTime(a.created_at);
-  });
-}
-
-function resourcePassesFilters(
-  resource: SkillResource,
-  level: SkillLevel | null,
-  source: ResourceSourceFilter,
-) {
-  const levelMatched = !level || resource.skill_level === level;
-  return levelMatched && resourceMatchesSource(resource, source);
-}
-
 export function CategoryResourceBrowser({
   category,
   skills,
-  sections,
   resources,
 }: CategoryResourceBrowserProps) {
   const [tab, setTab] = useState<CategoryTab>("subskills");
@@ -81,64 +41,28 @@ export function CategoryResourceBrowser({
 
   const query = search.trim().toLowerCase();
   const visibleSections = useMemo(() => {
-    return sections
-      .map((section) => {
-        const skillMatched =
-          !query ||
-          matches(section.skill.name, query) ||
-          matches(section.skill.description, query);
-        if (!skillMatched) return null;
-        const filteredResources = sortResources(
-          section.resources.filter((resource) => resourcePassesFilters(resource, level, source)),
-          sort,
-        );
-        return filteredResources.length
-          ? { ...section, resources: filteredResources }
-          : null;
-      })
-      .filter((section): section is SkillSection => Boolean(section));
-  }, [level, query, sections, sort, source]);
+    return buildSkillResourceSections(skills, resources, {
+      query,
+      level: level ?? "all",
+      source,
+      sort,
+      perSkill: 12,
+    });
+  }, [level, query, resources, skills, sort, source]);
+
+  const learningPathIndex = useMemo(
+    () => buildLearningPathIndex(skills, resources),
+    [resources, skills],
+  );
 
   const learningPathStages = useMemo(() => {
-    const skillById = new Map(skills.map((skill) => [skill.id, skill]));
-    const allowedLevels = level
-      ? LEVELS.filter((item) => item.value === level)
-      : LEVELS;
-
-    return allowedLevels.map((levelItem) => {
-      const resourcesBySkill = new Map<string, SkillResource[]>();
-      for (const resource of resources) {
-        const skillId = resource.skill?.id;
-        if (!skillId || resource.skill_level !== levelItem.value) continue;
-        const skill = skillById.get(skillId);
-        if (!skill) continue;
-        const skillMatched =
-          !query || matches(skill.name, query) || matches(skill.description, query);
-        if (!skillMatched || !resourceMatchesSource(resource, source)) continue;
-        const bucket = resourcesBySkill.get(skillId) ?? [];
-        bucket.push(resource);
-        resourcesBySkill.set(skillId, bucket);
-      }
-
-      const entries = [...resourcesBySkill.entries()]
-        .map(([skillId, bucket]) => {
-          const skill = skillById.get(skillId);
-          if (!skill) return null;
-          const ordered = sortLearningPathResources(bucket);
-          return {
-            skill,
-            total: bucket.length,
-            resources: ordered.slice(0, 3),
-          };
-        })
-        .filter((entry): entry is { skill: SkillSummary; total: number; resources: SkillResource[] } =>
-          Boolean(entry),
-        )
-        .sort((a, b) => b.total - a.total || a.skill.name.localeCompare(b.skill.name));
-
-      return { ...levelItem, entries };
+    return filterLearningPathStages(learningPathIndex, {
+      query,
+      level: level ?? "all",
+      source,
+      perSkill: 3,
     });
-  }, [level, query, resources, skills, source]);
+  }, [learningPathIndex, level, query, source]);
 
   return (
     <div className="pb-20">

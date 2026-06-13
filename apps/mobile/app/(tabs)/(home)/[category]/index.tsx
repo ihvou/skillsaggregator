@@ -3,13 +3,11 @@ import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "r
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 import {
-  resourceMatchesSource,
-  resourceValueScore,
+  buildLearningPathIndex,
+  buildSkillResourceSections,
+  filterLearningPathStages,
   type ResourceSort,
   type ResourceSourceFilter,
-  type SkillLevel,
-  type SkillResource,
-  type SkillSummary,
 } from "@skillsaggregator/shared";
 import { PlusCircle, Search } from "lucide-react-native";
 import { EmptyState } from "@/components/EmptyState";
@@ -22,54 +20,10 @@ import { SearchBar } from "@/components/SearchBar";
 import { SectionHeader } from "@/components/SectionHeader";
 import { SkeletonList } from "@/components/SkeletonList";
 import { SortFilterSheet } from "@/components/SortFilterSheet";
-import type { SkillSection } from "@/lib/data";
 import { getCategoryWithSkillResources } from "@/lib/data";
 import { colors, radius, spacing, typography } from "@/lib/theme";
 
 type CategoryTab = "subskills" | "path";
-
-const LEVELS: Array<{ value: SkillLevel; label: string }> = [
-  { value: "beginner", label: "Beginner" },
-  { value: "intermediate", label: "Intermediate" },
-  { value: "advanced", label: "Advanced" },
-];
-
-function matches(value: string | null | undefined, query: string) {
-  return value?.toLowerCase().includes(query) ?? false;
-}
-
-function sortTime(value: string | null | undefined) {
-  const parsed = Date.parse(value ?? "");
-  return Number.isNaN(parsed) ? 0 : parsed;
-}
-
-function sortResources(resources: SkillResource[], sort: ResourceSort) {
-  return [...resources].sort((a, b) =>
-    sort === "popular"
-      ? resourceValueScore(b) - resourceValueScore(a)
-      : sortTime(b.created_at) - sortTime(a.created_at),
-  );
-}
-
-function sortLearningPathResources(resources: SkillResource[]) {
-  return [...resources].sort((a, b) => {
-    const score = resourceValueScore(b) - resourceValueScore(a);
-    return score !== 0 ? score : sortTime(b.created_at) - sortTime(a.created_at);
-  });
-}
-
-function levelValue(level: LevelFilterValue): SkillLevel | null {
-  return level === "all" ? null : level;
-}
-
-function resourcePassesFilters(
-  resource: SkillResource,
-  level: SkillLevel | null,
-  source: ResourceSourceFilter,
-) {
-  const levelMatched = !level || resource.skill_level === level;
-  return levelMatched && resourceMatchesSource(resource, source);
-}
 
 export default function CategoryScreen() {
   const router = useRouter();
@@ -88,73 +42,33 @@ export default function CategoryScreen() {
   });
 
   const categoryData = query.data?.category ?? null;
-  const sections = query.data?.sections ?? [];
+  const skills = query.data?.skills ?? [];
   const resources = query.data?.resources ?? [];
   const normalizedSearch = search.trim().toLowerCase();
-  const selectedLevel = levelValue(level);
 
   const visibleSections = useMemo(() => {
-    return sections
-      .map((section) => {
-        const skillMatched =
-          !normalizedSearch ||
-          matches(section.skill.name, normalizedSearch) ||
-          matches(section.skill.description, normalizedSearch);
-        if (!skillMatched) return null;
-        const filteredResources = sortResources(
-          section.resources.filter((resource) =>
-            resourcePassesFilters(resource, selectedLevel, source),
-          ),
-          sort,
-        );
-        return filteredResources.length ? { ...section, resources: filteredResources } : null;
-      })
-      .filter((section): section is SkillSection => Boolean(section));
-  }, [normalizedSearch, sections, selectedLevel, sort, source]);
+    return buildSkillResourceSections(skills, resources, {
+      query: normalizedSearch,
+      level,
+      source,
+      sort,
+      perSkill: 8,
+    });
+  }, [level, normalizedSearch, resources, skills, sort, source]);
+
+  const learningPathIndex = useMemo(
+    () => buildLearningPathIndex(skills, resources),
+    [resources, skills],
+  );
 
   const learningPathStages = useMemo(() => {
-    const skillById = new Map(
-      sections.map((section) => [section.skill.id, section.skill]),
-    );
-    const allowedLevels = selectedLevel
-      ? LEVELS.filter((item) => item.value === selectedLevel)
-      : LEVELS;
-
-    return allowedLevels.map((levelItem) => {
-      const resourcesBySkill = new Map<string, SkillResource[]>();
-      for (const resource of resources) {
-        const skillId = resource.skill?.id;
-        if (!skillId || resource.skill_level !== levelItem.value) continue;
-        const skill = skillById.get(skillId);
-        if (!skill) continue;
-        const skillMatched =
-          !normalizedSearch ||
-          matches(skill.name, normalizedSearch) ||
-          matches(skill.description, normalizedSearch);
-        if (!skillMatched || !resourceMatchesSource(resource, source)) continue;
-        const bucket = resourcesBySkill.get(skillId) ?? [];
-        bucket.push(resource);
-        resourcesBySkill.set(skillId, bucket);
-      }
-
-      const entries = [...resourcesBySkill.entries()]
-        .map(([skillId, bucket]) => {
-          const skill = skillById.get(skillId);
-          if (!skill) return null;
-          return {
-            skill,
-            total: bucket.length,
-            resources: sortLearningPathResources(bucket).slice(0, 3),
-          };
-        })
-        .filter((entry): entry is { skill: SkillSummary; total: number; resources: SkillResource[] } =>
-          Boolean(entry),
-        )
-        .sort((a, b) => b.total - a.total || a.skill.name.localeCompare(b.skill.name));
-
-      return { ...levelItem, entries };
+    return filterLearningPathStages(learningPathIndex, {
+      query: normalizedSearch,
+      level,
+      source,
+      perSkill: 3,
     });
-  }, [normalizedSearch, resources, sections, selectedLevel, source]);
+  }, [learningPathIndex, level, normalizedSearch, source]);
 
   return (
     <Screen edges={["top"]} padded={false}>

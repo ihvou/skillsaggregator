@@ -4,7 +4,7 @@ import { CategoryResourceBrowser } from "@/components/CategoryResourceBrowser";
 import {
   getAllCatalogs,
   getCategoryBrowserData,
-  getCategoryWithSkillResources,
+  getCatalog,
 } from "@/lib/data";
 import { getBaseUrl } from "@/lib/env";
 
@@ -25,7 +25,7 @@ export async function generateMetadata({
   params: Promise<{ category: string }>;
 }): Promise<Metadata> {
   const { category: slug } = await params;
-  const { category } = await getCategoryWithSkillResources(slug);
+  const { category } = await getCatalog(slug, { publicOnly: true });
   if (!category) return {};
   return {
     title: `${category.name} resources | Subskills`,
@@ -40,14 +40,13 @@ export default async function CategoryPage({
   params: Promise<{ category: string }>;
 }) {
   const { category: slug } = await params;
-  const { category, skills, sections, resources } = await getCategoryBrowserData(slug);
+  const { category, skills, resources } = await getCategoryBrowserData(slug);
   if (!category) notFound();
 
   return (
     <CategoryResourceBrowser
       category={category}
       skills={skills}
-      sections={sections}
       resources={resources}
     />
   );

@@ -2,8 +2,8 @@
 
 import { useMemo, useState } from "react";
 import {
-  resourceMatchesSource,
-  resourceValueScore,
+  resourcePassesFilters,
+  sortResources,
   type CategorySummary,
   type ResourceSourceFilter,
   type SkillLevel,
@@ -31,28 +31,14 @@ const LEVEL_LABELS = {
 const SORT_LABELS = { popular: "Popular", newest: "Newest" } as const;
 const SOURCE_LABELS = { all: "All sources", youtube: "YouTube", tiktok: "TikTok" } as const;
 
-function sortTime(value: string | null | undefined) {
-  const parsed = Date.parse(value ?? "");
-  return Number.isNaN(parsed) ? 0 : parsed;
-}
-
-function sortResources(resources: SkillResource[], sort: ResourceSort) {
-  return [...resources].sort((a, b) =>
-    sort === "popular"
-      ? resourceValueScore(b) - resourceValueScore(a)
-      : sortTime(b.created_at) - sortTime(a.created_at),
-  );
-}
-
 export function SkillResourceBrowser({ category, skill, resources }: SkillResourceBrowserProps) {
   const [level, setLevel] = useState<SkillLevel | null>(null);
   const [sort, setSort] = useState<ResourceSort>("newest");
   const [source, setSource] = useState<ResourceSourceFilter>("all");
   const filteredResources = useMemo(() => {
-    const next = resources.filter((resource) => {
-      const levelMatched = !level || resource.skill_level === level;
-      return levelMatched && resourceMatchesSource(resource, source);
-    });
+    const next = resources.filter((resource) =>
+      resourcePassesFilters(resource, { level: level ?? "all", source }),
+    );
     return sortResources(next, sort);
   }, [level, resources, sort, source]);
   const subtitleParts: string[] = [`${category.name}`, SORT_LABELS[sort]];

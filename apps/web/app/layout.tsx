@@ -20,7 +20,7 @@ export const metadata: Metadata = {
     title: "Subskills",
     description:
       "Find the best free tutorials for any skill you want to learn, across sports and training.",
-    images: [{ url: "/og-image.svg", width: 1200, height: 630, alt: "Subskills" }],
+    images: [{ url: "/og-image.png", width: 1200, height: 630, alt: "Subskills" }],
   },
 };
 

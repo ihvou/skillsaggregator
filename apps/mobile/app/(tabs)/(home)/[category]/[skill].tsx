@@ -4,11 +4,11 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { FlashList } from "@shopify/flash-list";
 import { useQuery } from "@tanstack/react-query";
 import {
-  resourceMatchesSource,
-  resourceValueScore,
+  resourcePassesFilters,
   type ResourceSort,
   type ResourceSourceFilter,
   type SkillResource,
+  sortResources,
 } from "@skillsaggregator/shared";
 import { PlusCircle, Search } from "lucide-react-native";
 import { EmptyState } from "@/components/EmptyState";
@@ -37,19 +37,6 @@ const SOURCE_LABELS: Record<ResourceSourceFilter, string> = {
   youtube: "YouTube",
   tiktok: "TikTok",
 };
-
-function sortTime(value: string | null | undefined) {
-  const parsed = Date.parse(value ?? "");
-  return Number.isNaN(parsed) ? 0 : parsed;
-}
-
-function sortResources(resources: SkillResource[], sort: ResourceSort) {
-  return [...resources].sort((a, b) =>
-    sort === "popular"
-      ? resourceValueScore(b) - resourceValueScore(a)
-      : sortTime(b.created_at) - sortTime(a.created_at),
-  );
-}
 
 export default function SkillDetailScreen() {
   const router = useRouter();
@@ -81,10 +68,9 @@ export default function SkillDetailScreen() {
 
   const resources = useMemo(() => {
     const items = query.data?.resources ?? [];
-    const filtered = items.filter((item) => {
-      const levelMatched = level === "all" || item.skill_level === level;
-      return levelMatched && resourceMatchesSource(item, source);
-    });
+    const filtered = items.filter((item) =>
+      resourcePassesFilters(item, { level, source }),
+    );
     return sortResources(filtered, sort);
   }, [level, query.data?.resources, sort, source]);
 

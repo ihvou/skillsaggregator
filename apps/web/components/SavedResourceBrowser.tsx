@@ -1,16 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { SkillResource } from "@skillsaggregator/shared";
 import { PageHeader } from "@/components/PageHeader";
 import { ResourceCard } from "@/components/ResourceCard";
 import { SuggestLinkButton } from "@/components/SuggestLinkButton";
 import { getBrowserSupabase } from "@/lib/browserSupabase";
-import { normalizeThumbnailUrl } from "@/lib/thumbnails";
-
-const RESOURCE_LINK_SELECT =
-  "id, url, canonical_url, domain, title, description, thumbnail_url, thumbnail_storage_path, duration_seconds, like_count, comment_count, share_count, favorite_count, creator_handle, creator_url, scoring_strategy, content_type, created_at, contributor_profile:contributor_profiles(id, slug, display_name, avatar_url, accepted_count)";
-const RELATION_SELECT = `id, public_note, skill_level, upvote_count, downvote_count, vote_score, value_score, created_at, link_id, links!inner(${RESOURCE_LINK_SELECT}), skills!inner(id, slug, name, categories!inner(slug, name))`;
+import {
+  type JoinedRelationRow,
+  SAVED_RELATION_SELECT,
+  shapeJoinedRelationResource,
+} from "@/lib/resourceRows";
 
 function readSavedIds() {
   try {
@@ -22,54 +22,26 @@ function readSavedIds() {
   }
 }
 
-function relationVotes(relation: {
-  upvote_count?: number | null;
-  downvote_count?: number | null;
-  vote_score?: number | null;
-  value_score?: number | null;
-}) {
-  const upvoteCount = relation.upvote_count ?? 0;
-  const downvoteCount = relation.downvote_count ?? 0;
-  return {
-    upvote_count: upvoteCount,
-    downvote_count: downvoteCount,
-    vote_score: relation.vote_score ?? Math.max(0, upvoteCount - downvoteCount),
-    value_score: relation.value_score ?? null,
-  };
-}
-
-function shapeLink<TLink extends {
-  contributor_profile?: unknown;
-  thumbnail_url?: string | null;
-  thumbnail_storage_path?: string | null;
-  canonical_url?: string | null;
-  url?: string | null;
-}>(link: TLink) {
-  const contributor = Array.isArray(link.contributor_profile)
-    ? link.contributor_profile[0]
-    : link.contributor_profile;
-  return {
-    ...link,
-    thumbnail_url: normalizeThumbnailUrl(
-      link.thumbnail_storage_path ?? link.thumbnail_url,
-      link.canonical_url ?? link.url ?? null,
-      link.thumbnail_storage_path ? link.thumbnail_url : null,
-    ),
-    contributor_profile: contributor ?? null,
-  };
-}
-
 export function SavedResourceBrowser() {
   const [savedIds, setSavedIds] = useState<string[]>([]);
   const [resources, setResources] = useState<SkillResource[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const loadedKeyRef = useRef<string | null>(null);
+  const inFlightKeyRef = useRef<string | null>(null);
 
   const refresh = useCallback(async () => {
     const ids = readSavedIds();
+    const idsKey = ids.join("\u0000");
     setSavedIds(ids);
     setError(null);
+    if (loadedKeyRef.current === idsKey) {
+      setLoading(false);
+      return;
+    }
+    if (inFlightKeyRef.current === idsKey) return;
     if (ids.length === 0) {
+      loadedKeyRef.current = idsKey;
       setResources([]);
       setLoading(false);
       return;
@@ -83,14 +55,18 @@ export function SavedResourceBrowser() {
       return;
     }
 
+    inFlightKeyRef.current = idsKey;
     setLoading(true);
     const { data, error: queryError } = await supabase
       .from("link_skill_relations")
-      .select(RELATION_SELECT)
+      .select(SAVED_RELATION_SELECT)
       .in("link_id", ids)
       .eq("is_active", true)
       .eq("links.is_active", true)
+      .order("value_score", { ascending: false, nullsFirst: false })
       .order("vote_score", { ascending: false });
+
+    if (inFlightKeyRef.current === idsKey) inFlightKeyRef.current = null;
 
     if (queryError) {
       setError(queryError.message);
@@ -99,38 +75,19 @@ export function SavedResourceBrowser() {
       return;
     }
 
+    if (readSavedIds().join("\u0000") !== idsKey) return;
+
     const byLink = new Map<string, SkillResource>();
-    for (const relation of data ?? []) {
+    for (const relation of (data ?? []) as JoinedRelationRow[]) {
+      if (!relation.link_id) continue;
       if (byLink.has(relation.link_id)) continue;
-      const link = Array.isArray(relation.links) ? relation.links[0] : relation.links;
-      if (!link) continue;
-      const skill = Array.isArray(relation.skills) ? relation.skills[0] : relation.skills;
-      const category = skill
-        ? Array.isArray(skill.categories)
-          ? skill.categories[0]
-          : skill.categories
-        : null;
-      const resource: SkillResource = {
-        id: relation.id,
-        public_note: relation.public_note,
-        skill_level: relation.skill_level,
-        ...relationVotes(relation),
-        created_at: relation.created_at ?? link.created_at ?? null,
-        link: shapeLink(link),
-      };
-      if (skill) {
-        resource.skill = {
-          id: skill.id,
-          slug: skill.slug,
-          name: skill.name,
-          category_slug: category?.slug ?? "",
-          category_name: category?.name ?? null,
-        };
-      }
+      const resource = shapeJoinedRelationResource(relation);
+      if (!resource) continue;
       byLink.set(relation.link_id, resource);
     }
 
     setResources(ids.map((id) => byLink.get(id)).filter((item): item is SkillResource => Boolean(item)));
+    loadedKeyRef.current = idsKey;
     setLoading(false);
   }, []);
 
