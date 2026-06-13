@@ -1,6 +1,6 @@
 import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
 import { Check } from "lucide-react-native";
-import type { ResourceSort } from "@skillsaggregator/shared";
+import type { ResourceSort, ResourceSourceFilter } from "@skillsaggregator/shared";
 import type { LevelFilterValue } from "./LevelFilter";
 import { colors, radius, spacing, typography } from "@/lib/theme";
 
@@ -8,8 +8,10 @@ interface SortFilterSheetProps {
   visible: boolean;
   sort: ResourceSort;
   level: LevelFilterValue;
+  source: ResourceSourceFilter;
   onChangeSort: (next: ResourceSort) => void;
   onChangeLevel: (next: LevelFilterValue) => void;
+  onChangeSource: (next: ResourceSourceFilter) => void;
   onClose: () => void;
 }
 
@@ -25,17 +27,25 @@ const LEVELS: Array<{ value: LevelFilterValue; label: string }> = [
   { value: "advanced", label: "Advanced" },
 ];
 
+const SOURCES: Array<{ value: ResourceSourceFilter; label: string }> = [
+  { value: "all", label: "All sources" },
+  { value: "youtube", label: "YouTube" },
+  { value: "tiktok", label: "TikTok" },
+];
+
 /**
  * Single-step bottom sheet that surfaces both Sort and Filter options at
- * once — tap the "…" header button to open, tap an option to commit, tap
+ * once: tap the "more" header button to open, tap an option to commit, tap
  * the backdrop or Done to dismiss.
  */
 export function SortFilterSheet({
   visible,
   sort,
   level,
+  source,
   onChangeSort,
   onChangeLevel,
+  onChangeSource,
   onClose,
 }: SortFilterSheetProps) {
   return (
@@ -83,6 +93,28 @@ export function SortFilterSheet({
               <Pressable
                 key={`level-${option.value}`}
                 onPress={() => onChangeLevel(option.value)}
+                style={({ pressed }) => [styles.row, pressed && styles.pressed]}
+                accessibilityRole="button"
+                accessibilityLabel={`Filter by ${option.label}`}
+                accessibilityState={{ selected }}
+              >
+                <Text style={[styles.rowLabel, selected && styles.rowLabelSelected]}>
+                  {option.label}
+                </Text>
+                {selected ? <Check size={20} color={colors.accent} strokeWidth={3} /> : null}
+              </Pressable>
+            );
+          })}
+
+          <View style={styles.groupDivider} />
+
+          <Text style={styles.groupTitle}>Filter by source</Text>
+          {SOURCES.map((option) => {
+            const selected = option.value === source;
+            return (
+              <Pressable
+                key={`source-${option.value}`}
+                onPress={() => onChangeSource(option.value)}
                 style={({ pressed }) => [styles.row, pressed && styles.pressed]}
                 accessibilityRole="button"
                 accessibilityLabel={`Filter by ${option.label}`}

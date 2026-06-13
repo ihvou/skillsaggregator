@@ -6,11 +6,14 @@ import {
   Bookmark,
   BookmarkCheck,
   CircleCheck,
+  Globe,
+  Music2,
+  PlaySquare,
   ThumbsDown,
   ThumbsUp,
   UserRound,
 } from "lucide-react";
-import type { SkillResource } from "@skillsaggregator/shared";
+import { getLinkSource, type SkillResource } from "@skillsaggregator/shared";
 import { useLocalFlag } from "@/lib/useLocalFlag";
 
 interface ResourceCardProps {
@@ -42,14 +45,20 @@ function formatCount(value: number): string {
 }
 
 function isPortraitResource(resource: SkillResource) {
-  const domain = resource.link.domain?.toLowerCase() ?? "";
-  return domain.includes("tiktok") || resource.link.thumbnail_storage_path?.includes("/tiktok/") === true;
+  return getLinkSource(resource.link) === "tiktok";
+}
+
+function SourceIcon({ resource }: { resource: SkillResource }) {
+  const source = getLinkSource(resource.link);
+  if (source === "youtube") return <PlaySquare className="h-4 w-4 text-[#ff0000]" />;
+  if (source === "tiktok") return <Music2 className="h-4 w-4 text-ink" />;
+  return <Globe className="h-4 w-4 text-faint" />;
 }
 
 /**
  * Web counterpart to the mobile ResourceCard row.
  *  - 16/9 thumbnail (left, click → opens link)
- *  - Date + level pill (top), bold 2-line title (clickable), domain +
+ *  - Source + date + level pill (top), bold 2-line title (clickable),
  *    watched + saved + thumbs-up + rating count + thumbs-down (bottom)
  *  - State (save / watched / vote) persisted to localStorage so it sticks
  *    across page loads on the same device, same keys as mobile
@@ -107,24 +116,37 @@ export function ResourceCard({ resource }: ResourceCardProps) {
         target="_blank"
         rel="noreferrer"
         aria-label={resource.link.title ?? "Open resource"}
-        className={`focus-ring relative shrink-0 overflow-hidden rounded-[14px] bg-bgGroup shadow-thumb transition hover:opacity-90 ${
-          portrait ? "aspect-[9/16] w-[140px] sm:w-[108px]" : "aspect-video w-full sm:w-[240px]"
-        }`}
+        className="focus-ring relative aspect-video w-full shrink-0 overflow-hidden rounded-[14px] bg-bgGroup shadow-thumb transition hover:opacity-90 sm:w-[240px]"
       >
         {thumbnail ? (
-          <Image
-            src={thumbnail}
-            alt={resource.link.title ?? ""}
-            fill
-            sizes={portrait ? "140px" : "(max-width: 639px) 100vw, 240px"}
-            className="object-cover"
-          />
+          <>
+            {portrait ? (
+              <Image
+                src={thumbnail}
+                alt=""
+                fill
+                sizes="(max-width: 639px) 100vw, 240px"
+                className="scale-110 object-cover blur-md"
+                aria-hidden="true"
+              />
+            ) : null}
+            <Image
+              src={thumbnail}
+              alt={resource.link.title ?? ""}
+              fill
+              sizes="(max-width: 639px) 100vw, 240px"
+              className={portrait ? "object-contain" : "object-cover"}
+            />
+          </>
         ) : null}
       </a>
 
       <div className="flex min-w-0 flex-1 flex-col justify-between gap-2 sm:gap-0 sm:py-1">
         <div className="flex items-center justify-between gap-2">
-          {dateLabel ? <span className="text-sm text-muted">{dateLabel}</span> : <span />}
+          <div className="flex min-w-0 items-center gap-2">
+            <SourceIcon resource={resource} />
+            {dateLabel ? <span className="text-sm text-muted">{dateLabel}</span> : null}
+          </div>
           {resource.skill_level ? (
             <span className="inline-flex items-center rounded-pill bg-muted px-2.5 py-0.5 text-xs font-bold text-surface">
               {capitalize(resource.skill_level)}
@@ -145,7 +167,6 @@ export function ResourceCard({ resource }: ResourceCardProps) {
 
         <div className="flex items-center justify-between gap-3 text-sm">
           <div className="flex min-w-0 items-center gap-2">
-            <span className="truncate text-faint">{resource.link.domain}</span>
             {contributor ? (
               <a
                 href={`/contributors/${contributor.slug}`}

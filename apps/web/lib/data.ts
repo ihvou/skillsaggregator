@@ -24,7 +24,7 @@ export interface CatalogOptions {
 
 const RESOURCE_LINK_SELECT =
   "id, url, canonical_url, domain, title, description, thumbnail_url, thumbnail_storage_path, duration_seconds, like_count, comment_count, share_count, favorite_count, creator_handle, creator_url, scoring_strategy, content_type, created_at, contributor_profile:contributor_profiles(id, slug, display_name, avatar_url, accepted_count)";
-const RELATION_VOTE_SELECT = "upvote_count, downvote_count, vote_score";
+const RELATION_VOTE_SELECT = "upvote_count, downvote_count, vote_score, value_score";
 
 function shapeLinkWithContributor<
   TLink extends {
@@ -53,6 +53,7 @@ function relationVotes(relation: {
   upvote_count?: number | null;
   downvote_count?: number | null;
   vote_score?: number | null;
+  value_score?: number | null;
 }) {
   const upvoteCount = relation.upvote_count ?? 0;
   const downvoteCount = relation.downvote_count ?? 0;
@@ -60,6 +61,7 @@ function relationVotes(relation: {
     upvote_count: upvoteCount,
     downvote_count: downvoteCount,
     vote_score: relation.vote_score ?? Math.max(0, upvoteCount - downvoteCount),
+    value_score: relation.value_score ?? null,
   };
 }
 
@@ -309,7 +311,7 @@ export interface CategoryBrowserData {
  * Home-page rollup: each active category with up to N most-popular skills
  * and the latest resource thumbnail per skill (used as the tile artwork).
  */
-export async function getDiscoverSections(perCategorySkills = 12): Promise<DiscoverCategorySection[]> {
+export async function getDiscoverSections(perCategorySkills: number | null = null): Promise<DiscoverCategorySection[]> {
   const supabase = getPublicSupabase();
   const categories = await getCategories();
 
@@ -318,7 +320,7 @@ export async function getDiscoverSections(perCategorySkills = 12): Promise<Disco
       const skills = filterPublicSkills(withFallbackResourceCounts(categorySkills(category.slug)), true);
       return {
         category,
-        skills: skills.slice(0, perCategorySkills).map((skill) => {
+        skills: skills.slice(0, perCategorySkills ?? undefined).map((skill) => {
           const resources = fallbackResources[skill.slug] ?? [];
           const latest =
             resources
@@ -335,7 +337,7 @@ export async function getDiscoverSections(perCategorySkills = 12): Promise<Disco
   const sections = await Promise.all(
     categories.map(async (category): Promise<DiscoverCategorySection> => {
       const { skills } = await getCatalog(category.slug, { publicOnly: true });
-      const skillsWithResources = skills.slice(0, perCategorySkills);
+      const skillsWithResources = skills.slice(0, perCategorySkills ?? undefined);
       if (skillsWithResources.length === 0) {
         return { category, skills: [] };
       }

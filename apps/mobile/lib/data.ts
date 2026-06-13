@@ -28,7 +28,7 @@ export type DiscoverCategorySection = {
 
 const RESOURCE_LINK_SELECT =
   "id, url, canonical_url, domain, title, description, thumbnail_url, thumbnail_storage_path, duration_seconds, like_count, comment_count, share_count, favorite_count, creator_handle, creator_url, scoring_strategy, content_type, created_at, contributor_profile:contributor_profiles(id, slug, display_name, avatar_url, accepted_count)";
-const RELATION_VOTE_SELECT = "upvote_count, downvote_count, vote_score";
+const RELATION_VOTE_SELECT = "upvote_count, downvote_count, vote_score, value_score";
 
 function shapeLinkWithContributor<
   TLink extends {
@@ -57,6 +57,7 @@ function relationVotes(relation: {
   upvote_count?: number | null;
   downvote_count?: number | null;
   vote_score?: number | null;
+  value_score?: number | null;
 }) {
   const upvoteCount = relation.upvote_count ?? 0;
   const downvoteCount = relation.downvote_count ?? 0;
@@ -64,6 +65,7 @@ function relationVotes(relation: {
     upvote_count: upvoteCount,
     downvote_count: downvoteCount,
     vote_score: relation.vote_score ?? Math.max(0, upvoteCount - downvoteCount),
+    value_score: relation.value_score ?? null,
   };
 }
 
@@ -292,7 +294,7 @@ export async function getSkillResources(categorySlug: string, skillSlug: string,
   };
 }
 
-export async function getDiscoverSections(perCategorySkills = 12): Promise<DiscoverCategorySection[]> {
+export async function getDiscoverSections(perCategorySkills: number | null = null): Promise<DiscoverCategorySection[]> {
   const supabase = getSupabase();
   const categories = await getCategories();
 
@@ -301,7 +303,7 @@ export async function getDiscoverSections(perCategorySkills = 12): Promise<Disco
       const skills = fallbackSkillsForCategory(category.slug);
       return {
         category,
-        skills: skills.slice(0, perCategorySkills).map((skill) => {
+        skills: skills.slice(0, perCategorySkills ?? undefined).map((skill) => {
           const resources = fallbackResources[skill.slug] ?? [];
           const latestResource = resources.find((resource) => resource.link.thumbnail_url);
           const latest = latestResource
@@ -317,7 +319,9 @@ export async function getDiscoverSections(perCategorySkills = 12): Promise<Disco
   const sections = await Promise.all(
     categories.map(async (category) => {
       const { skills } = await getSkillsForCategory(category.slug);
-      const skillsWithResources = skills.filter((skill) => skill.resource_count > 0).slice(0, perCategorySkills);
+      const skillsWithResources = skills
+        .filter((skill) => skill.resource_count > 0)
+        .slice(0, perCategorySkills ?? undefined);
       if (skillsWithResources.length === 0) {
         return { category, skills: [] as DiscoverSkillTile[] };
       }
@@ -360,20 +364,30 @@ export async function getDiscoverSections(perCategorySkills = 12): Promise<Disco
 export async function getCategoryWithSkillResources(
   categorySlug: string,
   perSkill = 8,
-): Promise<{ category: CategorySummary | null; sections: SkillSection[] }> {
+): Promise<{ category: CategorySummary | null; sections: SkillSection[]; resources: SkillResource[] }> {
   const { category, skills } = await getSkillsForCategory(categorySlug);
-  if (!category) return { category: null, sections: [] };
+  if (!category) return { category: null, sections: [], resources: [] };
 
   const sectionsRaw = await Promise.all(
     skills
       .filter((skill) => skill.resource_count > 0)
       .map(async (skill) => {
         const data = await getSkillResources(categorySlug, skill.slug, "popular");
-        return { skill: data.skill ?? skill, resources: data.resources.slice(0, perSkill) };
+        return {
+          skill: data.skill ?? skill,
+          resources: data.resources.slice(0, perSkill),
+          allResources: data.resources,
+        };
       }),
   );
 
-  return { category, sections: sectionsRaw.filter((section) => section.resources.length > 0) };
+  return {
+    category,
+    sections: sectionsRaw
+      .map(({ skill, resources }) => ({ skill, resources }))
+      .filter((section) => section.resources.length > 0),
+    resources: sectionsRaw.flatMap((section) => section.allResources),
+  };
 }
 
 /**

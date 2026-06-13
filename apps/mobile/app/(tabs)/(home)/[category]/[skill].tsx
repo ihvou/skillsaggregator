@@ -3,7 +3,13 @@ import { Pressable, RefreshControl, StyleSheet, Text, View } from "react-native"
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { FlashList } from "@shopify/flash-list";
 import { useQuery } from "@tanstack/react-query";
-import type { ResourceSort, SkillResource } from "@skillsaggregator/shared";
+import {
+  resourceMatchesSource,
+  resourceValueScore,
+  type ResourceSort,
+  type ResourceSourceFilter,
+  type SkillResource,
+} from "@skillsaggregator/shared";
 import { PlusCircle, Search } from "lucide-react-native";
 import { EmptyState } from "@/components/EmptyState";
 import type { LevelFilterValue } from "@/components/LevelFilter";
@@ -26,6 +32,24 @@ const LEVEL_LABELS: Record<LevelFilterValue, string> = {
   intermediate: "Intermediate",
   advanced: "Advanced",
 };
+const SOURCE_LABELS: Record<ResourceSourceFilter, string> = {
+  all: "All sources",
+  youtube: "YouTube",
+  tiktok: "TikTok",
+};
+
+function sortTime(value: string | null | undefined) {
+  const parsed = Date.parse(value ?? "");
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
+
+function sortResources(resources: SkillResource[], sort: ResourceSort) {
+  return [...resources].sort((a, b) =>
+    sort === "popular"
+      ? resourceValueScore(b) - resourceValueScore(a)
+      : sortTime(b.created_at) - sortTime(a.created_at),
+  );
+}
 
 export default function SkillDetailScreen() {
   const router = useRouter();
@@ -42,12 +66,13 @@ export default function SkillDetailScreen() {
       : "all",
   );
   const [sort, setSort] = useState<ResourceSort>("popular");
+  const [source, setSource] = useState<ResourceSourceFilter>("all");
   const [menuVisible, setMenuVisible] = useState(false);
 
   const query = useQuery({
-    queryKey: ["skill", categorySlug, skillSlug, sort],
+    queryKey: ["skill", categorySlug, skillSlug],
     queryFn: async () => {
-      const data = await getSkillResources(categorySlug, skillSlug, sort);
+      const data = await getSkillResources(categorySlug, skillSlug, "popular");
       if (data.skill) setLastSeenSkill(data.skill.id);
       return data;
     },
@@ -56,14 +81,19 @@ export default function SkillDetailScreen() {
 
   const resources = useMemo(() => {
     const items = query.data?.resources ?? [];
-    return level === "all" ? items : items.filter((item) => item.skill_level === level);
-  }, [level, query.data?.resources]);
+    const filtered = items.filter((item) => {
+      const levelMatched = level === "all" || item.skill_level === level;
+      return levelMatched && resourceMatchesSource(item, source);
+    });
+    return sortResources(filtered, sort);
+  }, [level, query.data?.resources, sort, source]);
 
   const headerSubtitle = useMemo(() => {
     const parts: string[] = [SORT_LABELS[sort]];
     if (level !== "all") parts.push(LEVEL_LABELS[level]);
-    return parts.join(" · ");
-  }, [sort, level]);
+    if (source !== "all") parts.push(SOURCE_LABELS[source]);
+    return parts.join(" / ");
+  }, [sort, level, source]);
 
   return (
     <Screen edges={["top"]} padded={false}>
@@ -101,7 +131,7 @@ export default function SkillDetailScreen() {
               <EmptyState
                 icon={Search}
                 title="No matches for this filter"
-                subtitle="Open the menu (…) to change sort or level."
+                subtitle="Open the menu (...) to change sort, level, or source."
               />
             </View>
           }
@@ -126,8 +156,10 @@ export default function SkillDetailScreen() {
         visible={menuVisible}
         sort={sort}
         level={level}
+        source={source}
         onChangeSort={setSort}
         onChangeLevel={setLevel}
+        onChangeSource={setSource}
         onClose={() => setMenuVisible(false)}
       />
     </Screen>

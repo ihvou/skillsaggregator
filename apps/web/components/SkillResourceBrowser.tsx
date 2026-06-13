@@ -1,7 +1,15 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { CategorySummary, SkillLevel, SkillResource, SkillSummary } from "@skillsaggregator/shared";
+import {
+  resourceMatchesSource,
+  resourceValueScore,
+  type CategorySummary,
+  type ResourceSourceFilter,
+  type SkillLevel,
+  type SkillResource,
+  type SkillSummary,
+} from "@skillsaggregator/shared";
 import { PageHeader } from "@/components/PageHeader";
 import { ResourceCard } from "@/components/ResourceCard";
 import { SortFilterMenu } from "@/components/SortFilterMenu";
@@ -21,6 +29,7 @@ const LEVEL_LABELS = {
   advanced: "Advanced",
 } as const;
 const SORT_LABELS = { popular: "Popular", newest: "Newest" } as const;
+const SOURCE_LABELS = { all: "All sources", youtube: "YouTube", tiktok: "TikTok" } as const;
 
 function sortTime(value: string | null | undefined) {
   const parsed = Date.parse(value ?? "");
@@ -30,7 +39,7 @@ function sortTime(value: string | null | undefined) {
 function sortResources(resources: SkillResource[], sort: ResourceSort) {
   return [...resources].sort((a, b) =>
     sort === "popular"
-      ? (b.vote_score ?? b.upvote_count) - (a.vote_score ?? a.upvote_count)
+      ? resourceValueScore(b) - resourceValueScore(a)
       : sortTime(b.created_at) - sortTime(a.created_at),
   );
 }
@@ -38,14 +47,17 @@ function sortResources(resources: SkillResource[], sort: ResourceSort) {
 export function SkillResourceBrowser({ category, skill, resources }: SkillResourceBrowserProps) {
   const [level, setLevel] = useState<SkillLevel | null>(null);
   const [sort, setSort] = useState<ResourceSort>("newest");
+  const [source, setSource] = useState<ResourceSourceFilter>("all");
   const filteredResources = useMemo(() => {
-    const next = level
-      ? resources.filter((resource) => resource.skill_level === level)
-      : resources;
+    const next = resources.filter((resource) => {
+      const levelMatched = !level || resource.skill_level === level;
+      return levelMatched && resourceMatchesSource(resource, source);
+    });
     return sortResources(next, sort);
-  }, [level, resources, sort]);
+  }, [level, resources, sort, source]);
   const subtitleParts: string[] = [`${category.name}`, SORT_LABELS[sort]];
   if (level) subtitleParts.push(LEVEL_LABELS[level]);
+  if (source !== "all") subtitleParts.push(SOURCE_LABELS[source]);
 
   return (
     <div className="pb-20">
@@ -59,8 +71,10 @@ export function SkillResourceBrowser({ category, skill, resources }: SkillResour
             <SortFilterMenu
               currentLevel={level}
               currentSort={sort}
+              currentSource={source}
               onLevelChange={setLevel}
               onSortChange={setSort}
+              onSourceChange={setSource}
             />
           </>
         }

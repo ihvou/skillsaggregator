@@ -7,13 +7,14 @@ import {
   BookmarkCheck,
   CircleCheck,
   Globe,
+  Music2,
   PlaySquare,
   ThumbsDown,
   ThumbsUp,
   UserRound,
 } from "lucide-react-native";
 import { Swipeable } from "react-native-gesture-handler";
-import type { SkillResource } from "@skillsaggregator/shared";
+import { getLinkSource, type SkillResource } from "@skillsaggregator/shared";
 import {
   getFlag,
   removeSavedResourceSnapshot,
@@ -64,17 +65,17 @@ function formatCount(value: number): string {
 }
 
 // Small platform icon shown top-left, before the date, in place of the domain text.
-function SourceIcon({ domain }: { domain?: string | null }) {
-  const host = (domain ?? "").toLowerCase();
-  if (host.includes("youtube") || host.includes("youtu.be")) {
+function SourceIcon({ link }: { link: SkillResource["link"] }) {
+  const source = getLinkSource(link);
+  if (source === "youtube") {
     return <PlaySquare size={15} color="#FF0000" />;
   }
+  if (source === "tiktok") return <Music2 size={14} color={colors.ink} />;
   return <Globe size={12} color={colors.faint} />;
 }
 
 function isPortraitResource(resource: SkillResource) {
-  const domain = resource.link.domain?.toLowerCase() ?? "";
-  return domain.includes("tiktok") || resource.link.thumbnail_storage_path?.includes("/tiktok/") === true;
+  return getLinkSource(resource.link) === "tiktok";
 }
 
 /**
@@ -187,14 +188,24 @@ export function ResourceCard({ resource }: ResourceCardProps) {
         onLongPress={toggleSaved}
         style={({ pressed }) => [styles.row, pressed && styles.pressed]}
       >
-        <View style={[styles.thumbWrap, portrait && styles.thumbWrapPortrait]}>
+        <View style={styles.thumbWrap}>
           {resource.link.thumbnail_url ? (
-            <Image
-              source={resource.link.thumbnail_url}
-              style={styles.thumbnail}
-              contentFit="cover"
-              accessibilityLabel={resource.link.title ?? "Resource thumbnail"}
-            />
+            <>
+              {portrait ? (
+                <Image
+                  source={resource.link.thumbnail_url}
+                  style={styles.thumbnailBackdrop}
+                  contentFit="cover"
+                  blurRadius={16}
+                />
+              ) : null}
+              <Image
+                source={resource.link.thumbnail_url}
+                style={styles.thumbnail}
+                contentFit={portrait ? "contain" : "cover"}
+                accessibilityLabel={resource.link.title ?? "Resource thumbnail"}
+              />
+            </>
           ) : (
             <View style={styles.thumbnailFallback} />
           )}
@@ -202,7 +213,7 @@ export function ResourceCard({ resource }: ResourceCardProps) {
         <View style={styles.body}>
           <View style={styles.topRow}>
             <View style={styles.dateGroup}>
-              <SourceIcon domain={resource.link.domain} />
+              <SourceIcon link={resource.link} />
               {dateLabel ? <Text style={styles.date}>{dateLabel}</Text> : null}
             </View>
             {resource.skill_level ? (
@@ -334,12 +345,13 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bgGroup,
     ...shadows.thumbnail,
   },
-  thumbWrapPortrait: {
-    aspectRatio: 9 / 16,
-  },
   thumbnail: {
     width: "100%",
     height: "100%",
+  },
+  thumbnailBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    transform: [{ scale: 1.12 }],
   },
   thumbnailFallback: {
     flex: 1,

@@ -1,7 +1,7 @@
 import { Linking, Pressable, StyleSheet, View } from "react-native";
 import { Image } from "expo-image";
-import { BookmarkCheck } from "lucide-react-native";
-import type { SkillResource } from "@skillsaggregator/shared";
+import { BookmarkCheck, Globe, Music2, PlaySquare } from "lucide-react-native";
+import { getLinkSource, type SkillResource } from "@skillsaggregator/shared";
 import { getFlag } from "@/lib/localState";
 import { colors, radius, shadows } from "@/lib/theme";
 
@@ -12,8 +12,14 @@ interface ResourceTileProps {
 }
 
 function isPortraitResource(resource: SkillResource) {
-  const domain = resource.link.domain?.toLowerCase() ?? "";
-  return domain.includes("tiktok") || resource.link.thumbnail_storage_path?.includes("/tiktok/") === true;
+  return getLinkSource(resource.link) === "tiktok";
+}
+
+function SourceIcon({ resource }: { resource: SkillResource }) {
+  const source = getLinkSource(resource.link);
+  if (source === "youtube") return <PlaySquare size={13} color="#FF0000" />;
+  if (source === "tiktok") return <Music2 size={12} color={colors.ink} />;
+  return <Globe size={11} color={colors.faint} />;
 }
 
 /**
@@ -24,9 +30,8 @@ function isPortraitResource(resource: SkillResource) {
 export function ResourceTile({ resource, width = 170 }: ResourceTileProps) {
   const isSaved = getFlag(`saved:${resource.link.id}`);
   const portrait = isPortraitResource(resource);
-  const tileWidth = portrait ? Math.round((width * 9) / 16) : width;
-  const height = portrait ? width : Math.round((width * 9) / 16);
-  const style = [styles.thumbnail, { width: tileWidth, height }];
+  const height = Math.round((width * 9) / 16);
+  const style = [styles.thumbnail, { width, height }];
 
   return (
     <Pressable
@@ -37,15 +42,28 @@ export function ResourceTile({ resource, width = 170 }: ResourceTileProps) {
     >
       <View style={style}>
         {resource.link.thumbnail_url ? (
-          <Image
-            source={resource.link.thumbnail_url}
-            style={styles.image}
-            contentFit="cover"
-            accessibilityLabel={resource.link.title ?? ""}
-          />
+          <>
+            {portrait ? (
+              <Image
+                source={resource.link.thumbnail_url}
+                style={styles.imageBackdrop}
+                contentFit="cover"
+                blurRadius={16}
+              />
+            ) : null}
+            <Image
+              source={resource.link.thumbnail_url}
+              style={styles.image}
+              contentFit={portrait ? "contain" : "cover"}
+              accessibilityLabel={resource.link.title ?? ""}
+            />
+          </>
         ) : (
           <View style={styles.fallback} />
         )}
+        <View style={styles.sourceOverlay}>
+          <SourceIcon resource={resource} />
+        </View>
         {isSaved ? (
           <View style={styles.savedOverlay}>
             <BookmarkCheck size={12} color={colors.surface} fill={colors.surface} />
@@ -73,6 +91,10 @@ const styles = StyleSheet.create({
     width: "100%",
     height: "100%",
   },
+  imageBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    transform: [{ scale: 1.12 }],
+  },
   fallback: {
     flex: 1,
     backgroundColor: colors.bgGroup,
@@ -87,5 +109,16 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     borderRadius: 11,
     backgroundColor: colors.accent,
+  },
+  sourceOverlay: {
+    position: "absolute",
+    top: 8,
+    left: 8,
+    width: 22,
+    height: 22,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 11,
+    backgroundColor: "rgba(255,255,255,0.92)",
   },
 });

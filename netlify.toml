@@ -11,7 +11,7 @@
 
 [build]
   base = "apps/web"
-  command = "npm run build"
+  command = "node ../../scripts/check-netlify-public-env.mjs && npm run build"
   publish = ".next"
 
 [build.environment]

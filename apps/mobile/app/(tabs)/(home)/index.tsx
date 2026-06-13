@@ -51,7 +51,9 @@ export default function DiscoverTab() {
     if (!needle) return sections;
     return sections
       .map((section) => {
-        const matchedCategory = section.category.name.toLowerCase().includes(needle);
+        const matchedCategory =
+          section.category.name.toLowerCase().includes(needle) ||
+          (section.category.description?.toLowerCase().includes(needle) ?? false);
         if (matchedCategory) return section;
         const matchedSkills = section.skills.filter((tile) =>
           tile.skill.name.toLowerCase().includes(needle),
@@ -78,7 +80,7 @@ export default function DiscoverTab() {
         <View style={styles.headerWrap}>
           <PageHeader title="Discover" />
           <View style={styles.searchWrap}>
-            <SearchBar value={search} onChangeText={setSearch} placeholder="Search discipline" />
+            <SearchBar value={search} onChangeText={setSearch} placeholder="Search sports or skills" />
           </View>
         </View>
 

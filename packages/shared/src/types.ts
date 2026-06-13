@@ -1,5 +1,7 @@
 export type SkillLevel = "beginner" | "intermediate" | "advanced";
 export type ResourceSort = "newest" | "popular";
+export type ResourceSourceFilter = "all" | "youtube" | "tiktok";
+export type ResourceSource = "youtube" | "tiktok" | "other";
 
 export type SuggestionType =
   | "LINK_ADD"
@@ -63,6 +65,7 @@ export interface SkillResource {
   upvote_count: number;
   downvote_count?: number;
   vote_score?: number;
+  value_score?: number | null;
   created_at?: string | null;
   link: LinkResource;
   skill?: Pick<SkillSummary, "id" | "slug" | "name" | "category_slug"> & {
