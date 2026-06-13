@@ -58,6 +58,8 @@
  *   COLLECT_TIKTOK_SEARCH_LIMIT   default 12
  *   COLLECT_TIKTOK_QUERY_GAP_MS   default 60000
  *   COLLECT_TIKTOK_PROBE_GAP_MS   default 1500
+ *   COLLECT_TIKTOK_SEARCH_RETRIES default 2 (retries when a search returns 0 cards — cold-session warm-up)
+ *   COLLECT_TIKTOK_SEARCH_RETRY_GAP_MS default 5000
  *   COLLECT_PARALLEL_SOURCES      default 1 (set to 0 to run YouTube then TikTok sequentially)
  */
 import { execFile, spawn } from "node:child_process";
@@ -221,6 +223,12 @@ const config = {
   tiktokSearchLimit: Number(process.env.COLLECT_TIKTOK_SEARCH_LIMIT ?? 12),
   tiktokQueryGapMs: Number(process.env.COLLECT_TIKTOK_QUERY_GAP_MS ?? 60_000),
   tiktokProbeGapMs: Number(process.env.COLLECT_TIKTOK_PROBE_GAP_MS ?? 1_500),
+  // A freshly-spawned CDP Chrome serves 0 search cards until the TikTok session
+  // warms up (observed: first query/queries return empty, a retry succeeds).
+  // Retry zero-card results before giving up so a cold start at 3 AM doesn't
+  // silently collect nothing.
+  tiktokSearchRetries: Number(process.env.COLLECT_TIKTOK_SEARCH_RETRIES ?? 2),
+  tiktokSearchRetryGapMs: Number(process.env.COLLECT_TIKTOK_SEARCH_RETRY_GAP_MS ?? 5_000),
   parallelSources: envFlag("COLLECT_PARALLEL_SOURCES", true),
   submit503CircuitThreshold: Number(process.env.COLLECT_SUBMIT_503_CIRCUIT_THRESHOLD ?? 5),
   preflightTimeoutMs: Number(process.env.COLLECT_PREFLIGHT_TIMEOUT_MS ?? 15_000),
@@ -2832,17 +2840,35 @@ async function processTikTokCollection(selectedSkills, summary) {
       firstQuery = false;
       stats.queries_attempted += 1;
 
-      let searchResult;
-      try {
-        searchResult = await searchTikTok(ctx, source.identifier, { dumpHtml: false });
-      } catch (error) {
-        stats.errors += 1;
-        log("warn", "tiktok_search_failed", errorMessage(error), {
-          source_identifier: source.identifier,
-          skill: skill.slug,
-        });
-        continue;
+      // Retry on zero cards: a cold CDP session returns empty until it warms
+      // up. Re-running the search (the same thing we do manually) succeeds.
+      let searchResult = null;
+      const maxSearchAttempts = 1 + config.tiktokSearchRetries;
+      for (let attempt = 1; attempt <= maxSearchAttempts; attempt += 1) {
+        try {
+          searchResult = await searchTikTok(ctx, source.identifier, { dumpHtml: false });
+        } catch (error) {
+          stats.errors += 1;
+          log("warn", "tiktok_search_failed", errorMessage(error), {
+            source_identifier: source.identifier,
+            skill: skill.slug,
+            attempt,
+          });
+          searchResult = null;
+          break;
+        }
+        if (searchResult.cards.length > 0) break;
+        if (attempt < maxSearchAttempts) {
+          log("info", "tiktok_search_retry", "TikTok search returned 0 cards; warming up and retrying (cold-session hiccup)", {
+            source_identifier: source.identifier,
+            skill: skill.slug,
+            attempt,
+            next_attempt_in_ms: config.tiktokSearchRetryGapMs,
+          });
+          await sleep(config.tiktokSearchRetryGapMs);
+        }
       }
+      if (!searchResult) continue;
 
       const cards = searchResult.cards.slice(0, config.tiktokSearchLimit);
       stats.candidates_by_query[source.identifier] = cards.length;
