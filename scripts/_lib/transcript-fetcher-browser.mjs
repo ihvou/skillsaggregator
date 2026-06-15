@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { setTimeout as sleep } from "node:timers/promises";
 import { chromium } from "playwright";
+import { isCdpChromeHealthy, killChromeOnPort } from "./cdp-health.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
@@ -129,24 +130,41 @@ async function waitForCdpEndpoint(port, timeoutMs = 20_000) {
   throw new Error(`cdp_endpoint_not_ready_after_${timeoutMs}ms`);
 }
 
+async function spawnCdpChrome() {
+  chromeProcess = spawn(config.chromePath, [
+    `--remote-debugging-port=${config.cdpPort}`,
+    `--user-data-dir=${config.cdpProfileDir}`,
+    "--profile-directory=Default",
+    "--no-first-run",
+    "--no-default-browser-check",
+    "--hide-crash-restore-bubble",
+    "about:blank",
+  ], { stdio: "ignore", detached: false });
+  chromeProcess.on("exit", () => { chromeProcess = null; });
+  await waitForCdpEndpoint(config.cdpPort, 20_000);
+}
+
 async function launchContext() {
   await mkdir(config.cdpProfileDir, { recursive: true });
   // Reuse an already-running debug Chrome (e.g. a manually-launched logged-in
   // session, or a leftover from a prior run) instead of spawning a duplicate.
-  if (!(await cdpEndpointUp(config.cdpPort))) {
-    chromeProcess = spawn(config.chromePath, [
-      `--remote-debugging-port=${config.cdpPort}`,
-      `--user-data-dir=${config.cdpProfileDir}`,
-      "--profile-directory=Default",
-      "--no-first-run",
-      "--no-default-browser-check",
-      "--hide-crash-restore-bubble",
-      "about:blank",
-    ], { stdio: "ignore", detached: false });
-    chromeProcess.on("exit", () => { chromeProcess = null; });
-    await waitForCdpEndpoint(config.cdpPort, 20_000);
-  }
+  const attached = await cdpEndpointUp(config.cdpPort);
+  if (!attached) await spawnCdpChrome();
   cdpBrowser = await chromium.connectOverCDP(`http://127.0.0.1:${config.cdpPort}`);
+
+  // A reused long-lived Chrome can lose its network stack after a sleep/wake
+  // cycle or a network change and never recover — every navigation then times
+  // out (observed 2026-06-15: the nightly attached to a days-old Chrome and 0
+  // pages loaded). Only an *attached* instance is suspect; a fresh spawn is
+  // known-good. Probe it, and if it can't reach the network kill it and respawn
+  // (a fresh launch of the same profile stays logged in).
+  if (attached && !(await isCdpChromeHealthy(cdpBrowser))) {
+    process.stderr.write(`${JSON.stringify({ level: "warn", event: "cdp_chrome_respawned", reason: "stale_unhealthy", port: config.cdpPort })}\n`);
+    await cdpBrowser.close().catch(() => undefined);
+    await killChromeOnPort(config.cdpPort);
+    await spawnCdpChrome();
+    cdpBrowser = await chromium.connectOverCDP(`http://127.0.0.1:${config.cdpPort}`);
+  }
   return cdpBrowser.contexts()[0] ?? (await cdpBrowser.newContext());
 }
 
