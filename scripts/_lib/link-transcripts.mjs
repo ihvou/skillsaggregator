@@ -160,7 +160,7 @@ export async function listActiveYoutubeLinksMissingTranscripts(supabase, {
     const to = from + pageSize - 1;
     const { data, error } = await supabase
       .from("links")
-      .select("id, url, canonical_url, title, domain, link_skill_relations!inner(id), link_transcripts(id)")
+      .select("id, url, canonical_url, title, domain, link_skill_relations!inner(id), link_transcripts(link_id)")
       .eq("is_active", true)
       .eq("link_skill_relations.is_active", true)
       .range(from, to);

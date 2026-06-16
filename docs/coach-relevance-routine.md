@@ -3,8 +3,9 @@
 Paste this into a scheduled Claude Routine. It scores how well each resource matches its
 **sub-skill** (topical relevance only — quality is the other coach's job).
 
-**Prerequisite:** tasks M40/M41 deployed — the `curator_votes` table + the
-`get_unscored_for_coach` and `set_curator_vote` RPCs. Until then this routine has nothing to call.
+**Prerequisite:** tasks M40/M41 and M48-M50 deployed — the `curator_votes` table,
+private `link_transcripts` storage, and the `get_unscored_for_coach` / `set_curator_vote`
+RPCs. Until then this routine either has nothing to call or only title-level signal.
 
 **Shadow mode:** these votes do NOT publish/unpublish or reorder anything yet. They accumulate in
 `curator_votes` until the Group-2 cutover. Run freely.

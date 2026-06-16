@@ -3,8 +3,10 @@
 Paste this into a scheduled Claude Routine. It scores how **good** each resource is as a learning
 resource (teaching quality / value — assuming it's relevant; relevance is the other coach's job).
 
-**Prerequisite:** tasks M40/M41 deployed — the `curator_votes` table + the
-`get_unscored_for_coach` and `set_curator_vote` RPCs.
+**Prerequisite:** tasks M40/M41 and M48-M50 deployed — the `curator_votes` table,
+private `link_transcripts` storage, and the `get_unscored_for_coach` / `set_curator_vote`
+RPCs. Do not run the real value backfill before transcripts are available, or it will judge
+many resources from title/caption metadata only.
 
 **Shadow mode:** these votes do NOT publish/unpublish or reorder anything yet. They accumulate in
 `curator_votes` until the Group-2 cutover. Run freely. (Runs independently of the relevance coach —

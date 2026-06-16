@@ -1,8 +1,7 @@
 begin;
 
 create table if not exists public.link_transcripts (
-  id uuid primary key default gen_random_uuid(),
-  link_id uuid not null references public.links(id) on delete cascade,
+  link_id uuid primary key references public.links(id) on delete cascade,
   source text not null default 'youtube'
     check (source in ('youtube')),
   provider text not null
@@ -10,11 +9,12 @@ create table if not exists public.link_transcripts (
   video_id text,
   language text,
   transcript_text text not null check (char_length(transcript_text) > 0),
+  char_count integer generated always as (char_length(transcript_text)) stored,
   transcript_hash text not null,
   fetched_at timestamptz not null default now(),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  unique (link_id)
+  check (char_count > 0)
 );
 
 comment on table public.link_transcripts is
@@ -23,6 +23,8 @@ comment on column public.link_transcripts.provider is
   'Fetcher/import path that produced the current transcript.';
 comment on column public.link_transcripts.transcript_hash is
   'SHA-256 of the normalized transcript text for idempotent imports and drift checks.';
+comment on column public.link_transcripts.char_count is
+  'Generated character count for the normalized transcript text.';
 
 create index if not exists link_transcripts_video_id_idx
 on public.link_transcripts (video_id)
