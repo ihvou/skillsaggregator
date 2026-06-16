@@ -3,10 +3,13 @@
 Paste this into a scheduled Claude Routine. It scores how **good** each resource is as a learning
 resource (teaching quality / value — assuming it's relevant; relevance is the other coach's job).
 
-**Prerequisite:** tasks M40/M41 and M48-M50 deployed — the `curator_votes` table,
+**Prerequisite:** tasks M40/M41 and M48-M50 are deployed ✓ — the `curator_votes` table,
 private `link_transcripts` storage, and the `get_unscored_for_coach` / `set_curator_vote`
-RPCs. Do not run the real value backfill before transcripts are available, or it will judge
-many resources from title/caption metadata only.
+RPCs are live on hosted. Transcript coverage is still partial (~108 of ~444 active YouTube
+items). Because value judges teaching quality, run `npm run transcripts:fetch-missing -- --all`
+to fill the gap BEFORE the big value backfill — otherwise it scores many resources from
+title/caption metadata only. (A vote permanently removes an item from the queue, so
+re-scoring later means deleting votes.)
 
 **Shadow mode:** these votes do NOT publish/unpublish or reorder anything yet. They accumulate in
 `curator_votes` until the Group-2 cutover. Run freely. (Runs independently of the relevance coach —

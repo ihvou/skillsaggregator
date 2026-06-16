@@ -4,7 +4,11 @@
  *   1. yt-dlp lists recent uploads from each trusted YouTube channel for the target category
  *   2. yt-dlp downloads the auto-generated subtitle (transcript) for each candidate
  *   3. Ollama (qwen2.5:7b by default) scores the transcript via Stage 2 prompt with format=json
- *   4. Survivors POST to the local submit-suggestion Edge Function as `pending`
+ *      (skipped when COLLECT_SCORING=off — candidates are collected unscored and the
+ *      relevance + value coaches judge them downstream)
+ *   4. Survivors POST to the local submit-suggestion Edge Function (auto-approved by
+ *      default; pending when COLLECT_AUTO_APPROVE=0, so nothing publishes until the
+ *      coach cutover promotes the queue)
  *
  * Usage:
  *   node scripts/run-collection.mjs --skill <slug>
@@ -20,6 +24,9 @@
  *   COLLECT_SKIP_EVENT_PERSIST    default true when COLLECT_TARGET=hosted
  *   OLLAMA_URL                    default http://localhost:11434
  *   OLLAMA_MODEL                  default qwen2.5:7b
+ *   COLLECT_SCORING               on|off; off skips the Ollama scorer (coaches judge instead)
+ *   COLLECT_AUTO_APPROVE          1|0; 0 submits as pending (no auto-publish)
+ *   COLLECT_PER_SKILL_CAP         default 8; max unscored submissions per skill per run
  *   YTDLP_BIN                     default Homebrew yt-dlp when present, then ./bin/yt-dlp
  *   NODE_BIN_FOR_YTDLP            default $(which node) (yt-dlp uses it as JS runtime)
  *   STAGE2_RELEVANCE_THRESHOLD    default 0.7
@@ -194,6 +201,14 @@ const config = {
   nodeBin: process.env.NODE_BIN_FOR_YTDLP ?? process.execPath,
   relevanceThreshold: Number(process.env.STAGE2_RELEVANCE_THRESHOLD ?? 0.7),
   qualityThreshold: Number(process.env.STAGE2_QUALITY_THRESHOLD ?? 0.6),
+  // Scoring-v2 levers. COLLECT_SCORING=off makes this a pure collector: the local
+  // Ollama scorer (relevance/quality/level + secondary skills) is skipped and
+  // candidates are submitted unscored for the coaches to judge. COLLECT_AUTO_APPROVE=0
+  // submits everything as `pending` so nothing publishes until the coach cutover
+  // promotes the queue. Defaults preserve the original behavior for manual runs.
+  scoringEnabled: (process.env.COLLECT_SCORING ?? "on").toLowerCase() !== "off",
+  autoApprove: (process.env.COLLECT_AUTO_APPROVE ?? "1") !== "0",
+  collectPerSkillCap: Number(process.env.COLLECT_PER_SKILL_CAP ?? 8),
   maxVideosPerChannel: Number(process.env.COLLECT_MAX_VIDEOS_PER_CHANNEL ?? 25),
   minDurationSec: Number(process.env.COLLECT_MIN_DURATION_SEC ?? 60),
   maxDurationSec: Number(process.env.COLLECT_MAX_DURATION_SEC ?? 2700),
@@ -1748,6 +1763,19 @@ async function scoreMetadataFallbackWithOllama(skill, candidate) {
   };
 }
 
+// COLLECT_SCORING=off: synthesize a neutral "unscored" verdict so the rest of the
+// candidate pipeline (transcript fetch, dedupe, submit) still runs. It passes every
+// gate by design — the relevance + value coaches do the real judging downstream.
+function unscoredCandidate() {
+  return {
+    relevance: 1,
+    teaching_quality: 1,
+    level: null,
+    scoring_mode: "unscored",
+    public_note: "",
+  };
+}
+
 function scoreThresholdStatus(score) {
   const relevanceThreshold = score.scoring_mode === "metadata_fallback"
     ? config.relevanceThreshold * clampScore(config.transcriptFallbackRelevanceMultiplier, 0.7)
@@ -1796,6 +1824,8 @@ function secondaryPromptUser(primarySkill, categorySkills, candidate, transcript
 }
 
 async function findSecondarySkills(primarySkill, categorySkills, candidate, transcript) {
+  // Secondary-skill discovery is an Ollama pass; disabled when scoring is off.
+  if (!config.scoringEnabled) return [];
   const body = {
     model: config.ollamaModel,
     stream: false,
@@ -1841,7 +1871,7 @@ async function postSuggestion(skill, candidate, transcript, score, viewCount) {
   // High-confidence candidates request auto_approved; the Edge Function honors it only
   // when the request also carries the matching x-internal-token (see security.ts).
   const requestAutoApprove =
-    Boolean(config.internalFunctionToken) && confidence >= config.autoApproveConfidenceFloor;
+    config.autoApprove && Boolean(config.internalFunctionToken) && confidence >= config.autoApproveConfidenceFloor;
   const payload = {
     type: "LINK_ADD",
     origin_type: "agent",
@@ -1881,6 +1911,10 @@ async function postSuggestion(skill, candidate, transcript, score, viewCount) {
         : null,
       score,
       transcript_excerpt: hasTranscript ? transcript.slice(0, 600) : null,
+      // When the suggestion stays pending (no auto-apply -> no link row yet, so
+      // nothing to key link_transcripts on) keep the FULL transcript here so it is
+      // preserved for when the link is created at the coach cutover.
+      transcript_full: hasTranscript && !requestAutoApprove ? transcript : null,
     },
     confidence,
     ...(requestAutoApprove ? { requested_status: "auto_approved" } : {}),
@@ -2005,7 +2039,7 @@ function tiktokPublicNote(verdict, candidate) {
 async function postTikTokSuggestion(skill, source, candidate, profile, verdict) {
   const confidence = tiktokConfidence(verdict);
   const requestAutoApprove =
-    Boolean(config.internalFunctionToken) && confidence >= config.autoApproveConfidenceFloor;
+    config.autoApprove && Boolean(config.internalFunctionToken) && confidence >= config.autoApproveConfidenceFloor;
   const canonicalUrl = candidate.url ?? candidate.href;
   const videoId = tiktokVideoIdFromUrl(canonicalUrl);
   const title = String(candidate.caption ?? `${skill.name} TikTok tutorial`).replace(/\s+/g, " ").trim().slice(0, 180);
@@ -2130,7 +2164,7 @@ async function postAttachSuggestion(primarySkill, secondary, candidate, transcri
       transcript_excerpt: transcript.slice(0, 600),
     },
     confidence: secondary.relevance,
-    ...(config.internalFunctionToken && secondary.relevance >= config.autoApproveConfidenceFloor
+    ...(config.autoApprove && config.internalFunctionToken && secondary.relevance >= config.autoApproveConfidenceFloor
       ? { requested_status: "auto_approved" }
       : {}),
   };
@@ -2190,9 +2224,13 @@ async function preflightCheck() {
     }
   }
 
-  const ollamaResponse = await fetchWithTimeout(`${config.ollamaUrl}/api/tags`, {}, config.preflightTimeoutMs, "preflight_ollama");
-  if (!ollamaResponse.ok) {
-    throw new Error(`preflight_ollama_${ollamaResponse.status}`);
+  if (config.scoringEnabled) {
+    const ollamaResponse = await fetchWithTimeout(`${config.ollamaUrl}/api/tags`, {}, config.preflightTimeoutMs, "preflight_ollama");
+    if (!ollamaResponse.ok) {
+      throw new Error(`preflight_ollama_${ollamaResponse.status}`);
+    }
+  } else {
+    log("info", "preflight_ollama_skipped", "COLLECT_SCORING=off: skipping the local Ollama scorer preflight", {});
   }
 
   const { stdout } = await ytdlp([
@@ -2405,6 +2443,16 @@ async function processSkill(skill, summary) {
     for (const candidate of toScore) {
       await checkKillSwitch(skill, candidate);
       await ensureSystemHealthy(skill, candidate);
+      // Without the Ollama level quota to bound a skill, cap unscored submissions
+      // per skill per run so a single skill can't flood the pending queue.
+      if (!config.scoringEnabled && submitted >= config.collectPerSkillCap) {
+        log("info", "skill_pending_cap_reached", "Reached per-skill unscored submission cap; moving to next skill", {
+          skill: skill.slug,
+          submitted,
+          cap: config.collectPerSkillCap,
+        });
+        break;
+      }
       if (!firstCandidate) {
         // Polite spacing between transcript+score iterations to avoid YouTube 429s.
         await sleep(2000);
@@ -2502,18 +2550,23 @@ async function processSkill(skill, summary) {
       }
 
       let score;
-      try {
-        score = scoringMode === "metadata_fallback"
-          ? await scoreMetadataFallbackWithOllama(skill, candidate)
-          : await scoreWithOllama(skill, candidate, transcript);
-        if (score.scoring_mode === "metadata_fallback") metadataFallbackScoredCount += 1;
-      } catch (error) {
-        log("warn", "score_failed", errorMessage(error), {
-          video_id: candidate.video_id,
-          scoring_mode: scoringMode,
-          transcript_fetcher: config.transcriptFetcher,
-        });
-        continue;
+      if (config.scoringEnabled) {
+        try {
+          score = scoringMode === "metadata_fallback"
+            ? await scoreMetadataFallbackWithOllama(skill, candidate)
+            : await scoreWithOllama(skill, candidate, transcript);
+          if (score.scoring_mode === "metadata_fallback") metadataFallbackScoredCount += 1;
+        } catch (error) {
+          log("warn", "score_failed", errorMessage(error), {
+            video_id: candidate.video_id,
+            scoring_mode: scoringMode,
+            transcript_fetcher: config.transcriptFetcher,
+          });
+          continue;
+        }
+      } else {
+        // COLLECT_SCORING=off: collect this candidate unscored; coaches judge it later.
+        score = unscoredCandidate();
       }
 
       log("info", "candidate_scored", "Candidate scored", {
@@ -3098,7 +3151,9 @@ async function main() {
     log("info", "collection_started", "Starting collection", {
       skills: skills.length,
       category: categorySlugFilter,
-      model: config.ollamaModel,
+      scoring_enabled: config.scoringEnabled,
+      auto_approve: config.autoApprove,
+      model: config.scoringEnabled ? config.ollamaModel : null,
       supabase_url: config.supabaseUrl,
       collect_target: config.collectTarget,
       db_access: config.collectDbUrl ? "postgres_url" : "local_docker",

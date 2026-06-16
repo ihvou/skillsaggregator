@@ -62,9 +62,17 @@ if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_SERVICE_ROLE_KEY:-}" ]; then
 fi
 
 if [ "$COLLECT_TARGET" = "hosted" ] && [ -z "${INTERNAL_FUNCTION_TOKEN:-}" ]; then
-  echo "Missing INTERNAL_FUNCTION_TOKEN after sourcing ${ENV_FILE}; hosted auto-approve requires it." >&2
+  echo "Missing INTERNAL_FUNCTION_TOKEN after sourcing ${ENV_FILE}; the collector sends it as the internal-request token." >&2
   exit 64
 fi
+
+# Scoring v2: the nightly run is now a pure collector. The local Ollama scorer is
+# unwired (COLLECT_SCORING=off) and nothing auto-publishes (COLLECT_AUTO_APPROVE=0)
+# — collected items land as pending suggestions (with transcripts in evidence_json)
+# for the relevance + value coaches to curate, and get promoted at the coach cutover.
+# Override either var in the env file to restore the old self-scoring behavior.
+export COLLECT_SCORING="${COLLECT_SCORING:-off}"
+export COLLECT_AUTO_APPROVE="${COLLECT_AUTO_APPROVE:-0}"
 
 if [ "$COLLECT_TARGET" = "hosted" ] && ! command -v "${PSQL_BIN:-psql}" >/dev/null 2>&1; then
   echo "psql not found. Install libpq (brew install libpq); this script adds Homebrew libpq bin dirs to PATH." >&2
