@@ -104,9 +104,25 @@ else
   echo "[$(date +%Y-%m-%dT%H:%M:%S%z)] hosted target: skipping local Supabase health check and pg_dump backup" | tee -a "$log_file"
 fi
 
+set +e
 "$timeout_bin" --signal=TERM --kill-after=30s "$hard_timeout" \
   node scripts/run-collection.mjs --all "$@" 2>&1 | tee -a "$log_file"
 exit_code="${PIPESTATUS[0]}"
+set -e
 
 echo "[$(date +%Y-%m-%dT%H:%M:%S%z)] nightly-collect exited with code $exit_code" | tee -a "$log_file"
+
+missing_transcripts_limit="${COLLECT_MISSING_TRANSCRIPTS_LIMIT:-10}"
+if [ "$exit_code" -eq 0 ] && [ "$missing_transcripts_limit" != "0" ]; then
+  echo "[$(date +%Y-%m-%dT%H:%M:%S%z)] missing-transcripts step starting limit=${missing_transcripts_limit}" | tee -a "$log_file"
+  set +e
+  node scripts/fetch-missing-transcripts.mjs --limit "$missing_transcripts_limit" 2>&1 | tee -a "$log_file"
+  missing_transcripts_exit_code="${PIPESTATUS[0]}"
+  set -e
+  echo "[$(date +%Y-%m-%dT%H:%M:%S%z)] missing-transcripts step exited with code ${missing_transcripts_exit_code}" | tee -a "$log_file"
+  if [ "$missing_transcripts_exit_code" -ne 0 ]; then
+    echo "[$(date +%Y-%m-%dT%H:%M:%S%z)] WARNING: missing-transcripts step failed; preserving collection exit code ${exit_code}" | tee -a "$log_file"
+  fi
+fi
+
 exit "$exit_code"

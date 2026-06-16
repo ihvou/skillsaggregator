@@ -73,7 +73,13 @@ import {
   closeTranscriptBrowser,
   fetchTranscriptBrowser,
   preflightTranscriptBrowser,
+  vttToText,
 } from "./_lib/transcript-fetcher-browser.mjs";
+import {
+  normalizeTranscriptText,
+  transcriptHash,
+  transcriptProviderFromFetcher,
+} from "./_lib/link-transcripts.mjs";
 import {
   closeTikTokBrowser,
   fetchCreatorProfile,
@@ -1530,57 +1536,6 @@ async function fetchTranscript(videoId) {
   return fetchTranscriptYtdlp(videoId);
 }
 
-function vttToText(vtt) {
-  const lines = vtt.split("\n");
-  const out = [];
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    if (trimmed.startsWith("WEBVTT")) continue;
-    if (trimmed.startsWith("Kind:") || trimmed.startsWith("Language:")) continue;
-    if (/^\d{2}:\d{2}/.test(trimmed) || trimmed.includes("-->")) continue;
-    if (trimmed.startsWith("NOTE")) continue;
-    const stripped = trimmed.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#39;/g, "'");
-    appendCaptionLine(out, stripped);
-  }
-  return out.join(" ").replace(/\s+/g, " ").trim();
-}
-
-function appendCaptionLine(out, line) {
-  const current = line.replace(/\s+/g, " ").trim();
-  if (!current) return;
-  const previous = out.at(-1);
-  if (!previous) {
-    out.push(current);
-    return;
-  }
-  // Note: do NOT drop `current` just because it is a prefix of `previous`
-  // (`previous.startsWith(current)`) — a genuinely new short line can coincide
-  // with the start of the prior line and would be silently lost. Exact repeats
-  // are caught above; rolling-caption growth is handled by the next branch.
-  if (current === previous) return;
-  if (current.startsWith(previous)) {
-    out[out.length - 1] = current;
-    return;
-  }
-
-  const overlap = overlappingCaptionText(previous, current);
-  if (overlap) out[out.length - 1] = overlap;
-  else out.push(current);
-}
-
-function overlappingCaptionText(previous, current) {
-  const max = Math.min(previous.length, current.length);
-  for (let length = max; length >= 12; length -= 1) {
-    const previousSuffix = previous.slice(previous.length - length).toLowerCase();
-    const currentPrefix = current.slice(0, length).toLowerCase();
-    if (previousSuffix === currentPrefix) {
-      return `${previous}${current.slice(length)}`;
-    }
-  }
-  return null;
-}
-
 function promptSystem(skill) {
   const category = skill.category_name ?? skill.category_slug ?? "the sport";
   return [
@@ -1943,6 +1898,96 @@ async function postSuggestion(skill, candidate, transcript, score, viewCount) {
   const text = await response.text();
   if (!response.ok) throw new Error(`submit-suggestion ${response.status}: ${text}`);
   return JSON.parse(text);
+}
+
+function linkIdFromSubmitResult(result) {
+  if (!result || typeof result !== "object") return null;
+  if (typeof result.link_id === "string") return result.link_id;
+  if (result.applied && typeof result.applied === "object" && typeof result.applied.link_id === "string") {
+    return result.applied.link_id;
+  }
+  return null;
+}
+
+async function resolveSubmittedLinkId(candidate, result) {
+  const resultLinkId = linkIdFromSubmitResult(result);
+  if (resultLinkId) return resultLinkId;
+
+  const rows = await dbQuery(
+    `select id
+       from public.links
+      where canonical_url = $1
+         or url = $2
+         or canonical_url ilike $3
+         or url ilike $3
+      order by is_active desc, updated_at desc nulls last, created_at desc
+      limit 1`,
+    [candidate.canonical_url, candidate.url, `%${candidate.video_id}%`],
+  );
+  return rows[0]?.[0] ?? null;
+}
+
+async function persistAcceptedTranscript(candidate, result, transcript) {
+  const transcriptText = normalizeTranscriptText(transcript);
+  if (!transcriptText) {
+    log("debug", "link_transcript_persist_skipped_empty", "Skipping transcript persist because transcript text is empty", {
+      video_id: candidate.video_id,
+      suggestion_id: result?.suggestion_id ?? null,
+    });
+    return null;
+  }
+
+  const linkId = await resolveSubmittedLinkId(candidate, result);
+  if (!linkId) {
+    log("warn", "link_transcript_persist_deferred_link_missing", "Transcript fetched, but no accepted link row exists yet", {
+      video_id: candidate.video_id,
+      canonical_url: candidate.canonical_url,
+      suggestion_id: result?.suggestion_id ?? null,
+      status: result?.status ?? null,
+      duplicate: Boolean(result?.duplicate),
+      transcript_length: transcriptText.length,
+      transcript_fetcher: config.transcriptFetcher,
+    });
+    return null;
+  }
+
+  const provider = transcriptProviderFromFetcher(config.transcriptFetcher);
+  const hash = transcriptHash(transcriptText);
+  await dbQuery(
+    `insert into public.link_transcripts (
+       link_id,
+       source,
+       provider,
+       video_id,
+       language,
+       transcript_text,
+       transcript_hash,
+       fetched_at
+     )
+     values ($1, 'youtube', $2, $3, 'en', $4, $5, now())
+     on conflict (link_id) do update set
+       provider = excluded.provider,
+       video_id = coalesce(excluded.video_id, public.link_transcripts.video_id),
+       language = coalesce(excluded.language, public.link_transcripts.language),
+       transcript_text = excluded.transcript_text,
+       transcript_hash = excluded.transcript_hash,
+       fetched_at = excluded.fetched_at,
+       updated_at = now()`,
+    [linkId, provider, candidate.video_id, transcriptText, hash],
+  );
+
+  log("info", "link_transcript_persisted", "Transcript persisted for accepted link", {
+    link_id: linkId,
+    video_id: candidate.video_id,
+    suggestion_id: result?.suggestion_id ?? null,
+    status: result?.status ?? null,
+    duplicate: Boolean(result?.duplicate),
+    provider,
+    transcript_length: transcriptText.length,
+    transcript_hash: hash,
+  });
+
+  return { link_id: linkId, transcript_hash: hash };
 }
 
 function tiktokConfidence(verdict) {
@@ -2526,6 +2571,20 @@ async function processSkill(skill, summary) {
           collect_target: config.collectTarget,
           suggestion_id: result.suggestion_id, duplicate: Boolean(result.duplicate),
         });
+
+        try {
+          await persistAcceptedTranscript(candidate, result, transcript);
+        } catch (error) {
+          log("error", "link_transcript_persist_failed", errorMessage(error), {
+            collect_target: config.collectTarget,
+            suggestion_id: result.suggestion_id,
+            duplicate: Boolean(result.duplicate),
+            video_id: candidate.video_id,
+            canonical_url: candidate.canonical_url,
+            transcript_fetcher: config.transcriptFetcher,
+            transcript_length: transcript?.length ?? 0,
+          });
+        }
       } catch (error) {
         const httpStatus = submitFailureStatus(error);
         consecutiveSubmit503 = httpStatus === 503 ? consecutiveSubmit503 + 1 : 0;
