@@ -29,10 +29,14 @@ Every request: -H "apikey: $KEY" -H "Authorization: Bearer $KEY"
 Returns up to 10 rows, each with:
   relation_id, source ("youtube" | "tiktok" | "other"), title, description, url,
   duration_seconds, like_count, comment_count, share_count, favorite_count, creator_handle,
-  skill_name, category_name.
+  skill_name, category_name, transcript (the video's captured transcript — your primary signal;
+  may be null if not captured yet).
 If it returns [] -> log "nothing to review" and stop.
 
-=== SOURCE DATA (what to read — signal is metadata only, there is NO transcript) ===
+=== SOURCE DATA (read the TRANSCRIPT first when present; metadata is the fallback) ===
+- transcript: when non-empty, this is your PRIMARY signal — judge teaching quality from what's
+  actually said: accurate? in-depth? well-structured? covers the key nuances? or padding / a
+  disguised ad? Use it whenever present; fall back to the metadata below only when transcript is null.
 - source = "youtube": title; description (often empty); duration_seconds (very short -> likely
   shallow; long-form -> can be comprehensive); like_count / comment_count as weak quality proxies; url.
 - source = "tiktok": title / description = CAPTION; creator_handle (a known coach vs a random clip);
@@ -47,9 +51,10 @@ Adopt the mindset of a veteran {category_name} coach judging TEACHING VALUE (ass
    0  = mediocre / shallow / generic.
   -1  = weak: thin, unclear, or distracted (e.g. heavy product promotion crowding out teaching).
   -2  = bad value: an ad disguised as a tutorial, misleading, or technically wrong/harmful.
-Use CONTINUOUS values (e.g. +1.6, -0.5). Signal is thin (mostly title/caption + engagement +
-duration + creator) — be calibrated, not overconfident; a catchy title is not quality. A relevant
-video that is really an ad or skips the important nuances should go NEGATIVE even if on-topic.
+Use CONTINUOUS values (e.g. +1.6, -0.5). With a transcript your signal is strong — use it and
+judge the actual teaching. Without one, the signal is thin (title/caption + engagement) — be
+calibrated, not overconfident; a catchy title is not quality. A relevant video that is really an
+ad or skips the important nuances should go NEGATIVE even if on-topic.
 
 === COMMENTS (two, written AS a real {category_name} coach — natural human voice: sometimes terse,
 sometimes blunt, not diplomatically polished, NO AI throat-clearing or hedging) ===

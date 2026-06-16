@@ -30,13 +30,17 @@ functions below. No other secret is needed.)
 Returns up to 10 rows, each with:
   relation_id, source ("youtube" | "tiktok" | "other"), title, description, url,
   duration_seconds, like_count, comment_count, share_count, favorite_count, creator_handle,
-  skill_name, category_name.
+  skill_name, category_name, transcript (the video's captured transcript — your primary signal;
+  may be null if not captured yet).
 If it returns [] -> log "nothing to review" and stop.
 
-=== SOURCE DATA (what to read — signal is metadata only, there is NO transcript) ===
-- source = "youtube": title is the main signal; description is often empty (use if present);
-  duration_seconds + like_count + comment_count are weak context; url.
-- source = "tiktok": title / description = the CAPTION (main signal); creator_handle;
+=== SOURCE DATA (read the TRANSCRIPT first when present; metadata is the fallback) ===
+- transcript: when non-empty, this is your PRIMARY signal — it's what's actually said in the video.
+  Read it to decide whether the video really teaches this sub-skill (titles over-promise; the
+  transcript is the truth). Only fall back to the metadata below when transcript is null.
+- source = "youtube": title; description (often empty); duration_seconds + like_count +
+  comment_count as weak context; url.
+- source = "tiktok": title / description = the CAPTION; creator_handle;
   like_count / comment_count / share_count / favorite_count; duration_seconds (short-form); url.
 - Always: skill_name within category_name = the EXACT sub-skill the video must teach.
 
