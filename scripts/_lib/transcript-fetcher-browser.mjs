@@ -18,7 +18,8 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 //   (exactly what the webscraper.io content script does), while ATTACHED to a
 //   normally-launched Chrome over CDP (NOT chromium.launch* — those add
 //   automation that taints the click). A focused/visible tab is also required;
-//   page.bringToFront() supplies that. With this, get_transcript returns 200 and
+//   we emulate focus via CDP (Emulation.setFocusEmulationEnabled, M53) so the page
+//   reports focused WITHOUT raising the window/stealing OS focus. get_transcript 200s and
 //   the panel renders. Hands-off batch: 9/9 vs 0/9 for every Playwright-click
 //   variant. The debug port also requires a NON-default --user-data-dir
 //   (Chrome 136+ blocks it on the default profile dir).
@@ -50,7 +51,6 @@ function decodeHtmlEntities(value) {
 export function vttToText(vtt) {
   const lines = String(vtt ?? "").split("\n");
   const out = [];
-  let prevText = "";
   for (const line of lines) {
     const trimmed = line.trim();
     if (!trimmed) continue;
@@ -59,12 +59,40 @@ export function vttToText(vtt) {
     if (/^\d{2}:\d{2}/.test(trimmed) || trimmed.includes("-->")) continue;
     if (trimmed.startsWith("NOTE")) continue;
     const stripped = decodeHtmlEntities(trimmed.replace(/<[^>]+>/g, "")).replace(/\s+/g, " ").trim();
-    if (stripped && stripped !== prevText) {
-      out.push(stripped);
-      prevText = stripped;
-    }
+    appendCaptionLine(out, stripped);
   }
   return out.join(" ").replace(/\s+/g, " ").trim();
+}
+
+function appendCaptionLine(out, line) {
+  const current = line.replace(/\s+/g, " ").trim();
+  if (!current) return;
+  const previous = out.at(-1);
+  if (!previous) {
+    out.push(current);
+    return;
+  }
+  if (current === previous) return;
+  if (current.startsWith(previous)) {
+    out[out.length - 1] = current;
+    return;
+  }
+
+  const overlap = overlappingCaptionText(previous, current);
+  if (overlap) out[out.length - 1] = overlap;
+  else out.push(current);
+}
+
+function overlappingCaptionText(previous, current) {
+  const max = Math.min(previous.length, current.length);
+  for (let length = max; length >= 12; length -= 1) {
+    const previousSuffix = previous.slice(previous.length - length).toLowerCase();
+    const currentPrefix = current.slice(0, length).toLowerCase();
+    if (previousSuffix === currentPrefix) {
+      return `${previous}${current.slice(length)}`;
+    }
+  }
+  return null;
 }
 
 function json3ToText(payload) {
@@ -194,12 +222,24 @@ export async function closeTranscriptBrowser() {
   contextPromise = null;
 }
 
+// Make the page report focused/active (document.hasFocus() === true) so YouTube's
+// get_transcript serves us — WITHOUT page.bringToFront() raising the Chrome window
+// and stealing macOS focus. Set once per page; persists for the page lifetime. (M53)
+async function enableFocusEmulation(page) {
+  try {
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send("Emulation.setFocusEmulationEnabled", { enabled: true });
+  } catch {
+    await page.bringToFront().catch(() => undefined); // fallback if focus emulation is unavailable
+  }
+}
+
 export async function preflightTranscriptBrowser() {
   const ctx = await getTranscriptBrowserContext();
   const page = await ctx.newPage();
+  await enableFocusEmulation(page);
   let loggedIn = null;
   try {
-    await page.bringToFront().catch(() => undefined);
     await page.goto("https://www.youtube.com", { waitUntil: "domcontentloaded", timeout: config.navTimeoutMs });
     loggedIn = await page.evaluate(() => {
       try { return !!(window.ytcfg && (window.ytcfg.get ? window.ytcfg.get("LOGGED_IN") : window.ytcfg.data_ && window.ytcfg.data_.LOGGED_IN)); } catch { return null; }
@@ -297,11 +337,10 @@ async function scrapeTranscriptElementClick(page) {
 async function fetchTranscriptBrowserOnce(videoId, { waitUntil }) {
   const ctx = await getTranscriptBrowserContext();
   const page = await ctx.newPage();
+  await enableFocusEmulation(page); // focus emulation instead of bringToFront so we don't steal the window (M53)
   const watchUrl = `https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`;
   try {
-    await page.bringToFront().catch(() => undefined); // get_transcript only serves the focused/visible tab
     await page.goto(watchUrl, { waitUntil, timeout: config.navTimeoutMs });
-    await page.bringToFront().catch(() => undefined);
     await page.waitForSelector("ytd-watch-metadata", { timeout: 15_000 }).catch(() => undefined);
     await acceptConsentIfPresent(page);
     const panelText = await scrapeTranscriptElementClick(page);
