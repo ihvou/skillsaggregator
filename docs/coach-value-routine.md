@@ -73,6 +73,11 @@ HTTP 204 = stored. Idempotent: re-running REPLACES your prior vote for that reso
 === RULES ===
 - At most 10 rows per run. Only call set_curator_vote for relation_ids you fetched in Step 1.
 - Never touch any other table/endpoint.
+- Run each set_curator_vote as ONE standalone curl exactly like Step 3 (plain `-H` flags, single-
+  quoted `-d` JSON). Do NOT wrap calls in a shell function, a bash array (`${arr[@]}`), or a brace
+  group `{ ...; }`, and do NOT add `-w "%{http_code}"`. Those constructs are not statically
+  analyzable, so the permission prompt only offers "Allow once" (no "Always allow") and you get
+  re-approved on every single call.
 
 === STEP 4 — report ===
 Print: how many you reviewed, the spread of weights, and any rows you skipped with the reason.
