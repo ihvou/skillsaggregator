@@ -11,6 +11,9 @@ const nextConfig: NextConfig = {
     // client or bot fetched was host image-CDN work + bandwidth (part of the
     // 2026-06 bot-traffic bill), and the srcset bloat alone was ~300KB of HTML
     // per page.
+    // Reassessed for M68 on 2026-06-18: keep this on until we introduce a
+    // capped image loader/transform policy; reopening unbounded transforms
+    // would trade a modest LCP win for the same bot-amplification cost risk.
     unoptimized: true,
     remotePatterns: [
       { protocol: "https", hostname: "i.ytimg.com" },

@@ -15,7 +15,9 @@ export const metadata: Metadata = {
     "Find the best free tutorials for any skill you want to learn, across sports and training.",
   icons: {
     icon: "/icon.svg",
+    apple: "/apple-icon.png",
   },
+  manifest: "/manifest.webmanifest",
   openGraph: {
     title: "Subskills",
     description:

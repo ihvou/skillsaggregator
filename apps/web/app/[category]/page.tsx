@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import type { CategorySummary, SkillSummary } from "@skillsaggregator/shared";
 import { CategoryResourceBrowser } from "@/components/CategoryResourceBrowser";
+import { JsonLd } from "@/components/JsonLd";
 import {
   getAllCatalogs,
   getCategoryBrowserData,
@@ -27,10 +29,46 @@ export async function generateMetadata({
   const { category: slug } = await params;
   const { category } = await getCatalog(slug, { publicOnly: true });
   if (!category) return {};
+  const canonical = `${getBaseUrl()}/${category.slug}`;
+  const title = `${category.name} resources`;
+  const description = category.description ?? `Curated resources for ${category.name}.`;
   return {
-    title: `${category.name} resources | Subskills`,
-    description: category.description ?? `Curated resources for ${category.name}.`,
-    alternates: { canonical: `${getBaseUrl()}/${category.slug}` },
+    title,
+    description,
+    alternates: { canonical },
+    openGraph: {
+      title,
+      description,
+      url: canonical,
+    },
+  };
+}
+
+function categoryJsonLd(category: CategorySummary, skills: SkillSummary[]) {
+  const baseUrl = getBaseUrl();
+  const categoryUrl = `${baseUrl}/${category.slug}`;
+  return {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "BreadcrumbList",
+        itemListElement: [
+          { "@type": "ListItem", position: 1, name: "Home", item: `${baseUrl}/` },
+          { "@type": "ListItem", position: 2, name: category.name, item: categoryUrl },
+        ],
+      },
+      {
+        "@type": "ItemList",
+        name: `${category.name} sub-skills`,
+        url: categoryUrl,
+        itemListElement: skills.map((skill, index) => ({
+          "@type": "ListItem",
+          position: index + 1,
+          name: skill.name,
+          url: `${categoryUrl}/${skill.slug}`,
+        })),
+      },
+    ],
   };
 }
 
@@ -44,10 +82,13 @@ export default async function CategoryPage({
   if (!category) notFound();
 
   return (
-    <CategoryResourceBrowser
-      category={category}
-      skills={skills}
-      resources={resources}
-    />
+    <>
+      <JsonLd data={categoryJsonLd(category, skills)} />
+      <CategoryResourceBrowser
+        category={category}
+        skills={skills}
+        resources={resources}
+      />
+    </>
   );
 }
