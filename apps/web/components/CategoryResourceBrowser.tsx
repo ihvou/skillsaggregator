@@ -56,13 +56,15 @@ export function CategoryResourceBrowser({
   );
 
   const learningPathStages = useMemo(() => {
+    // Search lives only in the Sub-skills tab, so the Learning Path is never
+    // filtered by the query (it would otherwise filter invisibly).
     return filterLearningPathStages(learningPathIndex, {
-      query,
+      query: "",
       level: level ?? "all",
       source,
       perSkill: 3,
     });
-  }, [learningPathIndex, level, query, source]);
+  }, [learningPathIndex, level, source]);
 
   return (
     <div className="pb-20">
@@ -86,13 +88,7 @@ export function CategoryResourceBrowser({
       />
 
       <section className="mx-auto mt-8 max-w-5xl px-4">
-        <SkillSearch
-          value={search}
-          onChange={setSearch}
-          placeholder={`Search ${category.name} sub-skills`}
-          label={`Search ${category.name} sub-skills`}
-        />
-        <div className="mt-5 inline-flex rounded-lg bg-surface p-1 shadow-sm ring-1 ring-divider">
+        <div className="inline-flex rounded-lg bg-surface p-1 shadow-sm ring-1 ring-divider">
           {[
             { value: "subskills" as const, label: "Sub-skills" },
             { value: "path" as const, label: "Learning Path" },
@@ -116,7 +112,16 @@ export function CategoryResourceBrowser({
       </section>
 
       {tab === "subskills" ? (
-        <div className="mt-12 space-y-14">
+        <div className="mt-8">
+          <div className="mx-auto max-w-5xl px-4">
+            <SkillSearch
+              value={search}
+              onChange={setSearch}
+              placeholder={`Search ${category.name} sub-skills`}
+              label={`Search ${category.name} sub-skills`}
+            />
+          </div>
+          <div className="mt-8 space-y-14">
           {visibleSections.map((section) => (
             <section key={section.skill.id} aria-labelledby={`skill-${section.skill.slug}`}>
               <div className="mx-auto max-w-5xl px-4">
@@ -147,6 +152,7 @@ export function CategoryResourceBrowser({
               No sub-skills match these filters yet.
             </div>
           ) : null}
+          </div>
         </div>
       ) : (
         <div className="mt-12 space-y-14">
@@ -168,11 +174,10 @@ export function CategoryResourceBrowser({
                   <div className="space-y-10">
                     {stage.entries.map((entry) => (
                       <div key={`${stage.value}-${entry.skill.id}`}>
-                        <SectionHeader
-                          title={entry.skill.name}
-                          href={`/${category.slug}/${entry.skill.slug}`}
-                          subtitle={`${entry.total} ${entry.total === 1 ? "resource" : "resources"}`}
-                        />
+                        <h3 className="text-lg font-extrabold text-ink">{entry.skill.name}</h3>
+                        <p className="mt-1 text-sm text-muted">
+                          {entry.total} {entry.total === 1 ? "resource" : "resources"}
+                        </p>
                         <div className="mt-3 divide-y divide-divider">
                           {entry.resources.map((resource) => (
                             <div key={resource.id} className="py-5">

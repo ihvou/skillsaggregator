@@ -62,13 +62,15 @@ export default function CategoryScreen() {
   );
 
   const learningPathStages = useMemo(() => {
+    // Search lives only in the Sub-skills tab, so the Learning Path is never
+    // filtered by the query (it would otherwise filter invisibly).
     return filterLearningPathStages(learningPathIndex, {
-      query: normalizedSearch,
+      query: "",
       level,
       source,
       perSkill: 3,
     });
-  }, [learningPathIndex, level, normalizedSearch, source]);
+  }, [learningPathIndex, level, source]);
 
   return (
     <Screen edges={["top"]} padded={false}>
@@ -102,11 +104,6 @@ export default function CategoryScreen() {
               </Pressable>
             }
           />
-          <SearchBar
-            value={search}
-            onChangeText={setSearch}
-            placeholder="Search sub-skills"
-          />
           <View style={styles.tabs}>
             {[
               { value: "subskills" as const, label: "Sub-skills" },
@@ -139,37 +136,46 @@ export default function CategoryScreen() {
             <SkeletonList count={2} />
           </View>
         ) : tab === "subskills" ? (
-          visibleSections.length === 0 ? (
-            <View style={styles.emptyWrap}>
-              <EmptyState
-                icon={Search}
-                title="No matching sub-skills"
-                subtitle="Try another search, level, or source."
+          <>
+            <View style={styles.searchWrap}>
+              <SearchBar
+                value={search}
+                onChangeText={setSearch}
+                placeholder="Search sub-skills"
               />
             </View>
-          ) : (
-            visibleSections.map((section, index) => (
-              <View
-                key={section.skill.id}
-                style={[styles.section, index === 0 ? styles.firstSection : null]}
-              >
-                <SectionHeader
-                  title={section.skill.name}
-                  onPress={() => router.push(`/${categorySlug}/${section.skill.slug}`)}
+            {visibleSections.length === 0 ? (
+              <View style={styles.emptyWrap}>
+                <EmptyState
+                  icon={Search}
+                  title="No matching sub-skills"
+                  subtitle="Try another search, level, or source."
                 />
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.horizontalRow}
-                >
-                  {section.resources.map((resource) => (
-                    <ResourceTile key={resource.id} resource={resource} />
-                  ))}
-                </ScrollView>
-                <View style={styles.divider} />
               </View>
-            ))
-          )
+            ) : (
+              visibleSections.map((section, index) => (
+                <View
+                  key={section.skill.id}
+                  style={[styles.section, index === 0 ? styles.firstSection : null]}
+                >
+                  <SectionHeader
+                    title={section.skill.name}
+                    onPress={() => router.push(`/${categorySlug}/${section.skill.slug}`)}
+                  />
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.horizontalRow}
+                  >
+                    {section.resources.map((resource) => (
+                      <ResourceTile key={resource.id} resource={resource} />
+                    ))}
+                  </ScrollView>
+                  <View style={styles.divider} />
+                </View>
+              ))
+            )}
+          </>
         ) : (
           <View style={styles.pathWrap}>
             {learningPathStages.map((stage) => (
@@ -185,21 +191,15 @@ export default function CategoryScreen() {
                 ) : (
                   stage.entries.map((entry) => (
                     <View key={`${stage.value}-${entry.skill.id}`} style={styles.pathSkill}>
-                      <SectionHeader
-                        title={entry.skill.name}
-                        onPress={() => router.push(`/${categorySlug}/${entry.skill.slug}`)}
-                      />
+                      <Text style={styles.pathSkillName} numberOfLines={1}>
+                        {entry.skill.name}
+                      </Text>
                       <Text style={styles.pathSkillMeta}>
                         {entry.total} {entry.total === 1 ? "resource" : "resources"}
                       </Text>
                       <View style={styles.pathResources}>
-                        {entry.resources.map((resource, resourceIndex) => (
-                          <View key={resource.id}>
-                            {resourceIndex > 0 ? <View style={styles.divider} /> : null}
-                            <View style={styles.pathResourceRow}>
-                              <ResourceCard resource={resource} />
-                            </View>
-                          </View>
+                        {entry.resources.map((resource) => (
+                          <ResourceCard key={resource.id} resource={resource} />
                         ))}
                       </View>
                     </View>
@@ -276,6 +276,10 @@ const styles = StyleSheet.create({
     marginHorizontal: spacing.page,
     backgroundColor: colors.divider,
   },
+  searchWrap: {
+    paddingHorizontal: spacing.page,
+    paddingTop: spacing.md,
+  },
   skeletonWrap: {
     paddingHorizontal: spacing.page,
   },
@@ -322,7 +326,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   pathSkill: {
-    gap: spacing.xs,
+    gap: spacing.xxs,
+  },
+  pathSkillName: {
+    color: colors.ink,
+    fontSize: 17,
+    fontWeight: "800",
   },
   pathSkillMeta: {
     color: colors.muted,
@@ -330,10 +339,8 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   pathResources: {
-    marginTop: spacing.xs,
-  },
-  pathResourceRow: {
-    paddingVertical: spacing.lg,
+    marginTop: spacing.sm,
+    gap: spacing.md,
   },
   pressed: {
     opacity: 0.7,
