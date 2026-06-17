@@ -5,10 +5,10 @@ Paste this into a scheduled Claude Routine. It scores how well each resource mat
 
 **Prerequisite:** tasks M40/M41 and M48-M50 are deployed ✓ — the `curator_votes` table,
 private `link_transcripts` storage, and the `get_unscored_for_coach` / `set_curator_vote`
-RPCs are live on hosted. Transcript coverage is currently partial (~108 of ~444 active
-YouTube items backfilled; ~336 still pending the scraper). Relevance can run now — it
-tolerates metadata-only rows far better than the value coach does — but for the richest
-signal you can let `npm run transcripts:fetch-missing -- --all` fill the gap first.
+RPCs are live on hosted. Transcript coverage is complete — all 444 active YouTube items
+have a transcript as of 2026-06-17, so `get_unscored_for_coach` returns full transcript
+signal. (TikTok items have no transcript by design — caption/description is their signal.)
+Ready to run at full strength.
 
 **Shadow mode:** these votes do NOT publish/unpublish or reorder anything yet. They accumulate in
 `curator_votes` until the Group-2 cutover. Run freely.
