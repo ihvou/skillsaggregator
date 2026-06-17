@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Linking, Pressable, StyleSheet, Text, View } from "react-native";
 import { Image } from "expo-image";
 import * as Haptics from "expo-haptics";
@@ -15,12 +15,17 @@ import {
 } from "lucide-react-native";
 import { Swipeable } from "react-native-gesture-handler";
 import { getLinkSource, type SkillResource } from "@skillsaggregator/shared";
+import { useAuth } from "@/lib/auth";
 import {
+  earliestIsoTimestamp,
   getFlag,
+  removeCompletedAt,
   removeSavedResourceSnapshot,
+  setCompletedAt,
   setFlag,
   setSavedResourceSnapshot,
 } from "@/lib/localState";
+import { getSupabase } from "@/lib/supabase";
 import { colors, radius, shadows, spacing, typography } from "@/lib/theme";
 
 interface ResourceCardProps {
@@ -78,6 +83,76 @@ function isPortraitResource(resource: SkillResource) {
   return getLinkSource(resource.link) === "tiktok";
 }
 
+async function persistCompletedAction(
+  userId: string | undefined,
+  linkId: string,
+  completedAt: string | null,
+  next: boolean,
+) {
+  const supabase = userId ? getSupabase() : null;
+  if (!supabase || !userId) return;
+
+  if (!next) {
+    const { error } = await supabase
+      .from("user_actions")
+      .delete()
+      .eq("user_id", userId)
+      .eq("link_id", linkId)
+      .eq("action_type", "completed")
+      .is("link_skill_relation_id", null);
+    if (error) console.warn("[completed-sync] Failed to delete completed action", { linkId, error: error.message });
+    else console.info("[completed-sync] Deleted completed action", { linkId });
+    return;
+  }
+
+  const fallbackAt = completedAt ?? new Date().toISOString();
+  const { data: existing, error: selectError } = await supabase
+    .from("user_actions")
+    .select("created_at")
+    .eq("user_id", userId)
+    .eq("link_id", linkId)
+    .eq("action_type", "completed")
+    .is("link_skill_relation_id", null)
+    .maybeSingle();
+  if (selectError) {
+    console.warn("[completed-sync] Failed to read existing completed action", { linkId, error: selectError.message });
+  }
+
+  const createdAt = earliestIsoTimestamp(fallbackAt, existing?.created_at) ?? fallbackAt;
+  const { error: insertError } = await supabase
+    .from("user_actions")
+    .upsert(
+      {
+        user_id: userId,
+        link_id: linkId,
+        action_type: "completed",
+        link_skill_relation_id: null,
+        created_at: createdAt,
+      },
+      { onConflict: "user_id,link_id,action_type,action_context_id", ignoreDuplicates: true },
+    );
+  if (insertError) {
+    console.warn("[completed-sync] Failed to upsert completed action", { linkId, error: insertError.message });
+    return;
+  }
+
+  if (existing?.created_at && Date.parse(createdAt) < Date.parse(existing.created_at)) {
+    const { error: updateError } = await supabase
+      .from("user_actions")
+      .update({ created_at: createdAt })
+      .eq("user_id", userId)
+      .eq("link_id", linkId)
+      .eq("action_type", "completed")
+      .is("link_skill_relation_id", null);
+    if (updateError) {
+      console.warn("[completed-sync] Failed to repair completed timestamp", { linkId, error: updateError.message });
+      return;
+    }
+  }
+
+  console.info("[completed-sync] Persisted completed action", { linkId, completedAt: createdAt });
+}
+
 /**
  * Skill-screen resource row.
  *  - 16/9 thumbnail on the left at row-height (so its bottom aligns with
@@ -88,10 +163,18 @@ function isPortraitResource(resource: SkillResource) {
  */
 export function ResourceCard({ resource }: ResourceCardProps) {
   const relationId = resource.id;
+  const { user, actionSyncRevision } = useAuth();
   const [isSaved, setIsSaved] = useState(() => getFlag(`saved:${resource.link.id}`));
   const [isCompleted, setIsCompleted] = useState(() => getFlag(`completed:${resource.link.id}`));
   const [upvoted, setUpvoted] = useState(() => getFlag(`upvote:${resource.link.id}:${relationId}`));
   const [downvoted, setDownvoted] = useState(() => getFlag(`downvote:${resource.link.id}:${relationId}`));
+
+  useEffect(() => {
+    setIsSaved(getFlag(`saved:${resource.link.id}`));
+    setIsCompleted(getFlag(`completed:${resource.link.id}`));
+    setUpvoted(getFlag(`upvote:${resource.link.id}:${relationId}`));
+    setDownvoted(getFlag(`downvote:${resource.link.id}:${relationId}`));
+  }, [actionSyncRevision, relationId, resource.link.id]);
 
   function toggleSaved() {
     const next = !isSaved;
@@ -104,8 +187,11 @@ export function ResourceCard({ resource }: ResourceCardProps) {
 
   function toggleCompleted() {
     const next = !isCompleted;
+    const completedAt = next ? setCompletedAt(resource.link.id) : null;
     setIsCompleted(next);
     setFlag(`completed:${resource.link.id}`, next);
+    if (!next) removeCompletedAt(resource.link.id);
+    void persistCompletedAction(user?.id, resource.link.id, completedAt, next);
     triggerSelectionHaptic();
   }
 

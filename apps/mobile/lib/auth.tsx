@@ -2,7 +2,13 @@ import { createContext, PropsWithChildren, useContext, useEffect, useState } fro
 import { Linking } from "react-native";
 import * as ExpoLinking from "expo-linking";
 import type { Session, User } from "@supabase/supabase-js";
-import { getKeys } from "./localState";
+import {
+  earliestIsoTimestamp,
+  getCompletedAt,
+  getKeys,
+  setCompletedAt,
+  setFlag,
+} from "./localState";
 import { getSupabase } from "./supabase";
 
 export interface ContributorProfile {
@@ -22,12 +28,28 @@ interface AuthContextValue {
   signInWithGoogle: () => Promise<void>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
+  actionSyncRevision: number;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 const ACTION_PREFIXES = ["saved", "completed", "upvote", "downvote"] as const;
 const supabase = getSupabase();
 type ActionType = (typeof ACTION_PREFIXES)[number];
+
+interface UserActionRow {
+  user_id: string;
+  link_id: string;
+  action_type: ActionType;
+  link_skill_relation_id: string | null;
+  created_at?: string;
+}
+
+interface ServerActionRow {
+  link_id: string | null;
+  action_type: string | null;
+  link_skill_relation_id: string | null;
+  created_at: string | null;
+}
 
 function redirectTo() {
   return ExpoLinking.createURL("auth/callback");
@@ -40,30 +62,67 @@ function parseActionKey(key: string): { actionType: ActionType; linkId: string; 
   return { actionType: actionType as ActionType, linkId, linkSkillRelationId: linkSkillRelationId ?? null };
 }
 
+function isActionType(value: string | null | undefined): value is ActionType {
+  return ACTION_PREFIXES.includes(value as ActionType);
+}
+
 function needsRelation(actionType: ActionType) {
   return actionType === "upvote" || actionType === "downvote";
 }
 
-function actionRowsForUser(userId: string) {
+function actionKey(actionType: ActionType, linkId: string, linkSkillRelationId: string | null) {
+  return linkSkillRelationId ? `${actionType}:${linkId}:${linkSkillRelationId}` : `${actionType}:${linkId}`;
+}
+
+function actionRowForUser(
+  userId: string,
+  parsed: { actionType: ActionType; linkId: string; linkSkillRelationId: string | null },
+): UserActionRow {
+  return {
+    user_id: userId,
+    link_id: parsed.linkId,
+    action_type: parsed.actionType,
+    link_skill_relation_id: parsed.linkSkillRelationId,
+  };
+}
+
+function actionRowsForUser(userId: string, nowIso = new Date().toISOString()) {
   return ACTION_PREFIXES.flatMap((prefix) =>
     getKeys(`${prefix}:`).flatMap((key) => {
       const parsed = parseActionKey(key);
       if (!parsed) return [];
       if (needsRelation(parsed.actionType) && !parsed.linkSkillRelationId) return [];
-      return [{
-        user_id: userId,
-        link_id: parsed.linkId,
-        action_type: parsed.actionType,
-        link_skill_relation_id: parsed.linkSkillRelationId,
-      }];
+      const row = actionRowForUser(userId, parsed);
+      if (parsed.actionType === "completed") {
+        row.created_at = getCompletedAt(parsed.linkId) ?? setCompletedAt(parsed.linkId, nowIso);
+      }
+      return [row];
     }),
   );
+}
+
+function mergeActionRow(rows: Map<string, UserActionRow>, row: UserActionRow) {
+  const key = actionKey(row.action_type, row.link_id, row.link_skill_relation_id);
+  const existing = rows.get(key);
+  if (!existing) {
+    rows.set(key, row);
+    return;
+  }
+  if (row.action_type === "completed") {
+    const createdAt = earliestIsoTimestamp(existing.created_at, row.created_at);
+    rows.set(key, {
+      ...existing,
+      ...row,
+      ...(createdAt ? { created_at: createdAt } : {}),
+    });
+  }
 }
 
 export function AuthProvider({ children }: PropsWithChildren) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<ContributorProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [actionSyncRevision, setActionSyncRevision] = useState(0);
 
   async function refreshProfileForSession(nextSession: Session | null) {
     if (!supabase || !nextSession?.user) {
@@ -84,13 +143,105 @@ export function AuthProvider({ children }: PropsWithChildren) {
   }
 
   async function syncLocalActions(nextSession: Session | null) {
-    if (!supabase || !nextSession?.user) return;
-    const rows = actionRowsForUser(nextSession.user.id);
-    if (rows.length === 0) return;
-    const { error } = await supabase
+    if (!supabase || !nextSession?.user) return false;
+    const userId = nextSession.user.id;
+    const nowIso = new Date().toISOString();
+    const localRows = actionRowsForUser(userId, nowIso);
+    const mergedRows = new Map<string, UserActionRow>();
+    const serverCompletedAtByKey = new Map<string, string>();
+
+    console.info("[mobile-actions] Starting local/server action sync", {
+      localCount: localRows.length,
+      userId,
+    });
+
+    const { data: serverRows, error: pullError } = await supabase
       .from("user_actions")
-      .upsert(rows, { onConflict: "user_id,link_id,action_type,action_context_id", ignoreDuplicates: true });
-    if (error) console.warn("mobile_action_sync_failed", error.message);
+      .select("link_id, action_type, link_skill_relation_id, created_at")
+      .eq("user_id", userId);
+
+    if (pullError) {
+      console.warn("[mobile-actions] Pull failed; pushing local actions only", pullError.message);
+    } else {
+      for (const row of (serverRows ?? []) as ServerActionRow[]) {
+        if (!row.link_id || !isActionType(row.action_type)) continue;
+        if (needsRelation(row.action_type) && !row.link_skill_relation_id) continue;
+
+        const key = actionKey(row.action_type, row.link_id, row.link_skill_relation_id);
+        setFlag(key, true);
+
+        const merged = actionRowForUser(userId, {
+          actionType: row.action_type,
+          linkId: row.link_id,
+          linkSkillRelationId: row.link_skill_relation_id,
+        });
+        if (row.action_type === "completed") {
+          merged.created_at = setCompletedAt(row.link_id, row.created_at ?? nowIso);
+          if (row.created_at) serverCompletedAtByKey.set(key, row.created_at);
+        }
+        mergeActionRow(mergedRows, merged);
+      }
+    }
+
+    for (const row of localRows) mergeActionRow(mergedRows, row);
+
+    const rows = [...mergedRows.values()];
+    const completedRows = rows.filter((row) => row.action_type === "completed");
+    const otherRows = rows.filter((row) => row.action_type !== "completed");
+    let timestampUpdates = 0;
+
+    if (otherRows.length > 0) {
+      const { error } = await supabase
+        .from("user_actions")
+        .upsert(otherRows, { onConflict: "user_id,link_id,action_type,action_context_id", ignoreDuplicates: true });
+      if (error) console.warn("[mobile-actions] Non-completed action push failed", error.message);
+    }
+
+    if (completedRows.length > 0) {
+      const { error } = await supabase
+        .from("user_actions")
+        .upsert(completedRows, { onConflict: "user_id,link_id,action_type,action_context_id", ignoreDuplicates: true });
+      if (error) {
+        console.warn("[mobile-actions] Completed action insert failed", error.message);
+      }
+
+      const timestampRepairs = completedRows.filter((row) => {
+        const serverCreatedAt = serverCompletedAtByKey.get(actionKey(row.action_type, row.link_id, row.link_skill_relation_id));
+        return Boolean(
+          row.created_at &&
+            serverCreatedAt &&
+            Date.parse(row.created_at) < Date.parse(serverCreatedAt),
+        );
+      });
+
+      await Promise.all(timestampRepairs.map(async (row) => {
+        if (!row.created_at) return;
+        const { error: updateError } = await supabase
+          .from("user_actions")
+          .update({ created_at: row.created_at })
+          .eq("user_id", userId)
+          .eq("link_id", row.link_id)
+          .eq("action_type", "completed")
+          .is("link_skill_relation_id", null);
+        if (updateError) {
+          console.warn("[mobile-actions] Completed timestamp repair failed", {
+            linkId: row.link_id,
+            error: updateError.message,
+          });
+          return;
+        }
+        timestampUpdates += 1;
+      }));
+    }
+
+    console.info("[mobile-actions] Finished local/server action sync", {
+      serverCount: serverRows?.length ?? 0,
+      localCount: localRows.length,
+      mergedCount: rows.length,
+      completedCount: completedRows.length,
+      timestampUpdates,
+    });
+    return true;
   }
 
   useEffect(() => {
@@ -106,7 +257,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
       if (cancelled) return;
       setSession(nextSession);
       await refreshProfileForSession(nextSession);
-      await syncLocalActions(nextSession);
+      const didSync = await syncLocalActions(nextSession);
+      if (didSync && !cancelled) setActionSyncRevision((value) => value + 1);
       if (!cancelled) setIsLoading(false);
     }
 
@@ -168,6 +320,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
     refreshProfile() {
       return refreshProfileForSession(session);
     },
+    actionSyncRevision,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -4,6 +4,7 @@ import type { SkillResource } from "@skillsaggregator/shared";
 let storage: MMKV | null = null;
 const memory = new Map<string, string>();
 const SAVED_RESOURCE_PREFIX = "saved-resource:";
+const COMPLETED_AT_PREFIX = "completed_at:";
 const ONBOARDING_COMPLETED_KEY = "onboarding_completed";
 const ONBOARDING_INTERESTS_KEY = "onboarding_interests";
 
@@ -28,6 +29,25 @@ export function getKeys(prefix: string) {
   return keys.filter((key) => key.startsWith(prefix) && getFlag(key));
 }
 
+function normalizedIsoTimestamp(value: string | null | undefined) {
+  if (!value) return null;
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? null : new Date(parsed).toISOString();
+}
+
+export function earliestIsoTimestamp(
+  left: string | null | undefined,
+  right: string | null | undefined,
+) {
+  const normalizedLeft = normalizedIsoTimestamp(left);
+  const normalizedRight = normalizedIsoTimestamp(right);
+  if (!normalizedLeft) return normalizedRight;
+  if (!normalizedRight) return normalizedLeft;
+  return Date.parse(normalizedLeft) <= Date.parse(normalizedRight)
+    ? normalizedLeft
+    : normalizedRight;
+}
+
 function setString(key: string, value: string) {
   if (storage) storage.set(key, value);
   else memory.set(key, value);
@@ -49,6 +69,32 @@ export function setStoredString(key: string, value: string | null) {
 
 export function getStoredString(key: string) {
   return getString(key) ?? null;
+}
+
+function completedAtKey(linkId: string) {
+  return `${COMPLETED_AT_PREFIX}${linkId}`;
+}
+
+export function getCompletedAt(linkId: string) {
+  const key = completedAtKey(linkId);
+  const raw = getString(key);
+  if (!raw) return null;
+  const normalized = normalizedIsoTimestamp(raw);
+  if (normalized) return normalized;
+  console.warn("[completed-sync] Dropping malformed completed_at timestamp", { linkId, raw });
+  deleteKey(key);
+  return null;
+}
+
+export function setCompletedAt(linkId: string, iso = new Date().toISOString()) {
+  const next = normalizedIsoTimestamp(iso) ?? new Date().toISOString();
+  const earliest = earliestIsoTimestamp(getCompletedAt(linkId), next) ?? next;
+  setString(completedAtKey(linkId), earliest);
+  return earliest;
+}
+
+export function removeCompletedAt(linkId: string) {
+  deleteKey(completedAtKey(linkId));
 }
 
 function snapshotKey(linkId: string) {
