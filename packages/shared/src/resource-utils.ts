@@ -205,37 +205,55 @@ export function buildLearningPathIndex(
   resources: SkillResource[],
 ): LearningPathStage[] {
   const skillById = new Map(skills.map((skill) => [skill.id, skill]));
+  const entriesByStage = new Map<LearningPathStage["value"], LearningPathEntry[]>(
+    LEARNING_PATH_LEVELS.map((stage) => [stage.value, []]),
+  );
+  const resourcesBySkill = new Map<string, SkillResource[]>();
 
-  return LEARNING_PATH_LEVELS.map((stage) => {
-    const resourcesBySkill = new Map<string, SkillResource[]>();
-    for (const resource of resources) {
-      const skillId = resource.skill?.id;
-      if (!skillId) continue;
-      if (stage.level === null ? resource.skill_level !== null : resource.skill_level !== stage.level) {
-        continue;
-      }
-      if (!skillById.has(skillId)) continue;
-      const bucket = resourcesBySkill.get(skillId) ?? [];
-      bucket.push(resource);
-      resourcesBySkill.set(skillId, bucket);
-    }
+  for (const resource of resources) {
+    const skillId = resource.skill?.id;
+    if (!skillId || !skillById.has(skillId)) continue;
+    const bucket = resourcesBySkill.get(skillId) ?? [];
+    bucket.push(resource);
+    resourcesBySkill.set(skillId, bucket);
+  }
 
-    const entries = [...resourcesBySkill.entries()]
-      .map(([skillId, bucket]) => {
-        const skill = skillById.get(skillId);
-        if (!skill) return null;
-        const ordered = sortResources(bucket, "popular");
-        return {
-          skill,
-          total: ordered.length,
-          resources: ordered,
-        };
-      })
-      .filter((entry): entry is LearningPathEntry => Boolean(entry))
-      .sort((a, b) => b.total - a.total || a.skill.name.localeCompare(b.skill.name));
+  for (const [skillId, bucket] of resourcesBySkill.entries()) {
+    const skill = skillById.get(skillId);
+    if (!skill) continue;
+    const ordered = sortResources(bucket, "popular");
+    const stage = learningPathStageForSkill(skill);
+    const entries = entriesByStage.get(stage) ?? [];
+    entries.push({
+      skill,
+      total: ordered.length,
+      resources: ordered,
+    });
+    entriesByStage.set(stage, entries);
+  }
 
-    return { ...stage, entries };
-  });
+  return LEARNING_PATH_LEVELS.map((stage) => ({
+    ...stage,
+    entries: (entriesByStage.get(stage.value) ?? []).sort(compareLearningPathEntries),
+  }));
+}
+
+function learningPathStageForSkill(skill: SkillSummary): LearningPathStage["value"] {
+  const difficulty = skill.subskill_difficulty;
+  if (typeof difficulty !== "number" || !Number.isFinite(difficulty)) return "unlabeled";
+  if (difficulty <= 2.33) return "beginner";
+  if (difficulty <= 3.67) return "intermediate";
+  return "advanced";
+}
+
+function compareLearningPathEntries(a: LearningPathEntry, b: LearningPathEntry) {
+  const difficultyA = a.skill.subskill_difficulty ?? Number.MAX_SAFE_INTEGER;
+  const difficultyB = b.skill.subskill_difficulty ?? Number.MAX_SAFE_INTEGER;
+  if (difficultyA !== difficultyB) return difficultyA - difficultyB;
+  const orderA = a.skill.learning_order ?? Number.MAX_SAFE_INTEGER;
+  const orderB = b.skill.learning_order ?? Number.MAX_SAFE_INTEGER;
+  if (orderA !== orderB) return orderA - orderB;
+  return a.skill.name.localeCompare(b.skill.name);
 }
 
 export function filterLearningPathStages(
@@ -261,7 +279,7 @@ export function filterLearningPathStages(
           const resources = sortResources(
             entry.resources.filter((resource) =>
               resourcePassesFilters(resource, {
-                level: stage.value,
+                level: "all",
                 source: options.source ?? "all",
               }),
             ),

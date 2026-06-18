@@ -132,6 +132,99 @@ const surfingSkillRows: Array<[string, string, string]> = [
   ["Board choice", "board-choice", "Match volume, shape, fin setup, and length to waves and ability level."],
 ];
 
+const fallbackLearningOrders: Record<string, string[]> = {
+  badminton: [
+    "grip-technique",
+    "serve-low",
+    "serve-high",
+    "footwork-split-step",
+    "footwork-front-court",
+    "footwork-rear-court",
+    "lift",
+    "net-shot",
+    "push",
+    "drive",
+    "forehand-clear",
+    "drop-shot",
+    "defense-block",
+    "defense-lift",
+    "forehand-smash",
+    "wrist-rotation",
+    "singles-strategy",
+    "doubles-rotation",
+    "backhand-clear",
+    "backhand-smash",
+    "stringing-and-tension",
+  ],
+  padel: [
+    "continental-grip",
+    "serve-first-volley",
+    "forehand-groundstroke",
+    "backhand-groundstroke",
+    "lob",
+    "glass-defense",
+    "volley-technique",
+    "net-positioning",
+    "bandeja",
+    "chiquita",
+    "vibora",
+    "smash-x3",
+  ],
+  "gym-men": [
+    "mobility-warm-up",
+    "core-bracing",
+    "recovery-habits",
+    "fat-loss-nutrition",
+    "barbell-squat",
+    "bench-press",
+    "deadlift",
+    "pull-up-progression",
+    "overhead-press",
+    "arm-training",
+    "shoulder-health",
+    "hypertrophy-programming",
+  ],
+  "gym-women": [
+    "gym-confidence",
+    "mobility-stability",
+    "goblet-squat",
+    "glute-bridge-hip-thrust",
+    "dumbbell-bench-press",
+    "lat-pulldown",
+    "romanian-deadlift",
+    "nutrition-for-strength",
+    "lower-body-hypertrophy",
+    "upper-body-hypertrophy",
+    "pelvic-floor-aware-lifting",
+    "cycle-aware-training",
+  ],
+  surfing: [
+    "surf-etiquette",
+    "board-choice",
+    "surf-stance",
+    "paddling-technique",
+    "turtle-roll",
+    "pop-up",
+    "lineup-positioning",
+    "wave-selection",
+    "takeoff-timing",
+    "duck-dive",
+    "bottom-turn",
+    "cutback",
+  ],
+};
+
+function fallbackLearningPosition(categorySlug: string, skillSlug: string) {
+  const order = fallbackLearningOrders[categorySlug] ?? [];
+  const index = order.indexOf(skillSlug);
+  if (index === -1) return { learning_order: null, subskill_difficulty: null };
+  const denominator = Math.max(order.length - 1, 1);
+  return {
+    learning_order: index + 1,
+    subskill_difficulty: Math.round((1 + (index * 4) / denominator) * 100) / 100,
+  };
+}
+
 function makeSkills(
   category: CategorySummary,
   firstId: number,
@@ -145,6 +238,7 @@ function makeSkills(
     slug,
     description,
     resource_count: 0,
+    ...fallbackLearningPosition(category.slug, slug),
   }));
 }
 

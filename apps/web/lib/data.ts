@@ -94,7 +94,7 @@ export async function getCatalog(
 
   const { data: skills } = await supabase
     .from("skills")
-    .select("id, category_id, slug, name, description, updated_at")
+    .select("id, category_id, slug, name, description, subskill_difficulty, learning_order, updated_at")
     .eq("category_id", category?.id ?? badmintonCategory.id)
     .eq("is_active", true)
     .order("name");
@@ -172,7 +172,7 @@ export async function getSkillPage(categorySlug: string, skillSlug: string) {
 
   const { data: skillRow } = await supabase
     .from("skills")
-    .select("id, category_id, slug, name, description, updated_at, categories!inner(id, slug, name, description)")
+    .select("id, category_id, slug, name, description, subskill_difficulty, learning_order, updated_at, categories!inner(id, slug, name, description)")
     .eq("slug", skillSlug)
     .eq("categories.slug", categorySlug)
     .eq("is_active", true)
@@ -198,7 +198,7 @@ export async function getSkillPage(categorySlug: string, skillSlug: string) {
 
   const { data: siblings } = await supabase
     .from("skills")
-    .select("id, category_id, slug, name, description, updated_at")
+    .select("id, category_id, slug, name, description, subskill_difficulty, learning_order, updated_at")
     .eq("category_id", skillRow.category_id)
     .eq("is_active", true)
     .neq("id", skillRow.id)
@@ -228,6 +228,8 @@ export async function getSkillPage(categorySlug: string, skillSlug: string) {
       name: skillRow.name,
       description: skillRow.description,
       resource_count: shapedResources.length,
+      subskill_difficulty: skillRow.subskill_difficulty ?? null,
+      learning_order: skillRow.learning_order ?? null,
       updated_at: skillRow.updated_at,
     } satisfies SkillSummary,
     resources: shapedResources,

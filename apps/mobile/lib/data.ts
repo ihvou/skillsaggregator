@@ -330,7 +330,7 @@ export async function getSkillsForCategory(categorySlug: string): Promise<{
 
   const { data } = await supabase
     .from("skills")
-    .select("id, category_id, slug, name, description, updated_at")
+    .select("id, category_id, slug, name, description, subskill_difficulty, learning_order, updated_at")
     .eq("category_id", category.id)
     .eq("is_active", true)
     .order("name");
@@ -386,7 +386,7 @@ export async function getSkillResources(categorySlug: string, skillSlug: string,
 
   const { data: skill } = await supabase
     .from("skills")
-    .select("id, category_id, slug, name, description, updated_at, categories!inner(id, slug, name, description, updated_at)")
+    .select("id, category_id, slug, name, description, subskill_difficulty, learning_order, updated_at, categories!inner(id, slug, name, description, updated_at)")
     .eq("slug", skillSlug)
     .eq("categories.slug", categorySlug)
     .eq("is_active", true)
@@ -418,6 +418,8 @@ export async function getSkillResources(categorySlug: string, skillSlug: string,
       name: skill.name,
       description: skill.description,
       resource_count: relations?.length ?? 0,
+      subskill_difficulty: skill.subskill_difficulty ?? null,
+      learning_order: skill.learning_order ?? null,
       updated_at: skill.updated_at,
     },
     resources: sortResources(

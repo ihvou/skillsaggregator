@@ -32,6 +32,8 @@ export interface SkillSummary {
   name: string;
   description: string | null;
   resource_count: number;
+  subskill_difficulty?: number | null;
+  learning_order?: number | null;
   preview_thumbnails?: string[];
   updated_at?: string | null;
 }
