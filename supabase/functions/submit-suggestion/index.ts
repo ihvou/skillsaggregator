@@ -256,12 +256,20 @@ Deno.serve(async (request) => {
 
     if (input.type === "LINK_ADD") {
       const since = new Date(Date.now() - RECENT_DUPLICATE_WINDOW_MS).toISOString();
-      const { data: recent, error: recentError } = await supabase
+      let recentQuery = supabase
         .from("suggestions")
         .select("id, status")
         .eq("type", "LINK_ADD")
         .eq("payload_json->>canonical_url", String(payload.canonical_url))
-        .gte("created_at", since)
+        .gte("created_at", since);
+      // Agent/internal collection legitimately multi-tags the same video across
+      // sub-skills (search surfaces it under several), so dedupe a recent URL only
+      // within the SAME target skill. Human submissions keep the broad URL-level
+      // guard (anti-abuse).
+      if (internalRequest && targetSkillId) {
+        recentQuery = recentQuery.eq("payload_json->>target_skill_id", String(targetSkillId));
+      }
+      const { data: recent, error: recentError } = await recentQuery
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle();
@@ -271,6 +279,7 @@ Deno.serve(async (request) => {
           suggestion_id: recent.id,
           status: recent.status,
           canonical_url: payload.canonical_url,
+          target_skill_id: internalRequest ? targetSkillId : undefined,
         });
         return jsonResponse({
           suggestion_id: recent.id,
