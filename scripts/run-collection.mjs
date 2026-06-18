@@ -6,9 +6,9 @@
  *   3. Ollama (qwen2.5:7b by default) scores the transcript via Stage 2 prompt with format=json
  *      (skipped when COLLECT_SCORING=off — candidates are collected unscored and the
  *      relevance + value coaches judge them downstream)
- *   4. Survivors POST to the local submit-suggestion Edge Function (auto-approved by
- *      default; pending when COLLECT_AUTO_APPROVE=0, so nothing publishes until the
- *      coach cutover promotes the queue)
+ *   4. Survivors POST to the local submit-suggestion Edge Function and are
+ *      auto-applied by default into active-but-unpublished relations. Coaches
+ *      publish them after review through the relation publish gate.
  *
  * Usage:
  *   node scripts/run-collection.mjs --skill <slug>
@@ -25,7 +25,7 @@
  *   OLLAMA_URL                    default http://localhost:11434
  *   OLLAMA_MODEL                  default qwen2.5:7b
  *   COLLECT_SCORING               on|off; off skips the Ollama scorer (coaches judge instead)
- *   COLLECT_AUTO_APPROVE          1|0; 0 submits as pending (no auto-publish)
+ *   COLLECT_AUTO_APPLY            1|0; 0 submits as pending for manual debugging
  *   COLLECT_PER_SKILL_CAP         default 8; max unscored submissions per skill per run
  *   YTDLP_BIN                     default Homebrew yt-dlp when present, then ./bin/yt-dlp
  *   NODE_BIN_FOR_YTDLP            default $(which node) (yt-dlp uses it as JS runtime)
@@ -176,7 +176,7 @@ const config = {
   localDbContainer: process.env.SUPABASE_DB_CONTAINER ?? process.env.COLLECT_LOCAL_DB_CONTAINER ?? "supabase_db_skillsaggregator",
   skipEventPersist: envFlag("COLLECT_SKIP_EVENT_PERSIST", collectTarget === "hosted"),
   internalFunctionToken: process.env.INTERNAL_FUNCTION_TOKEN ?? "",
-  autoApproveConfidenceFloor: Number(process.env.COLLECT_AUTO_APPROVE_FLOOR ?? 0.7),
+  autoApplyConfidenceFloor: Number(process.env.COLLECT_AUTO_APPLY_FLOOR ?? process.env.COLLECT_AUTO_APPROVE_FLOOR ?? 0.7),
   ollamaUrl: process.env.OLLAMA_URL ?? "http://localhost:11434",
   ollamaModel: process.env.OLLAMA_MODEL ?? "qwen2.5:7b",
   ytdlpBin: process.env.YTDLP_BIN ?? defaultYtdlpBin(),
@@ -203,11 +203,11 @@ const config = {
   qualityThreshold: Number(process.env.STAGE2_QUALITY_THRESHOLD ?? 0.6),
   // Scoring-v2 levers. COLLECT_SCORING=off makes this a pure collector: the local
   // Ollama scorer (relevance/quality/level + secondary skills) is skipped and
-  // candidates are submitted unscored for the coaches to judge. COLLECT_AUTO_APPROVE=0
-  // submits everything as `pending` so nothing publishes until the coach cutover
-  // promotes the queue. Defaults preserve the original behavior for manual runs.
+  // candidates are submitted unscored for the coaches to judge. Accepted candidates
+  // auto-apply into active-but-unpublished relations by default; set
+  // COLLECT_AUTO_APPLY=0 only when intentionally leaving suggestions pending.
   scoringEnabled: (process.env.COLLECT_SCORING ?? "on").toLowerCase() !== "off",
-  autoApprove: (process.env.COLLECT_AUTO_APPROVE ?? "1") !== "0",
+  autoApply: (process.env.COLLECT_AUTO_APPLY ?? "1") !== "0",
   collectPerSkillCap: Number(process.env.COLLECT_PER_SKILL_CAP ?? 8),
   maxVideosPerChannel: Number(process.env.COLLECT_MAX_VIDEOS_PER_CHANNEL ?? 25),
   minDurationSec: Number(process.env.COLLECT_MIN_DURATION_SEC ?? 60),
@@ -1870,8 +1870,9 @@ async function postSuggestion(skill, candidate, transcript, score, viewCount) {
   const hasTranscript = typeof transcript === "string" && transcript.length > 0;
   // High-confidence candidates request auto_approved; the Edge Function honors it only
   // when the request also carries the matching x-internal-token (see security.ts).
-  const requestAutoApprove =
-    config.autoApprove && Boolean(config.internalFunctionToken) && confidence >= config.autoApproveConfidenceFloor;
+  // The applied relation remains unpublished until the coach publish gate promotes it.
+  const requestAutoApply =
+    config.autoApply && Boolean(config.internalFunctionToken) && confidence >= config.autoApplyConfidenceFloor;
   const payload = {
     type: "LINK_ADD",
     origin_type: "agent",
@@ -1911,13 +1912,12 @@ async function postSuggestion(skill, candidate, transcript, score, viewCount) {
         : null,
       score,
       transcript_excerpt: hasTranscript ? transcript.slice(0, 600) : null,
-      // When the suggestion stays pending (no auto-apply -> no link row yet, so
-      // nothing to key link_transcripts on) keep the FULL transcript here so it is
-      // preserved for when the link is created at the coach cutover.
-      transcript_full: hasTranscript && !requestAutoApprove ? transcript : null,
+      // Keep the full transcript in evidence for the Edge apply path; it moves
+      // the blob into link_transcripts as soon as the link row exists.
+      transcript_full: hasTranscript ? transcript : null,
     },
     confidence,
-    ...(requestAutoApprove ? { requested_status: "auto_approved" } : {}),
+    ...(requestAutoApply ? { requested_status: "auto_approved" } : {}),
   };
   const headers = {
     Authorization: `Bearer ${config.serviceRoleKey}`,
@@ -2038,8 +2038,8 @@ function tiktokPublicNote(verdict, candidate) {
 
 async function postTikTokSuggestion(skill, source, candidate, profile, verdict) {
   const confidence = tiktokConfidence(verdict);
-  const requestAutoApprove =
-    config.autoApprove && Boolean(config.internalFunctionToken) && confidence >= config.autoApproveConfidenceFloor;
+  const requestAutoApply =
+    config.autoApply && Boolean(config.internalFunctionToken) && confidence >= config.autoApplyConfidenceFloor;
   const canonicalUrl = candidate.url ?? candidate.href;
   const videoId = tiktokVideoIdFromUrl(canonicalUrl);
   const title = String(candidate.caption ?? `${skill.name} TikTok tutorial`).replace(/\s+/g, " ").trim().slice(0, 180);
@@ -2087,7 +2087,7 @@ async function postTikTokSuggestion(skill, source, candidate, profile, verdict) 
       raw_candidate: candidate,
     },
     confidence,
-    ...(requestAutoApprove ? { requested_status: "auto_approved" } : {}),
+    ...(requestAutoApply ? { requested_status: "auto_approved" } : {}),
   };
 
   const headers = {
@@ -2164,7 +2164,7 @@ async function postAttachSuggestion(primarySkill, secondary, candidate, transcri
       transcript_excerpt: transcript.slice(0, 600),
     },
     confidence: secondary.relevance,
-    ...(config.autoApprove && config.internalFunctionToken && secondary.relevance >= config.autoApproveConfidenceFloor
+    ...(config.autoApply && config.internalFunctionToken && secondary.relevance >= config.autoApplyConfidenceFloor
       ? { requested_status: "auto_approved" }
       : {}),
   };
@@ -2204,6 +2204,13 @@ async function preflightCheck() {
   }, config.preflightTimeoutMs, "preflight_supabase");
   if (supabaseResponse.status >= 500) {
     throw new Error(`preflight_supabase_${supabaseResponse.status}`);
+  }
+
+  if (config.autoApply && !config.internalFunctionToken) {
+    log("warn", "collect_auto_apply_disabled_missing_internal_token", "COLLECT_AUTO_APPLY is on, but INTERNAL_FUNCTION_TOKEN is missing; accepted candidates will stay pending.", {
+      auto_apply: config.autoApply,
+      has_internal_function_token: false,
+    });
   }
 
   const edgeRuntime = await assertFunctionRuntimeHealthy();
@@ -3152,7 +3159,8 @@ async function main() {
       skills: skills.length,
       category: categorySlugFilter,
       scoring_enabled: config.scoringEnabled,
-      auto_approve: config.autoApprove,
+      auto_apply: config.autoApply,
+      auto_apply_confidence_floor: config.autoApplyConfidenceFloor,
       model: config.scoringEnabled ? config.ollamaModel : null,
       supabase_url: config.supabaseUrl,
       collect_target: config.collectTarget,

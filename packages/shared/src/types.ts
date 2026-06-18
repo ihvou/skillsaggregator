@@ -66,6 +66,8 @@ export interface SkillResource {
   downvote_count?: number;
   vote_score?: number;
   value_score?: number | null;
+  curator_score?: number | null;
+  curator_reviews?: number | null;
   created_at?: string | null;
   link: LinkResource;
   skill?: Pick<SkillSummary, "id" | "slug" | "name" | "category_slug"> & {

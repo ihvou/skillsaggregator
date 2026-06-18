@@ -64,6 +64,30 @@ function youtubeVideoIdFromUrl(value: string | null | undefined) {
   return null;
 }
 
+function normalizeTranscriptText(value: unknown) {
+  return String(value ?? "").replace(/\s+/g, " ").trim();
+}
+
+async function sha256Hex(value: string) {
+  const bytes = new TextEncoder().encode(value);
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return [...new Uint8Array(digest)]
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+function evidenceString(
+  evidence: Record<string, unknown> | null | undefined,
+  key: string,
+) {
+  const value = evidence?.[key];
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function transcriptProviderFromEvidence(evidence: Record<string, unknown> | null | undefined) {
+  return evidenceString(evidence, "transcript_fetcher") === "browser" ? "browser" : "ytdlp";
+}
+
 function storageKeyFromPublicUrl(value: string | null | undefined) {
   if (!value) return null;
   const marker = "/storage/v1/object/public/";
@@ -98,6 +122,76 @@ function numberOrNull(value: unknown) {
 
 function boolOrFalse(value: unknown) {
   return typeof value === "boolean" ? value : false;
+}
+
+async function persistTranscriptFromEvidenceIfNeeded(suggestionId: string) {
+  const supabase = getServiceClient();
+  const { data: suggestion, error } = await supabase
+    .from("suggestions")
+    .select("id, type, link_id, payload_json, evidence_json")
+    .eq("id", suggestionId)
+    .single();
+  if (error) throw error;
+  if (suggestion.type !== "LINK_ADD" || !suggestion.link_id) return;
+
+  const evidence = (suggestion.evidence_json ?? null) as Record<string, unknown> | null;
+  const transcriptText = normalizeTranscriptText(evidence?.transcript_full);
+  if (!transcriptText) {
+    console.info("apply_suggestion_transcript_persist_skipped", {
+      suggestion_id: suggestionId,
+      link_id: suggestion.link_id,
+      reason: "missing_transcript_full",
+    });
+    return;
+  }
+
+  const payload = suggestion.payload_json as LinkAddPayload;
+  const videoId =
+    evidenceString(evidence, "video_id")
+    ?? youtubeVideoIdFromUrl(payload.canonical_url)
+    ?? youtubeVideoIdFromUrl(payload.url);
+  const provider = transcriptProviderFromEvidence(evidence);
+  const transcriptHash = await sha256Hex(transcriptText);
+
+  const { error: upsertError } = await supabase
+    .from("link_transcripts")
+    .upsert(
+      {
+        link_id: suggestion.link_id,
+        source: "youtube",
+        provider,
+        video_id: videoId,
+        language: "en",
+        transcript_text: transcriptText,
+        transcript_hash: transcriptHash,
+        fetched_at: new Date().toISOString(),
+      },
+      { onConflict: "link_id" },
+    );
+  if (upsertError) throw upsertError;
+
+  const nextEvidence = {
+    ...(evidence ?? {}),
+    transcript_persisted: true,
+    transcript_length: transcriptText.length,
+    transcript_hash: transcriptHash,
+  };
+  delete nextEvidence.transcript_full;
+
+  const { error: updateError } = await supabase
+    .from("suggestions")
+    .update({ evidence_json: nextEvidence })
+    .eq("id", suggestionId);
+  if (updateError) throw updateError;
+
+  console.info("apply_suggestion_transcript_persisted", {
+    suggestion_id: suggestionId,
+    link_id: suggestion.link_id,
+    provider,
+    video_id: videoId,
+    transcript_length: transcriptText.length,
+    transcript_hash: transcriptHash,
+  });
 }
 
 async function updateSuggestionPayload(suggestionId: string, payload: LinkAddPayload) {
@@ -393,6 +487,15 @@ Deno.serve(async (request) => {
       p_moderator_user_id: body.moderator_user_id ?? null,
     });
     if (error) throw error;
+
+    try {
+      await persistTranscriptFromEvidenceIfNeeded(body.suggestion_id);
+    } catch (transcriptError) {
+      console.warn("apply_suggestion_transcript_persist_failed", {
+        suggestion_id: body.suggestion_id,
+        message: transcriptError instanceof Error ? transcriptError.message : String(transcriptError),
+      });
+    }
 
     await cacheThumbnailIfNeeded(body.suggestion_id);
     await applyTikTokMetadataIfNeeded(body.suggestion_id);

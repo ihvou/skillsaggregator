@@ -98,8 +98,14 @@ export function resourceMatchesLevel(
 }
 
 export function resourceValueScore(
-  resource: Pick<SkillResource, "value_score" | "vote_score" | "upvote_count">,
+  resource: Pick<
+    SkillResource,
+    "curator_score" | "curator_reviews" | "value_score" | "vote_score" | "upvote_count"
+  >,
 ) {
+  if (typeof resource.curator_score === "number" && Number.isFinite(resource.curator_score)) {
+    return resource.curator_score;
+  }
   if (typeof resource.value_score === "number" && Number.isFinite(resource.value_score)) {
     return clamp01(resource.value_score);
   }
@@ -119,7 +125,19 @@ export function hasStoredValueScore(resource: Pick<SkillResource, "value_score">
   return typeof resource.value_score === "number" && Number.isFinite(resource.value_score);
 }
 
+export function hasCuratorScore(resource: Pick<SkillResource, "curator_score">) {
+  return typeof resource.curator_score === "number" && Number.isFinite(resource.curator_score);
+}
+
 export function compareResourcesByValue(a: SkillResource, b: SkillResource) {
+  const curatorDiff = Number(hasCuratorScore(b)) - Number(hasCuratorScore(a));
+  if (curatorDiff !== 0) return curatorDiff;
+  if (hasCuratorScore(a) || hasCuratorScore(b)) {
+    const scoreDiff = (b.curator_score ?? Number.NEGATIVE_INFINITY) - (a.curator_score ?? Number.NEGATIVE_INFINITY);
+    if (scoreDiff !== 0) return scoreDiff;
+    const reviewsDiff = (b.curator_reviews ?? 0) - (a.curator_reviews ?? 0);
+    if (reviewsDiff !== 0) return reviewsDiff;
+  }
   const scoredDiff = Number(hasStoredValueScore(b)) - Number(hasStoredValueScore(a));
   if (scoredDiff !== 0) return scoredDiff;
   const scoreDiff = resourceValueScore(b) - resourceValueScore(a);

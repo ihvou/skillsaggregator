@@ -189,6 +189,9 @@ export async function getSkillPage(categorySlug: string, skillSlug: string) {
     )
     .eq("skill_id", skillRow.id)
     .eq("is_active", true)
+    .eq("published", true)
+    .order("curator_score", { ascending: false, nullsFirst: false })
+    .order("curator_reviews", { ascending: false, nullsFirst: false })
     .order("value_score", { ascending: false, nullsFirst: false })
     .order("vote_score", { ascending: false })
     .order("created_at", { ascending: false });
@@ -275,7 +278,10 @@ async function fetchActiveSkillRelations(
       )
       .in("skill_id", skillIds)
       .eq("is_active", true)
+      .eq("published", true)
       .eq("links.is_active", true)
+      .order("curator_score", { ascending: false, nullsFirst: false })
+      .order("curator_reviews", { ascending: false, nullsFirst: false })
       .order("value_score", { ascending: false, nullsFirst: false })
       .order("vote_score", { ascending: false })
       .order("created_at", { ascending: false })
@@ -301,6 +307,7 @@ async function fetchLatestSkillThumbnail(
     .select("created_at, links!inner(thumbnail_url, thumbnail_storage_path, canonical_url, url)")
     .eq("skill_id", skillId)
     .eq("is_active", true)
+    .eq("published", true)
     .eq("links.is_active", true)
     .order("created_at", { ascending: false })
     .limit(1)
@@ -539,8 +546,12 @@ export async function getContributorProfileBySlug(slug: string): Promise<{
       `id, public_note, skill_level, ${RELATION_VOTE_SELECT}, created_at, links!inner(${RESOURCE_LINK_SELECT}), skills!inner(id, slug, name, categories!inner(slug, name))`,
     )
     .eq("is_active", true)
+    .eq("published", true)
     .eq("links.is_active", true)
     .eq("links.contributor_profile_id", profile.id)
+    .order("curator_score", { ascending: false, nullsFirst: false })
+    .order("curator_reviews", { ascending: false, nullsFirst: false })
+    .order("value_score", { ascending: false, nullsFirst: false })
     .order("created_at", { ascending: false })
     .limit(50);
   if (relationsError) {

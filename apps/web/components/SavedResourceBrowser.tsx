@@ -62,7 +62,10 @@ export function SavedResourceBrowser() {
       .select(SAVED_RELATION_SELECT)
       .in("link_id", ids)
       .eq("is_active", true)
+      .eq("published", true)
       .eq("links.is_active", true)
+      .order("curator_score", { ascending: false, nullsFirst: false })
+      .order("curator_reviews", { ascending: false, nullsFirst: false })
       .order("value_score", { ascending: false, nullsFirst: false })
       .order("vote_score", { ascending: false });
 

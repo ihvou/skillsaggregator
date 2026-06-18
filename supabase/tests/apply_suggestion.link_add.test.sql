@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap;
 
-select plan(5);
+select plan(6);
 
 insert into public.suggestions (id, type, status, origin_type, category_id, skill_id, payload_json, dedupe_key, confidence)
 values (
@@ -48,6 +48,16 @@ select results_eq(
       and lsr.skill_id = '00000000-0000-4000-8000-000000000101'::uuid$$,
   $$values (true)$$,
   'LINK_ADD creates an active skill relation'
+);
+
+select results_eq(
+  $$select lsr.published
+    from public.link_skill_relations lsr
+    join public.links l on l.id = lsr.link_id
+    where l.canonical_url = 'https://example.com/badminton-clear-article'
+      and lsr.skill_id = '00000000-0000-4000-8000-000000000101'::uuid$$,
+  $$values (false)$$,
+  'LINK_ADD keeps new skill relations unpublished'
 );
 
 select results_eq(

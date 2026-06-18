@@ -33,7 +33,7 @@ const SOURCE_LABELS = { all: "All sources", youtube: "YouTube", tiktok: "TikTok"
 
 export function SkillResourceBrowser({ category, skill, resources }: SkillResourceBrowserProps) {
   const [level, setLevel] = useState<SkillLevel | null>(null);
-  const [sort, setSort] = useState<ResourceSort>("newest");
+  const [sort, setSort] = useState<ResourceSort>("popular");
   const [source, setSource] = useState<ResourceSourceFilter>("all");
   const filteredResources = useMemo(() => {
     const next = resources.filter((resource) =>

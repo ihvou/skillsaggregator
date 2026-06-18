@@ -26,7 +26,7 @@ export type DiscoverCategorySection = {
 
 const RESOURCE_LINK_SELECT =
   "id, url, canonical_url, domain, title, description, thumbnail_url, thumbnail_storage_path, duration_seconds, like_count, comment_count, share_count, favorite_count, creator_handle, creator_url, scoring_strategy, content_type, created_at, contributor_profile:contributor_profiles(id, slug, display_name, avatar_url, accepted_count)";
-const RELATION_VOTE_SELECT = "upvote_count, downvote_count, vote_score, value_score";
+const RELATION_VOTE_SELECT = "upvote_count, downvote_count, vote_score, value_score, curator_score, curator_reviews";
 
 function shapeLinkWithContributor<
   TLink extends {
@@ -100,6 +100,8 @@ function relationVotes(relation: {
   downvote_count?: number | null;
   vote_score?: number | null;
   value_score?: number | null;
+  curator_score?: number | null;
+  curator_reviews?: number | null;
 }) {
   const upvoteCount = relation.upvote_count ?? 0;
   const downvoteCount = relation.downvote_count ?? 0;
@@ -108,6 +110,8 @@ function relationVotes(relation: {
     downvote_count: downvoteCount,
     vote_score: relation.vote_score ?? Math.max(0, upvoteCount - downvoteCount),
     value_score: relation.value_score ?? null,
+    curator_score: relation.curator_score ?? null,
+    curator_reviews: relation.curator_reviews ?? null,
   };
 }
 
@@ -146,6 +150,8 @@ type RelationWithSkillId = {
   downvote_count?: number | null;
   vote_score?: number | null;
   value_score?: number | null;
+  curator_score?: number | null;
+  curator_reviews?: number | null;
   created_at?: string | null;
   links?: LinkRow | LinkRow[] | null;
 };
@@ -168,7 +174,10 @@ async function fetchActiveSkillRelations(
       )
       .in("skill_id", skillIds)
       .eq("is_active", true)
+      .eq("published", true)
       .eq("links.is_active", true)
+      .order("curator_score", { ascending: false, nullsFirst: false })
+      .order("curator_reviews", { ascending: false, nullsFirst: false })
       .order("value_score", { ascending: false, nullsFirst: false })
       .order("vote_score", { ascending: false })
       .order("created_at", { ascending: false })
@@ -194,6 +203,7 @@ async function fetchLatestSkillThumbnail(
     .select("created_at, links!inner(thumbnail_url, thumbnail_storage_path, canonical_url, url)")
     .eq("skill_id", skillId)
     .eq("is_active", true)
+    .eq("published", true)
     .eq("links.is_active", true)
     .order("created_at", { ascending: false })
     .limit(1)
@@ -391,8 +401,11 @@ export async function getSkillResources(categorySlug: string, skillSlug: string,
     .select(`id, public_note, skill_level, ${RELATION_VOTE_SELECT}, created_at, links!inner(${RESOURCE_LINK_SELECT})`)
     .eq("skill_id", skill.id)
     .eq("is_active", true)
+    .eq("published", true)
     .eq("links.is_active", true)
-    .order(sort === "newest" ? "created_at" : "value_score", { ascending: false, nullsFirst: false })
+    .order(sort === "newest" ? "created_at" : "curator_score", { ascending: false, nullsFirst: false })
+    .order(sort === "newest" ? "id" : "curator_reviews", { ascending: false, nullsFirst: false })
+    .order(sort === "newest" ? "id" : "value_score", { ascending: false, nullsFirst: false })
     .order(sort === "newest" ? "id" : "vote_score", { ascending: false });
 
   return {
@@ -555,7 +568,11 @@ export async function getSavedResources(linkIds: string[]): Promise<SkillResourc
     )
     .in("link_id", linkIds)
     .eq("is_active", true)
+    .eq("published", true)
     .eq("links.is_active", true)
+    .order("curator_score", { ascending: false, nullsFirst: false })
+    .order("curator_reviews", { ascending: false, nullsFirst: false })
+    .order("value_score", { ascending: false, nullsFirst: false })
     .order("vote_score", { ascending: false });
 
   const byLink = new Map<string, SkillResource>();
