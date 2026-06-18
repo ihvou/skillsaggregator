@@ -2270,7 +2270,7 @@ async function persistPreflightFailure(error) {
       ...errorMetadata(error),
     });
     await finishAgentRun(runId, { status: "failed", suggestionsCreated: 0, errorMessage: message });
-    activeRunState.finalized = true;
+    if (activeRunState) activeRunState.finalized = true;
     await flushAgentRunEvents();
   } catch (persistError) {
     console.warn(JSON.stringify({
@@ -2298,7 +2298,7 @@ async function abortActiveRun(reason) {
     suggestionsCreated: activeRunState?.suggestionsCreated ?? 0,
     errorMessage: reason,
   });
-  activeRunState.finalized = true;
+  if (activeRunState) activeRunState.finalized = true;
   await flushAgentRunEvents();
 }
 
@@ -2770,7 +2770,7 @@ async function processSkill(skill, summary) {
     }
 
     await finishAgentRun(runId, { suggestionsCreated: submitted });
-    activeRunState.finalized = true;
+    if (activeRunState) activeRunState.finalized = true;
     log("info", "skill_run_completed", "Skill run complete", {
       skill: skill.slug,
       transcript_fetcher: config.transcriptFetcher,
@@ -2819,7 +2819,7 @@ async function processSkill(skill, summary) {
       ...metadata,
     });
     await finishAgentRun(runId, { status, suggestionsCreated: submitted, errorMessage: message });
-    activeRunState.finalized = true;
+    if (activeRunState) activeRunState.finalized = true;
     const item = {
       skill: skill.slug,
       status,
@@ -2895,7 +2895,7 @@ async function processTikTokCollection(selectedSkills, summary) {
         cause: errorMessage(error),
       });
       await finishAgentRun(runId, { suggestionsCreated: 0 });
-      activeRunState.finalized = true;
+      if (activeRunState) activeRunState.finalized = true;
       summary.push({ source: "tiktok", status: "skipped_preflight_failed", ...stats, error: errorMessage(error) });
       return { status: "skipped_preflight_failed" };
     }
@@ -2908,7 +2908,7 @@ async function processTikTokCollection(selectedSkills, summary) {
         logged_in: preflight.logged_in,
       });
       await finishAgentRun(runId, { suggestionsCreated: 0 });
-      activeRunState.finalized = true;
+      if (activeRunState) activeRunState.finalized = true;
       summary.push({ source: "tiktok", status: "skipped_auth_required", ...stats, preflight });
       return { status: "skipped_auth_required" };
     }
@@ -3112,7 +3112,7 @@ async function processTikTokCollection(selectedSkills, summary) {
     }
 
     await finishAgentRun(runId, { suggestionsCreated: stats.submitted });
-    activeRunState.finalized = true;
+    if (activeRunState) activeRunState.finalized = true;
     const item = { source: "tiktok", status: "completed", ...stats };
     summary.push(item);
     log("info", "tiktok_collection_completed", "TikTok collection completed", item);
@@ -3123,7 +3123,7 @@ async function processTikTokCollection(selectedSkills, summary) {
     stats.errors += 1;
     log("error", "tiktok_collection_failed", message, stats);
     await finishAgentRun(runId, { status: "failed", suggestionsCreated: stats.submitted, errorMessage: message });
-    activeRunState.finalized = true;
+    if (activeRunState) activeRunState.finalized = true;
     const item = { source: "tiktok", status: "failed", error: message, ...stats };
     summary.push(item);
     await flushAgentRunEvents();
