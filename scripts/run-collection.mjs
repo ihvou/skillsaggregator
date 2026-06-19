@@ -2621,7 +2621,7 @@ async function processSkill(skill, summary) {
         if (!result.duplicate) {
           submitted += 1;
           primarySubmitted += 1;
-          activeRunState.suggestionsCreated = submitted;
+          if (activeRunState) activeRunState.suggestionsCreated = submitted;
           knownCanonicalUrls.add(candidate.canonical_url);
           rememberAcceptedLevel(skill, score.level);
         } else {
@@ -2703,7 +2703,7 @@ async function processSkill(skill, summary) {
             if (!result.duplicate) {
               submitted += 1;
               secondarySubmitted += 1;
-              activeRunState.suggestionsCreated = submitted;
+              if (activeRunState) activeRunState.suggestionsCreated = submitted;
             } else {
               duplicateCount += 1;
             }
@@ -3096,7 +3096,7 @@ async function processTikTokCollection(selectedSkills, summary) {
             stats.duplicates += 1;
           } else {
             stats.submitted += 1;
-            activeRunState.suggestionsCreated = stats.submitted;
+            if (activeRunState) activeRunState.suggestionsCreated = stats.submitted;
             knownCanonicalUrls.add(canonicalUrl);
           }
           log("info", "tiktok_suggestion_submitted", "TikTok suggestion submitted", {

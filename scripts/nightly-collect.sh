@@ -66,13 +66,14 @@ if [ "$COLLECT_TARGET" = "hosted" ] && [ -z "${INTERNAL_FUNCTION_TOKEN:-}" ]; th
   exit 64
 fi
 
-# Scoring v2: the nightly run is now a pure collector. The local Ollama scorer is
-# unwired (COLLECT_SCORING=off) and nothing auto-publishes (COLLECT_AUTO_APPROVE=0)
-# — collected items land as pending suggestions (with transcripts in evidence_json)
-# for the relevance + value coaches to curate, and get promoted at the coach cutover.
-# Override either var in the env file to restore the old self-scoring behavior.
+# Scoring v2: the nightly run is a pure collector. The local Ollama scorer is
+# unwired (COLLECT_SCORING=off), and auto-apply is on by default
+# (COLLECT_AUTO_APPLY=1): accepted items are applied directly as UNPUBLISHED
+# link<->skill relations (transcripts persisted on the link), so they stay out of
+# the public catalog until the relevance + value coaches score them and the
+# publish-gate cron promotes the good ones. Set COLLECT_AUTO_APPLY=0 in the env
+# file to leave items as pending suggestions for manual debugging instead.
 export COLLECT_SCORING="${COLLECT_SCORING:-off}"
-export COLLECT_AUTO_APPROVE="${COLLECT_AUTO_APPROVE:-0}"
 
 if [ "$COLLECT_TARGET" = "hosted" ] && ! command -v "${PSQL_BIN:-psql}" >/dev/null 2>&1; then
   echo "psql not found. Install libpq (brew install libpq); this script adds Homebrew libpq bin dirs to PATH." >&2
