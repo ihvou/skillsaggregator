@@ -33,12 +33,16 @@ Each resource is a video (YouTube or TikTok) attached to ONE sub-skill (e.g. the
 "Master the late backhand" attached to "Backhand clear" in the category "Badminton").
 
 === CONNECT (Supabase REST — public key, safe to embed) ===
-  BASE="https://vqxsaabskkkjdljxiyqi.supabase.co/rest/v1"
-  KEY="sb_publishable_GSowsbQ04aJmrQ5EgZTWQQ_h959Qs-c"
-Every request: -H "apikey: $KEY" -H "Authorization: Bearer $KEY"
+Base URL:   https://vqxsaabskkkjdljxiyqi.supabase.co/rest/v1
+Public key: sb_publishable_GSowsbQ04aJmrQ5EgZTWQQ_h959Qs-c
+IMPORTANT — write the URL and key as LITERALS in every curl (do NOT use shell variables like
+$BASE/$KEY). The permission allow-list matches on the exact command prefix, so a constant literal
+prefix is what lets these calls run unattended with no confirmation prompt — a prompt at night would
+hang the whole run. Same reason for the fixed flag order below: never put anything between `curl`
+and the URL.
 
 === STEP 1 — fetch up to 25 resources not yet reviewed ===
-  curl -s -X POST "$BASE/rpc/get_unscored_for_coach" -H "apikey: $KEY" -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" -d '{"p_coach_role":"relevance","p_limit":25}'
+  curl -s -X POST "https://vqxsaabskkkjdljxiyqi.supabase.co/rest/v1/rpc/get_unscored_for_coach" -H "apikey: sb_publishable_GSowsbQ04aJmrQ5EgZTWQQ_h959Qs-c" -H "Authorization: Bearer sb_publishable_GSowsbQ04aJmrQ5EgZTWQQ_h959Qs-c" -H "Content-Type: application/json" -d '{"p_coach_role":"relevance","p_limit":25}'
 You cast BOTH roles per row, so the relevance queue is the joint queue. Each row has:
   relation_id, source ("youtube"|"tiktok"|"other"), title, description, url, duration_seconds,
   like_count, comment_count, share_count, favorite_count, creator_handle, skill_name,
@@ -75,16 +79,22 @@ NO AI throat-clearing or hedging). Two per axis: ===
 - comment_public: a single-line coach's take for THAT axis.
 
 === STEP 3 — store BOTH votes (two standalone curls per row) ===
-  curl -s -X POST "$BASE/rpc/set_curator_vote" -H "apikey: $KEY" -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" -d '{"p_relation_id":"<RELATION_ID>","p_coach_role":"relevance","p_weight":1.4,"p_comment_internal":"...","p_comment_public":"..."}'
-  curl -s -X POST "$BASE/rpc/set_curator_vote" -H "apikey: $KEY" -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" -d '{"p_relation_id":"<RELATION_ID>","p_coach_role":"value","p_weight":1.6,"p_comment_internal":"...","p_comment_public":"..."}'
+  curl -s -X POST "https://vqxsaabskkkjdljxiyqi.supabase.co/rest/v1/rpc/set_curator_vote" -H "apikey: sb_publishable_GSowsbQ04aJmrQ5EgZTWQQ_h959Qs-c" -H "Authorization: Bearer sb_publishable_GSowsbQ04aJmrQ5EgZTWQQ_h959Qs-c" -H "Content-Type: application/json" -d '{"p_relation_id":"<RELATION_ID>","p_coach_role":"relevance","p_weight":1.4,"p_comment_internal":"...","p_comment_public":"..."}'
+  curl -s -X POST "https://vqxsaabskkkjdljxiyqi.supabase.co/rest/v1/rpc/set_curator_vote" -H "apikey: sb_publishable_GSowsbQ04aJmrQ5EgZTWQQ_h959Qs-c" -H "Authorization: Bearer sb_publishable_GSowsbQ04aJmrQ5EgZTWQQ_h959Qs-c" -H "Content-Type: application/json" -d '{"p_relation_id":"<RELATION_ID>","p_coach_role":"value","p_weight":1.6,"p_comment_internal":"...","p_comment_public":"..."}'
 HTTP 204 = stored. Idempotent: re-running REPLACES that role's vote for the resource.
 
 === RULES ===
 - At most 25 rows per run. Only call set_curator_vote for relation_ids you fetched in Step 1.
 - Cast BOTH a relevance and a value vote for every row you process.
-- Run each set_curator_vote as ONE standalone curl exactly like Step 3 — do NOT wrap calls in a shell
-  function, a bash array (${arr[@]}), or a brace group { }, and do NOT add -w "%{http_code}". Those
-  are not statically analyzable, so the permission prompt only offers "Allow once" (no "Always allow").
+- EVERY command is a SINGLE, plain curl with the EXACT shape and flag order in Steps 1 and 3 — literal
+  URL and key, with NOTHING between `curl` and the URL. That constant prefix is what the permission
+  allow-list matches, so the routine runs unattended; any deviation changes the command, misses the
+  allow-list, and triggers a confirmation prompt that hangs the routine at night. So NEVER:
+    - add flags such as -o /dev/null or -w "%{http_code}", or reorder/insert any flag before the URL;
+    - chain or combine commands (no &&, ||, ;, or trailing &), or put two curls in one call;
+    - pipe to anything (no | jq, | python, | grep) — read the returned JSON directly from the output;
+    - use $(...) / backticks, loops (for/while), subshells, brace groups { }, functions, or arrays;
+    - replace the literal URL or key with a variable ($BASE/$KEY).
 - Never touch any other table/endpoint.
 
 === STEP 4 — report ===
