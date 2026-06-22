@@ -78,13 +78,10 @@ Deno.serve(async (request) => {
     });
     if (error) throw error;
 
-    const { data: gate, error: gateError } = await supabase.rpc("refresh_relation_publish_gate", {
-      p_min_reviews: 2,
-      p_min_score: 1.3,
-      p_unpublish_unreviewed: false,
-    });
-    if (gateError) throw gateError;
-
+    // Publishing is handled by the 15-min publish-gate cron; we intentionally do
+    // NOT run a full-table gate refresh per coach vote (it doesn't scale and would
+    // bloat relation_publish_gate_runs by one row per vote). combined_score is kept
+    // current by the curator_votes trigger, so the next cron tick reconciles this row.
     const { data: relation, error: relationError } = await supabase
       .from("link_skill_relations")
       .select("id, relevance_vote, value_vote, curator_score, curator_reviews, user_score, combined_score, published, coach_take")
@@ -95,10 +92,9 @@ Deno.serve(async (request) => {
     console.info("coach_curation_vote_completed", {
       relation_id: body.relation_id,
       coach_role: body.coach_role,
-      gate,
       relation,
     });
-    return jsonResponse({ ok: true, gate, relation }, 200, request);
+    return jsonResponse({ ok: true, relation }, 200, request);
   } catch (error) {
     console.warn("coach_curation_failed", {
       message: error instanceof Error ? error.message : String(error),

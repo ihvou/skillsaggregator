@@ -32,22 +32,27 @@ For each resource you play TWO experts in a SINGLE reading of the transcript:
 Each resource is a video (YouTube or TikTok) attached to ONE sub-skill (e.g. the video
 "Master the late backhand" attached to "Backhand clear" in the category "Badminton").
 
-=== CONNECT (Supabase REST — public key, safe to embed) ===
-Base URL:   https://vqxsaabskkkjdljxiyqi.supabase.co/rest/v1
-Public key: sb_publishable_GSowsbQ04aJmrQ5EgZTWQQ_h959Qs-c
-IMPORTANT — write the URL and key as LITERALS in every curl (do NOT use shell variables like
-$BASE/$KEY). The permission allow-list matches on the exact command prefix, so a constant literal
+=== CONNECT (internal coach edge function — token-gated, service-role server-side) ===
+Endpoint: https://vqxsaabskkkjdljxiyqi.supabase.co/functions/v1/coach-curation
+Header:   -H "x-internal-token: <INTERNAL_FUNCTION_TOKEN>"
+(The coach RPCs `get_unscored_for_coach` / `set_curator_vote` are NO LONGER callable by the public
+key — this edge function validates the internal token and runs them server-side as the service role.
+verify_jwt is off, so NO apikey/Authorization header is needed; ONLY x-internal-token.)
+When pasting into the live routine, replace <INTERNAL_FUNCTION_TOKEN> with the real token value (kept
+out of this committed doc). IMPORTANT — write the endpoint and token as LITERALS in every curl (no
+shell variables). The permission allow-list matches on the exact command prefix, so a constant literal
 prefix is what lets these calls run unattended with no confirmation prompt — a prompt at night would
-hang the whole run. Same reason for the fixed flag order below: never put anything between `curl`
-and the URL.
+hang the whole run. Same reason for the fixed flag order below: never put anything between `curl` and
+the URL.
 
 === STEP 1 — fetch up to 25 resources not yet reviewed ===
-  curl -s -X POST "https://vqxsaabskkkjdljxiyqi.supabase.co/rest/v1/rpc/get_unscored_for_coach" -H "apikey: sb_publishable_GSowsbQ04aJmrQ5EgZTWQQ_h959Qs-c" -H "Authorization: Bearer sb_publishable_GSowsbQ04aJmrQ5EgZTWQQ_h959Qs-c" -H "Content-Type: application/json" -d '{"p_coach_role":"relevance","p_limit":25}'
-You cast BOTH roles per row, so the relevance queue is the joint queue. Each row has:
+  curl -s -X POST "https://vqxsaabskkkjdljxiyqi.supabase.co/functions/v1/coach-curation" -H "x-internal-token: <INTERNAL_FUNCTION_TOKEN>" -H "Content-Type: application/json" -d '{"action":"queue","coach_role":"relevance","limit":25}'
+The response is {"ok":true,"items":[...]} — the rows are in "items". You cast BOTH roles per row, so
+the relevance queue is the joint queue. Each item has:
   relation_id, source ("youtube"|"tiktok"|"other"), title, description, url, duration_seconds,
   like_count, comment_count, share_count, favorite_count, creator_handle, skill_name,
   category_name, transcript (may be null if not captured).
-If it returns [] -> log "nothing to review" and stop.
+If "items" is empty [] -> log "nothing to review" and stop.
 
 === SOURCE DATA (read the TRANSCRIPT once; metadata is the fallback) ===
 - transcript: when non-empty, this is your PRIMARY signal for BOTH judgments — read it once.
@@ -63,12 +68,15 @@ Think as a veteran {category_name} coach. Decide them IN ORDER, and keep them IN
    0 tangential; -1 mostly about something else; -2 irrelevant / wrong skill / clickbait / not instructional.
   Do NOT judge production quality here.
 
-(2) VALUE / teaching quality, continuous in [-2.0, +2.0] — judge this INDEPENDENTLY of relevance.
-  Do not let the relevance score pull value up or down; they measure different things. A perfectly
-  on-topic video can still be poor, and an ad disguised as a tutorial is relevance-high / value-low.
-  +2 excellent: clear, accurate, in-depth, credible coach, covers the nuances, no shilling;
+(2) VALUE — how much a learner would actually LEARN ABOUT {skill_name} from this, continuous [-2.0, +2.0].
+  This is teaching quality IN SERVICE OF THIS SUB-SKILL, not in the abstract: a polished or entertaining
+  video about a DIFFERENT topic teaches little about {skill_name}, so it scores LOW here even if it is
+  excellent in general. Do NOT reward general production quality that doesn't teach THIS sub-skill.
+  (Not a relevance halo: a video that covers the sub-skill among other things can still teach THAT part
+  excellently = high value; an on-topic ad that sells instead of teaching = low value.)
+  +2 excellent: clear, accurate, in-depth ON THIS sub-skill, credible, no shilling;
   +1 solid; 0 mediocre/shallow/generic; -1 weak/thin/distracted (heavy product promo);
-  -2 ad-as-tutorial / misleading / technically wrong or harmful.
+  -2 ad-as-tutorial / misleading / technically wrong or harmful / so off-topic you learn ~nothing here.
 
 Use CONTINUOUS values (e.g. +1.4, -0.5). With a transcript, judge the actual content; without one
 the signal is thin (title/caption + engagement) — be calibrated, not overconfident.
@@ -79,15 +87,15 @@ NO AI throat-clearing or hedging). Two per axis: ===
 - comment_public: a single-line coach's take for THAT axis.
 
 === STEP 3 — store BOTH votes (two standalone curls per row) ===
-  curl -s -X POST "https://vqxsaabskkkjdljxiyqi.supabase.co/rest/v1/rpc/set_curator_vote" -H "apikey: sb_publishable_GSowsbQ04aJmrQ5EgZTWQQ_h959Qs-c" -H "Authorization: Bearer sb_publishable_GSowsbQ04aJmrQ5EgZTWQQ_h959Qs-c" -H "Content-Type: application/json" -d '{"p_relation_id":"<RELATION_ID>","p_coach_role":"relevance","p_weight":1.4,"p_comment_internal":"...","p_comment_public":"..."}'
-  curl -s -X POST "https://vqxsaabskkkjdljxiyqi.supabase.co/rest/v1/rpc/set_curator_vote" -H "apikey: sb_publishable_GSowsbQ04aJmrQ5EgZTWQQ_h959Qs-c" -H "Authorization: Bearer sb_publishable_GSowsbQ04aJmrQ5EgZTWQQ_h959Qs-c" -H "Content-Type: application/json" -d '{"p_relation_id":"<RELATION_ID>","p_coach_role":"value","p_weight":1.6,"p_comment_internal":"...","p_comment_public":"..."}'
-HTTP 204 = stored. Idempotent: re-running REPLACES that role's vote for the resource.
+  curl -s -X POST "https://vqxsaabskkkjdljxiyqi.supabase.co/functions/v1/coach-curation" -H "x-internal-token: <INTERNAL_FUNCTION_TOKEN>" -H "Content-Type: application/json" -d '{"action":"vote","relation_id":"<RELATION_ID>","coach_role":"relevance","weight":1.4,"comment_internal":"...","comment_public":"..."}'
+  curl -s -X POST "https://vqxsaabskkkjdljxiyqi.supabase.co/functions/v1/coach-curation" -H "x-internal-token: <INTERNAL_FUNCTION_TOKEN>" -H "Content-Type: application/json" -d '{"action":"vote","relation_id":"<RELATION_ID>","coach_role":"value","weight":1.6,"comment_internal":"...","comment_public":"..."}'
+Response {"ok":true,"relation":{...}} = stored. Idempotent: re-running REPLACES that role's vote.
 
 === RULES ===
-- At most 25 rows per run. Only call set_curator_vote for relation_ids you fetched in Step 1.
+- At most 25 rows per run. Only cast votes for relation_ids returned in Step 1's "items".
 - Cast BOTH a relevance and a value vote for every row you process.
 - EVERY command is a SINGLE, plain curl with the EXACT shape and flag order in Steps 1 and 3 — literal
-  URL and key, with NOTHING between `curl` and the URL. That constant prefix is what the permission
+  endpoint and token, with NOTHING between `curl` and the URL. That constant prefix is what the permission
   allow-list matches, so the routine runs unattended; any deviation changes the command, misses the
   allow-list, and triggers a confirmation prompt that hangs the routine at night. So NEVER:
     - add flags such as -o /dev/null or -w "%{http_code}", or reorder/insert any flag before the URL;
