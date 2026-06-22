@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildLearningPathIndex, filterLearningPathStages } from "./resource-utils";
+import { buildLearningPathIndex, filterLearningPathStages, sortResources } from "./resource-utils";
 import type { SkillResource, SkillSummary } from "./types";
 
 function skill(
@@ -79,5 +79,24 @@ describe("buildLearningPathIndex", () => {
 
     expect(filtered).toHaveLength(1);
     expect(filtered[0]?.entries[0]?.resources.map((item) => item.id)).toEqual(["grip-advanced-video"]);
+  });
+
+  it("ranks combined score ahead of legacy vote fallbacks", () => {
+    const grip = skill("skill-1", "Grip technique", 1, 1);
+    const highCommunity = {
+      ...resource("community-and-coach-video", grip, "beginner"),
+      combined_score: 2.2,
+      curator_score: 1.2,
+      vote_score: 1,
+    };
+    const legacyPopular = {
+      ...resource("legacy-popular-video", grip, "beginner"),
+      combined_score: 1.4,
+      curator_score: 1.4,
+      vote_score: 99,
+    };
+
+    expect(sortResources([legacyPopular, highCommunity], "popular").map((item) => item.id))
+      .toEqual(["community-and-coach-video", "legacy-popular-video"]);
   });
 });

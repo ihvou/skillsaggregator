@@ -9,5 +9,5 @@ appId: com.skillsaggregator.mobile
 - tapOn: "Bandeja"
 - assertVisible: "Skill detail"
 - assertVisible: "Bandeja"
-- tapOn: "Saved"
-- assertVisible: "Resources"
+- tapOn: "Library"
+- assertVisible: "Library"

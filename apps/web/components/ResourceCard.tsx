@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useMemo } from "react";
+import Link from "next/link";
 import {
   Bookmark,
   BookmarkCheck,
@@ -13,8 +13,8 @@ import {
   ThumbsUp,
   UserRound,
 } from "lucide-react";
-import { getLinkSource, type SkillResource } from "@skillsaggregator/shared";
-import { useLocalFlag } from "@/lib/useLocalFlag";
+import { getLinkSource, resourceQualityRating, type SkillResource } from "@skillsaggregator/shared";
+import { useResourceActions } from "@/lib/useResourceActions";
 
 interface ResourceCardProps {
   resource: SkillResource;
@@ -34,16 +34,6 @@ function formatDate(iso?: string | null) {
   return `${dd}.${mm}.${date.getFullYear()}`;
 }
 
-function formatCount(value: number): string {
-  if (!Number.isFinite(value)) return "0";
-  const abs = Math.abs(value);
-  if (abs >= 1000) {
-    const rounded = (abs / 1000).toFixed(abs >= 10000 ? 0 : 1);
-    return `${value < 0 ? "-" : ""}${rounded}k`;
-  }
-  return String(value);
-}
-
 function isPortraitResource(resource: SkillResource) {
   return getLinkSource(resource.link) === "tiktok";
 }
@@ -59,53 +49,38 @@ function SourceIcon({ resource }: { resource: SkillResource }) {
  * Web counterpart to the mobile ResourceCard row.
  *  - 16/9 thumbnail (left, click → opens link)
  *  - Source + date + level pill (top), bold 2-line title (clickable),
- *    watched + saved + thumbs-up + rating count + thumbs-down (bottom)
- *  - State (save / watched / vote) persisted to localStorage so it sticks
- *    across page loads on the same device, same keys as mobile
- *
- * Logged-in users also write these flags through to `user_actions`; anonymous
- * users keep the same local-only behavior.
+ *    quality badge + watched/saved/vote actions.
+ *  - State (save / watched / vote) is authenticated and stored server-side.
  */
 export function ResourceCard({ resource }: ResourceCardProps) {
-  const linkId = resource.link.id;
   const relationId = resource.id;
-  const [isSaved, toggleSaved] = useLocalFlag(`saved:${linkId}`);
-  const [isCompleted, toggleCompleted] = useLocalFlag(`completed:${linkId}`);
-  const [upvoted, , setUpvoted] = useLocalFlag(`upvote:${linkId}:${relationId}`);
-  const [downvoted, , setDownvoted] = useLocalFlag(`downvote:${linkId}:${relationId}`);
+  const {
+    isSaved,
+    isWatched,
+    vote,
+    prompt,
+    error,
+    signInHref,
+    toggleSaved,
+    toggleWatched,
+    setUserVote,
+  } = useResourceActions(relationId);
 
   const dateLabel = formatDate(resource.created_at);
   const thumbnail = resource.link.thumbnail_url;
   const portrait = isPortraitResource(resource);
   const url = resource.link.url;
   const contributor = resource.link.contributor_profile;
+  const quality = resourceQualityRating(resource);
 
   function onUpvote() {
-    const next = !upvoted;
-    setUpvoted(next);
-    if (next && downvoted) setDownvoted(false);
+    void setUserVote(vote === 1 ? 0 : 1);
   }
   function onDownvote() {
-    const next = !downvoted;
-    setDownvoted(next);
-    if (next && upvoted) setUpvoted(false);
+    void setUserVote(vote === -1 ? 0 : -1);
   }
 
-  const ratingCount = useMemo(() => {
-    const upvoteCount = Number.isFinite(resource.upvote_count) ? resource.upvote_count : 0;
-    const downvoteCount = Number.isFinite(resource.downvote_count) ? (resource.downvote_count ?? 0) : 0;
-    const base = Number.isFinite(resource.vote_score)
-      ? (resource.vote_score ?? 0)
-      : Math.max(0, upvoteCount - downvoteCount);
-    return Math.max(0, base + (upvoted ? 1 : 0) - (downvoted ? 1 : 0));
-  }, [resource.upvote_count, resource.downvote_count, resource.vote_score, upvoted, downvoted]);
-
   const SavedIcon = isSaved ? BookmarkCheck : Bookmark;
-  const ratingColor = upvoted
-    ? "text-accent"
-    : downvoted
-      ? "text-ink"
-      : "text-muted";
 
   return (
     // Stacked (thumbnail above text) below `sm` — a fixed-width thumb in a row
@@ -147,11 +122,22 @@ export function ResourceCard({ resource }: ResourceCardProps) {
             <SourceIcon resource={resource} />
             {dateLabel ? <span className="text-sm text-muted">{dateLabel}</span> : null}
           </div>
-          {resource.skill_level ? (
-            <span className="inline-flex items-center rounded-pill bg-muted px-2.5 py-0.5 text-xs font-bold text-surface">
-              {capitalize(resource.skill_level)}
-            </span>
-          ) : null}
+          <div className="flex shrink-0 items-center gap-2">
+            {quality ? (
+              <span className="inline-flex items-center rounded-pill bg-accent/12 px-2.5 py-0.5 text-xs font-bold text-accent">
+                {quality.label} {quality.percent}%
+              </span>
+            ) : (
+              <span className="inline-flex items-center rounded-pill bg-bgGroup px-2.5 py-0.5 text-xs font-bold text-muted">
+                Quality pending
+              </span>
+            )}
+            {resource.skill_level ? (
+              <span className="inline-flex items-center rounded-pill bg-muted px-2.5 py-0.5 text-xs font-bold text-surface">
+                {capitalize(resource.skill_level)}
+              </span>
+            ) : null}
+          </div>
         </div>
 
         <a
@@ -164,6 +150,12 @@ export function ResourceCard({ resource }: ResourceCardProps) {
             {resource.link.title ?? url}
           </h3>
         </a>
+
+        {resource.coach_take ? (
+          <p className="line-clamp-2 text-sm leading-snug text-muted">
+            <span className="font-bold text-ink">Coach&apos;s take:</span> {resource.coach_take}
+          </p>
+        ) : null}
 
         <div className="flex items-center justify-between gap-3 text-sm">
           <div className="flex min-w-0 items-center gap-2">
@@ -180,21 +172,21 @@ export function ResourceCard({ resource }: ResourceCardProps) {
           <div className="flex items-center gap-3">
             <button
               type="button"
-              onClick={toggleCompleted}
-              aria-label={isCompleted ? "Mark not watched" : "Mark watched"}
-              aria-pressed={isCompleted}
+              onClick={() => void toggleWatched()}
+              aria-label={isWatched ? "Mark not watched" : "Mark watched"}
+              aria-pressed={isWatched}
               className="focus-ring inline-flex h-7 w-7 items-center justify-center rounded-md transition hover:bg-bgGroup"
             >
               <CircleCheck
-                className={`h-5 w-5 ${isCompleted ? "text-accent" : "text-muted"}`}
-                fill={isCompleted ? "currentColor" : "transparent"}
-                stroke={isCompleted ? "#ffffff" : "currentColor"}
+                className={`h-5 w-5 ${isWatched ? "text-accent" : "text-muted"}`}
+                fill={isWatched ? "currentColor" : "transparent"}
+                stroke={isWatched ? "#ffffff" : "currentColor"}
                 strokeWidth={2}
               />
             </button>
             <button
               type="button"
-              onClick={toggleSaved}
+              onClick={() => void toggleSaved()}
               aria-label={isSaved ? "Unsave resource" : "Save resource"}
               aria-pressed={isSaved}
               className="focus-ring inline-flex h-7 w-7 items-center justify-center rounded-md transition hover:bg-bgGroup"
@@ -209,35 +201,37 @@ export function ResourceCard({ resource }: ResourceCardProps) {
               <button
                 type="button"
                 onClick={onUpvote}
-                aria-label={upvoted ? "Remove upvote" : "Upvote"}
-                aria-pressed={upvoted}
+                aria-label={vote === 1 ? "Remove upvote" : "Upvote"}
+                aria-pressed={vote === 1}
                 className="focus-ring inline-flex h-7 w-7 items-center justify-center rounded-md transition hover:bg-bgGroup"
               >
                 <ThumbsUp
-                  className={`h-5 w-5 ${upvoted ? "text-accent" : "text-muted"}`}
-                  fill={upvoted ? "currentColor" : "transparent"}
+                  className={`h-5 w-5 ${vote === 1 ? "text-accent" : "text-muted"}`}
+                  fill={vote === 1 ? "currentColor" : "transparent"}
                   strokeWidth={2}
                 />
               </button>
-              <span className={`min-w-[1.25rem] text-center text-xs font-bold ${ratingColor}`}>
-                {formatCount(ratingCount)}
-              </span>
               <button
                 type="button"
                 onClick={onDownvote}
-                aria-label={downvoted ? "Remove downvote" : "Downvote"}
-                aria-pressed={downvoted}
+                aria-label={vote === -1 ? "Remove downvote" : "Downvote"}
+                aria-pressed={vote === -1}
                 className="focus-ring inline-flex h-7 w-7 items-center justify-center rounded-md transition hover:bg-bgGroup"
               >
                 <ThumbsDown
-                  className={`h-5 w-5 ${downvoted ? "text-ink" : "text-muted"}`}
-                  fill={downvoted ? "currentColor" : "transparent"}
+                  className={`h-5 w-5 ${vote === -1 ? "text-ink" : "text-muted"}`}
+                  fill={vote === -1 ? "currentColor" : "transparent"}
                   strokeWidth={2}
                 />
               </button>
             </div>
           </div>
         </div>
+        {prompt || error ? (
+          <p className={`text-xs font-bold ${error ? "text-red-600" : "text-muted"}`}>
+            {error ? error : <Link className="focus-ring underline underline-offset-2" href={signInHref}>{prompt}</Link>}
+          </p>
+        ) : null}
       </div>
     </article>
   );

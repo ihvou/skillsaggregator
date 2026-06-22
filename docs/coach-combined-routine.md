@@ -97,9 +97,13 @@ HTTP 204 = stored. Idempotent: re-running REPLACES that role's vote for the reso
     - replace the literal URL or key with a variable ($BASE/$KEY).
 - Never touch any other table/endpoint.
 
-=== STEP 4 — report ===
-Print: rows reviewed, relevance spread (min/median/max), value spread (min/median/max), how many
-rows had relevance and value diverge by >= 1.5, and any rows skipped with the reason.
+=== STEP 4 — report (PLAIN TEXT ONLY — never run a shell command or tool for this) ===
+Compute it from the scores you just assigned (they are all in your context) and print it as plain
+text. Do NOT run any shell command or tool to calculate it — no sort/awk/python/jq, no echo-pipes.
+Those are not on the allow-list, so they would trigger a confirmation prompt that hangs the whole run
+(the only commands you ever run are the Step 1 and Step 3 curls).
+Report: rows reviewed; relevance spread (min/median/max); value spread (min/median/max); how many
+rows had relevance and value diverge by >= 1.5; any rows skipped and why.
 ```
 
 ---

@@ -26,7 +26,7 @@ export type DiscoverCategorySection = {
 
 const RESOURCE_LINK_SELECT =
   "id, url, canonical_url, domain, title, description, thumbnail_url, thumbnail_storage_path, duration_seconds, like_count, comment_count, share_count, favorite_count, creator_handle, creator_url, scoring_strategy, content_type, created_at, contributor_profile:contributor_profiles(id, slug, display_name, avatar_url, accepted_count)";
-const RELATION_VOTE_SELECT = "upvote_count, downvote_count, vote_score, value_score, curator_score, curator_reviews";
+const RELATION_VOTE_SELECT = "upvote_count, downvote_count, vote_score, value_score, curator_score, curator_reviews, user_score, combined_score, coach_take";
 
 function shapeLinkWithContributor<
   TLink extends {
@@ -102,6 +102,9 @@ function relationVotes(relation: {
   value_score?: number | null;
   curator_score?: number | null;
   curator_reviews?: number | null;
+  user_score?: number | null;
+  combined_score?: number | null;
+  coach_take?: string | null;
 }) {
   const upvoteCount = relation.upvote_count ?? 0;
   const downvoteCount = relation.downvote_count ?? 0;
@@ -112,6 +115,9 @@ function relationVotes(relation: {
     value_score: relation.value_score ?? null,
     curator_score: relation.curator_score ?? null,
     curator_reviews: relation.curator_reviews ?? null,
+    user_score: relation.user_score ?? null,
+    combined_score: relation.combined_score ?? relation.curator_score ?? null,
+    coach_take: relation.coach_take ?? null,
   };
 }
 
@@ -152,6 +158,9 @@ type RelationWithSkillId = {
   value_score?: number | null;
   curator_score?: number | null;
   curator_reviews?: number | null;
+  user_score?: number | null;
+  combined_score?: number | null;
+  coach_take?: string | null;
   created_at?: string | null;
   links?: LinkRow | LinkRow[] | null;
 };
@@ -176,7 +185,7 @@ async function fetchActiveSkillRelations(
       .eq("is_active", true)
       .eq("published", true)
       .eq("links.is_active", true)
-      .order("curator_score", { ascending: false, nullsFirst: false })
+      .order("combined_score", { ascending: false, nullsFirst: false })
       .order("curator_reviews", { ascending: false, nullsFirst: false })
       .order("value_score", { ascending: false, nullsFirst: false })
       .order("vote_score", { ascending: false })
@@ -403,7 +412,7 @@ export async function getSkillResources(categorySlug: string, skillSlug: string,
     .eq("is_active", true)
     .eq("published", true)
     .eq("links.is_active", true)
-    .order(sort === "newest" ? "created_at" : "curator_score", { ascending: false, nullsFirst: false })
+    .order(sort === "newest" ? "created_at" : "combined_score", { ascending: false, nullsFirst: false })
     .order(sort === "newest" ? "id" : "curator_reviews", { ascending: false, nullsFirst: false })
     .order(sort === "newest" ? "id" : "value_score", { ascending: false, nullsFirst: false })
     .order(sort === "newest" ? "id" : "vote_score", { ascending: false });
@@ -572,7 +581,7 @@ export async function getSavedResources(linkIds: string[]): Promise<SkillResourc
     .eq("is_active", true)
     .eq("published", true)
     .eq("links.is_active", true)
-    .order("curator_score", { ascending: false, nullsFirst: false })
+    .order("combined_score", { ascending: false, nullsFirst: false })
     .order("curator_reviews", { ascending: false, nullsFirst: false })
     .order("value_score", { ascending: false, nullsFirst: false })
     .order("vote_score", { ascending: false });
@@ -611,5 +620,90 @@ export async function getSavedResources(linkIds: string[]): Promise<SkillResourc
   // Preserve caller order (Saved is "most recently saved first" from local state).
   return linkIds
     .map((id) => byLink.get(id))
+    .filter((resource): resource is SkillResource => Boolean(resource));
+}
+
+export type UserLibraryView = "saved" | "watched";
+
+export async function getUserLibraryResources(
+  userId: string,
+  view: UserLibraryView,
+): Promise<SkillResource[]> {
+  const supabase = getSupabase();
+  if (!supabase) return [];
+
+  const table = view === "saved" ? "user_bookmarks" : "user_watched";
+  const orderColumn = view === "saved" ? "created_at" : "watched_at";
+  const { data: stateRows, error: stateError } = await supabase
+    .from(table)
+    .select(`link_skill_relation_id, ${orderColumn}`)
+    .eq("user_id", userId)
+    .order(orderColumn, { ascending: false });
+  if (stateError) {
+    console.warn("mobile_user_library_state_load_failed", {
+      view,
+      message: stateError.message,
+    });
+    throw stateError;
+  }
+
+  const relationIds = (stateRows ?? [])
+    .map((row) => row.link_skill_relation_id)
+    .filter((id): id is string => typeof id === "string" && id.length > 0);
+  if (relationIds.length === 0) return [];
+
+  const { data: relations, error: relationError } = await supabase
+    .from("link_skill_relations")
+    .select(
+      `id, public_note, skill_level, ${RELATION_VOTE_SELECT}, created_at, link_id, links!inner(${RESOURCE_LINK_SELECT}), skills!inner(id, slug, name, categories!inner(slug, name))`,
+    )
+    .in("id", relationIds)
+    .eq("is_active", true)
+    .eq("published", true)
+    .eq("links.is_active", true)
+    .order("combined_score", { ascending: false, nullsFirst: false })
+    .order("curator_reviews", { ascending: false, nullsFirst: false })
+    .order("value_score", { ascending: false, nullsFirst: false })
+    .order("vote_score", { ascending: false });
+  if (relationError) {
+    console.warn("mobile_user_library_resource_load_failed", {
+      view,
+      message: relationError.message,
+    });
+    throw relationError;
+  }
+
+  const byRelation = new Map<string, SkillResource>();
+  for (const relation of relations ?? []) {
+    const link = Array.isArray(relation.links) ? relation.links[0] : relation.links;
+    if (!link) continue;
+    const skill = Array.isArray(relation.skills) ? relation.skills[0] : relation.skills;
+    const category = skill
+      ? Array.isArray(skill.categories)
+        ? skill.categories[0]
+        : skill.categories
+      : null;
+    const resource: SkillResource = {
+      id: relation.id,
+      public_note: relation.public_note,
+      skill_level: relation.skill_level,
+      ...relationVotes(relation),
+      created_at: relation.created_at ?? link.created_at ?? null,
+      link: shapeLinkWithContributor(link),
+    };
+    if (skill) {
+      resource.skill = {
+        id: skill.id,
+        slug: skill.slug,
+        name: skill.name,
+        category_slug: category?.slug ?? "",
+        category_name: category?.name ?? null,
+      };
+    }
+    byRelation.set(relation.id, resource);
+  }
+
+  return relationIds
+    .map((id) => byRelation.get(id))
     .filter((resource): resource is SkillResource => Boolean(resource));
 }

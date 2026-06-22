@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import { SavedResourceBrowser } from "@/components/SavedResourceBrowser";
 
 export const metadata: Metadata = {
-  title: "Saved | Subskills",
-  description: "Resources you saved on this device.",
+  title: "Library | Subskills",
+  description: "Saved and watched resources tied to your account.",
 };
 
 export default function SavedPage() {

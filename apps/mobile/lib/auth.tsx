@@ -32,7 +32,7 @@ interface AuthContextValue {
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
-const ACTION_PREFIXES = ["saved", "completed", "upvote", "downvote"] as const;
+const ACTION_PREFIXES = ["saved", "completed"] as const;
 const supabase = getSupabase();
 type ActionType = (typeof ACTION_PREFIXES)[number];
 
@@ -66,10 +66,6 @@ function isActionType(value: string | null | undefined): value is ActionType {
   return ACTION_PREFIXES.includes(value as ActionType);
 }
 
-function needsRelation(actionType: ActionType) {
-  return actionType === "upvote" || actionType === "downvote";
-}
-
 function actionKey(actionType: ActionType, linkId: string, linkSkillRelationId: string | null) {
   return linkSkillRelationId ? `${actionType}:${linkId}:${linkSkillRelationId}` : `${actionType}:${linkId}`;
 }
@@ -91,7 +87,6 @@ function actionRowsForUser(userId: string, nowIso = new Date().toISOString()) {
     getKeys(`${prefix}:`).flatMap((key) => {
       const parsed = parseActionKey(key);
       if (!parsed) return [];
-      if (needsRelation(parsed.actionType) && !parsed.linkSkillRelationId) return [];
       const row = actionRowForUser(userId, parsed);
       if (parsed.actionType === "completed") {
         row.created_at = getCompletedAt(parsed.linkId) ?? setCompletedAt(parsed.linkId, nowIso);
@@ -165,7 +160,6 @@ export function AuthProvider({ children }: PropsWithChildren) {
     } else {
       for (const row of (serverRows ?? []) as ServerActionRow[]) {
         if (!row.link_id || !isActionType(row.action_type)) continue;
-        if (needsRelation(row.action_type) && !row.link_skill_relation_id) continue;
 
         const key = actionKey(row.action_type, row.link_id, row.link_skill_relation_id);
         setFlag(key, true);

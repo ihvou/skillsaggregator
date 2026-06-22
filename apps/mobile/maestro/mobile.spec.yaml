@@ -7,5 +7,5 @@ appId: com.skillsaggregator.mobile
 - assertVisible: "Barbell squat"
 - tapOn: "Barbell squat"
 - assertVisible: "Skill detail"
-- tapOn: "Saved"
-- assertVisible: "Resources"
+- tapOn: "Library"
+- assertVisible: "Library"

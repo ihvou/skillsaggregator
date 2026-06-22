@@ -60,6 +60,10 @@ export default function SuggestScreen() {
       Alert.alert("Missing details", "Add a URL and choose the target skill.");
       return;
     }
+    if (!session) {
+      Alert.alert("Sign in to continue", "Sign in from the Account tab to suggest a resource.");
+      return;
+    }
 
     setIsSubmitting(true);
     try {
@@ -89,10 +93,10 @@ export default function SuggestScreen() {
       const body = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(body.error ?? "Suggestion failed.");
       Alert.alert(
-        "Thanks",
-        body.duplicate
-          ? "already submitted, thanks"
-          : "A moderator will review your suggestion within a few days.",
+          "Thanks",
+          body.duplicate
+            ? "already submitted, thanks"
+          : "Your suggestion is queued for coach review.",
         [{ text: "OK", onPress: () => router.back() }],
       );
     } catch (error) {
@@ -121,7 +125,7 @@ export default function SuggestScreen() {
               style={({ pressed }) => [styles.signInCallout, pressed && styles.pressed]}
               accessibilityRole="button"
             >
-              <Text style={styles.signInText}>Sign in to get credit for accepted suggestions</Text>
+              <Text style={styles.signInText}>Sign in to suggest a resource</Text>
             </Pressable>
           ) : null}
 

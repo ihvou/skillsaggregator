@@ -70,6 +70,9 @@ export interface SkillResource {
   value_score?: number | null;
   curator_score?: number | null;
   curator_reviews?: number | null;
+  user_score?: number | null;
+  combined_score?: number | null;
+  coach_take?: string | null;
   created_at?: string | null;
   link: LinkResource;
   skill?: Pick<SkillSummary, "id" | "slug" | "name" | "category_slug"> & {

@@ -24,6 +24,7 @@ describe("prompt rendering", () => {
 
       Rules:
       - if the transcript does not actually teach the sub-skill, set relevance < 0.4
+      - value is skill-contextual: a polished or entertaining resource still scores low if a learner would not learn this exact sub-skill
       - be strict on teaching_quality; clickbait and rambling = low
       - if uncertain, prefer lower scores
 

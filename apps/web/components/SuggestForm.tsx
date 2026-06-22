@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import type { CategorySummary, SkillLevel, SkillSummary } from "@skillsaggregator/shared";
 import { getBrowserSupabase } from "@/lib/browserSupabase";
 
@@ -71,7 +72,12 @@ export function SuggestForm({
     const {
       data: { session },
     } = await supabase.auth.getSession();
-    const bearer = session?.access_token ?? anonKey;
+    if (!session) {
+      setIsSubmitting(false);
+      setError("Sign in to suggest a resource.");
+      return;
+    }
+    const bearer = session.access_token;
     const response = await fetch(`${supabaseUrl}/functions/v1/submit-suggestion`, {
       method: "POST",
       headers: {
@@ -82,7 +88,7 @@ export function SuggestForm({
       body: JSON.stringify({
         type: "LINK_ADD",
         origin_type: "human",
-        origin_name: contributorSlug ? `web_${contributorSlug}` : "web_anonymous",
+        origin_name: contributorSlug ? `web_${contributorSlug}` : "web_authenticated",
         category_id: categoryId,
         skill_id: skillId,
         payload_json: {
@@ -109,7 +115,7 @@ export function SuggestForm({
     setStatus(
       body.duplicate
         ? "already submitted, thanks"
-        : "Thanks! A moderator will review your suggestion within a few days.",
+        : "Thanks! Your suggestion is queued for coach review.",
     );
   }
 
@@ -211,7 +217,15 @@ export function SuggestForm({
       </button>
 
       {status ? <p className="text-sm font-bold text-accent">{status}</p> : null}
-      {error ? <p className="text-sm font-bold text-red-600">{error}</p> : null}
+      {error ? (
+        <p className="text-sm font-bold text-red-600">
+          {error === "Sign in to suggest a resource." ? (
+            <Link className="underline underline-offset-2" href="/sign-in?next=/suggest">
+              {error}
+            </Link>
+          ) : error}
+        </p>
+      ) : null}
     </form>
   );
 }

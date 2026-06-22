@@ -49,3 +49,9 @@ inspector_port = 8083
 # orphaned 37 auto-approved TikTok suggestions on 2026-06-09/10.
 [functions.apply-suggestion]
 verify_jwt = false
+
+# coach-curation is internal-only: the function validates x-internal-token and
+# then uses the service role to call private coach RPCs that anon/authenticated
+# clients cannot execute directly.
+[functions.coach-curation]
+verify_jwt = false

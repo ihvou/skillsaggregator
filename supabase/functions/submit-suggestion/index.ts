@@ -190,6 +190,12 @@ Deno.serve(async (request) => {
     const finalStatus = finalSuggestionStatus(internalRequest, requestedStatus);
     const payload = suggestionPayloadByType[input.type].parse(input.payload_json) as Record<string, unknown>;
     const isHuman = input.origin_type === "human";
+    const bearerUserId = await submittedUserIdFromAuthorization(supabase, request);
+    const submittedByUserId = resolveSubmittedByUserId({
+      bearerUserId,
+      bodySubmittedByUserId: input.submitted_by_user_id ?? null,
+      internalRequest,
+    });
 
     console.info("submit_suggestion_received", {
       type: input.type,
@@ -198,10 +204,14 @@ Deno.serve(async (request) => {
       requested_status: requestedStatus,
       final_status: finalStatus,
       internal_request: internalRequest,
+      submitted_by_user_id: submittedByUserId,
       ip,
     });
 
     if (isHuman) {
+      if (!submittedByUserId) {
+        throw Object.assign(new Error("Sign in to suggest a resource."), { status: 401 });
+      }
       await verifyTurnstileIfConfigured(input.turnstile_token, ip);
       await enforceHumanRateLimit(supabase, ip);
     }
@@ -290,13 +300,6 @@ Deno.serve(async (request) => {
       }
     }
 
-    const bearerUserId = await submittedUserIdFromAuthorization(supabase, request);
-    const submittedByUserId = resolveSubmittedByUserId({
-      bearerUserId,
-      bodySubmittedByUserId: input.submitted_by_user_id ?? null,
-      internalRequest,
-    });
-
     if (!internalRequest && input.submitted_by_user_id && input.submitted_by_user_id !== submittedByUserId) {
       console.warn("submit_suggestion_body_attribution_ignored", {
         origin_type: input.origin_type,
@@ -350,6 +353,27 @@ Deno.serve(async (request) => {
       return jsonResponse({
         suggestion_id: inserted.id,
         status: "auto_approved",
+        requested_status: requestedStatus,
+        applied,
+      }, 200, request);
+    }
+
+    if (isHuman && input.type === "LINK_ADD" && submittedByUserId) {
+      console.info("submit_suggestion_community_apply_started", {
+        suggestion_id: inserted.id,
+        submitted_by_user_id: submittedByUserId,
+      });
+      const applied = await callFunction("apply-suggestion", {
+        suggestion_id: inserted.id,
+        moderator_user_id: null,
+      });
+      console.info("submit_suggestion_community_apply_completed", {
+        suggestion_id: inserted.id,
+        submitted_by_user_id: submittedByUserId,
+      });
+      return jsonResponse({
+        suggestion_id: inserted.id,
+        status: "approved",
         requested_status: requestedStatus,
         applied,
       }, 200, request);

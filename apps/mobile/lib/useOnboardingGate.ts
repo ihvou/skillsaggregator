@@ -3,7 +3,7 @@ import { useFocusEffect, useRouter } from "expo-router";
 import { hasCompletedOnboarding } from "@/lib/localState";
 
 /**
- * First-run gate. Call this from every root tab screen (Discover / Saved /
+ * First-run gate. Call this from every root tab screen (Discover / Library /
  * Account) so onboarding is shown no matter which tab the app launches or
  * restores into — not just Discover.
  *

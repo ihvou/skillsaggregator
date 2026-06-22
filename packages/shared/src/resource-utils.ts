@@ -100,9 +100,12 @@ export function resourceMatchesLevel(
 export function resourceValueScore(
   resource: Pick<
     SkillResource,
-    "curator_score" | "curator_reviews" | "value_score" | "vote_score" | "upvote_count"
+    "combined_score" | "curator_score" | "curator_reviews" | "value_score" | "vote_score" | "upvote_count"
   >,
 ) {
+  if (typeof resource.combined_score === "number" && Number.isFinite(resource.combined_score)) {
+    return resource.combined_score;
+  }
   if (typeof resource.curator_score === "number" && Number.isFinite(resource.curator_score)) {
     return resource.curator_score;
   }
@@ -129,7 +132,19 @@ export function hasCuratorScore(resource: Pick<SkillResource, "curator_score">) 
   return typeof resource.curator_score === "number" && Number.isFinite(resource.curator_score);
 }
 
+export function hasCombinedScore(resource: Pick<SkillResource, "combined_score">) {
+  return typeof resource.combined_score === "number" && Number.isFinite(resource.combined_score);
+}
+
 export function compareResourcesByValue(a: SkillResource, b: SkillResource) {
+  const combinedDiff = Number(hasCombinedScore(b)) - Number(hasCombinedScore(a));
+  if (combinedDiff !== 0) return combinedDiff;
+  if (hasCombinedScore(a) || hasCombinedScore(b)) {
+    const scoreDiff = (b.combined_score ?? Number.NEGATIVE_INFINITY) - (a.combined_score ?? Number.NEGATIVE_INFINITY);
+    if (scoreDiff !== 0) return scoreDiff;
+    const reviewsDiff = (b.curator_reviews ?? 0) - (a.curator_reviews ?? 0);
+    if (reviewsDiff !== 0) return reviewsDiff;
+  }
   const curatorDiff = Number(hasCuratorScore(b)) - Number(hasCuratorScore(a));
   if (curatorDiff !== 0) return curatorDiff;
   if (hasCuratorScore(a) || hasCuratorScore(b)) {
@@ -145,6 +160,39 @@ export function compareResourcesByValue(a: SkillResource, b: SkillResource) {
   const voteDiff = (b.vote_score ?? b.upvote_count) - (a.vote_score ?? a.upvote_count);
   if (voteDiff !== 0) return voteDiff;
   return sortTime(b.created_at) - sortTime(a.created_at);
+}
+
+export interface ResourceQualityRating {
+  label: "Excellent" | "Strong" | "Useful" | "Mixed" | "Low";
+  percent: number;
+}
+
+export function resourceQualityRating(
+  resource: Pick<SkillResource, "combined_score" | "curator_score" | "value_score">,
+): ResourceQualityRating | null {
+  let percent: number | null = null;
+  const combinedScore = typeof resource.combined_score === "number" && Number.isFinite(resource.combined_score)
+    ? resource.combined_score
+    : typeof resource.curator_score === "number" && Number.isFinite(resource.curator_score)
+      ? resource.curator_score
+      : null;
+
+  if (combinedScore !== null) {
+    percent = Math.round(clamp01((combinedScore + 4) / 8) * 100);
+  } else if (typeof resource.value_score === "number" && Number.isFinite(resource.value_score)) {
+    percent = Math.round(clamp01(resource.value_score) * 100);
+  }
+
+  if (percent === null) return null;
+
+  const label =
+    percent >= 88 ? "Excellent"
+      : percent >= 76 ? "Strong"
+        : percent >= 62 ? "Useful"
+          : percent >= 45 ? "Mixed"
+            : "Low";
+
+  return { label, percent };
 }
 
 export function sortResources(resources: SkillResource[], sort: ResourceSort) {

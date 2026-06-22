@@ -41,7 +41,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
             </Link>
             <div className="flex items-center gap-3 text-[13px] font-medium text-muted sm:gap-4 sm:text-sm">
               <Link className="focus-ring whitespace-nowrap transition hover:text-ink" href="/saved">
-                Saved
+                Library
               </Link>
               <Link className="focus-ring whitespace-nowrap transition hover:text-ink" href="/suggest">
                 Suggest
@@ -68,7 +68,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
                 Privacy
               </Link>
               <Link className="focus-ring transition hover:text-ink" href="/saved">
-                Saved
+                Library
               </Link>
               <Link className="focus-ring transition hover:text-ink" href="/suggest">
                 Suggest a link

@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { getBrowserSupabase } from "@/lib/browserSupabase";
 
-const ACTION_PREFIXES = ["saved", "completed", "upvote", "downvote"] as const;
+const ACTION_PREFIXES = ["saved", "completed"] as const;
 
 type ActionType = (typeof ACTION_PREFIXES)[number];
 
@@ -12,10 +12,6 @@ function parseActionKey(key: string): { actionType: ActionType; linkId: string; 
   if (!actionType || !linkId) return null;
   if (!ACTION_PREFIXES.includes(actionType as ActionType)) return null;
   return { actionType: actionType as ActionType, linkId, linkSkillRelationId: linkSkillRelationId ?? null };
-}
-
-function needsRelation(actionType: ActionType) {
-  return actionType === "upvote" || actionType === "downvote";
 }
 
 function actionKey(actionType: ActionType, linkId: string, linkSkillRelationId: string | null) {
@@ -56,7 +52,6 @@ export function LocalActionSync() {
         .flatMap((key) => {
           const parsed = parseActionKey(key);
           if (!parsed || window.localStorage.getItem(key) !== "1") return [];
-          if (needsRelation(parsed.actionType) && !parsed.linkSkillRelationId) return [];
           return [{
             user_id: user.id,
             link_id: parsed.linkId,

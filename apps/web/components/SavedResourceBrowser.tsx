@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import type { SkillResource } from "@skillsaggregator/shared";
 import { PageHeader } from "@/components/PageHeader";
 import { ResourceCard } from "@/components/ResourceCard";
@@ -12,18 +13,12 @@ import {
   shapeJoinedRelationResource,
 } from "@/lib/resourceRows";
 
-function readSavedIds() {
-  try {
-    return Object.keys(window.localStorage)
-      .filter((key) => key.startsWith("saved:") && window.localStorage.getItem(key) === "1")
-      .map((key) => key.replace("saved:", ""));
-  } catch {
-    return [];
-  }
-}
+type LibraryView = "saved" | "watched";
 
 export function SavedResourceBrowser() {
-  const [savedIds, setSavedIds] = useState<string[]>([]);
+  const [view, setView] = useState<LibraryView>("saved");
+  const [signedIn, setSignedIn] = useState<boolean | null>(null);
+  const [relationIds, setRelationIds] = useState<string[]>([]);
   const [resources, setResources] = useState<SkillResource[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -31,10 +26,53 @@ export function SavedResourceBrowser() {
   const inFlightKeyRef = useRef<string | null>(null);
 
   const refresh = useCallback(async () => {
-    const ids = readSavedIds();
-    const idsKey = ids.join("\u0000");
-    setSavedIds(ids);
+    const supabase = getBrowserSupabase();
+    if (!supabase) {
+      setSignedIn(false);
+      setResources([]);
+      setRelationIds([]);
+      setLoading(false);
+      setError("Saved resources cannot be loaded until Supabase public env vars are available.");
+      return;
+    }
+
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser();
+    if (userError) console.warn("library_user_load_failed", userError.message);
+    setSignedIn(Boolean(user));
     setError(null);
+
+    if (!user) {
+      loadedKeyRef.current = null;
+      setRelationIds([]);
+      setResources([]);
+      setLoading(false);
+      return;
+    }
+
+    const table = view === "saved" ? "user_bookmarks" : "user_watched";
+    const orderColumn = view === "saved" ? "created_at" : "watched_at";
+    const { data: stateRows, error: stateError } = await supabase
+      .from(table)
+      .select(`link_skill_relation_id, ${orderColumn}`)
+      .eq("user_id", user.id)
+      .order(orderColumn, { ascending: false });
+
+    if (stateError) {
+      setError(stateError.message);
+      setResources([]);
+      setRelationIds([]);
+      setLoading(false);
+      return;
+    }
+
+    const ids = (stateRows ?? [])
+      .map((row) => row.link_skill_relation_id)
+      .filter((id): id is string => typeof id === "string" && id.length > 0);
+    const idsKey = `${view}:${ids.join("\u0000")}`;
+    setRelationIds(ids);
     if (loadedKeyRef.current === idsKey) {
       setLoading(false);
       return;
@@ -47,24 +85,16 @@ export function SavedResourceBrowser() {
       return;
     }
 
-    const supabase = getBrowserSupabase();
-    if (!supabase) {
-      setResources([]);
-      setLoading(false);
-      setError("Saved resources cannot be loaded until Supabase public env vars are available.");
-      return;
-    }
-
     inFlightKeyRef.current = idsKey;
     setLoading(true);
     const { data, error: queryError } = await supabase
       .from("link_skill_relations")
       .select(SAVED_RELATION_SELECT)
-      .in("link_id", ids)
+      .in("id", ids)
       .eq("is_active", true)
       .eq("published", true)
       .eq("links.is_active", true)
-      .order("curator_score", { ascending: false, nullsFirst: false })
+      .order("combined_score", { ascending: false, nullsFirst: false })
       .order("curator_reviews", { ascending: false, nullsFirst: false })
       .order("value_score", { ascending: false, nullsFirst: false })
       .order("vote_score", { ascending: false });
@@ -78,57 +108,85 @@ export function SavedResourceBrowser() {
       return;
     }
 
-    if (readSavedIds().join("\u0000") !== idsKey) return;
-
-    const byLink = new Map<string, SkillResource>();
+    const byRelation = new Map<string, SkillResource>();
     for (const relation of (data ?? []) as JoinedRelationRow[]) {
-      if (!relation.link_id) continue;
-      if (byLink.has(relation.link_id)) continue;
+      if (byRelation.has(relation.id)) continue;
       const resource = shapeJoinedRelationResource(relation);
       if (!resource) continue;
-      byLink.set(relation.link_id, resource);
+      byRelation.set(relation.id, resource);
     }
 
-    setResources(ids.map((id) => byLink.get(id)).filter((item): item is SkillResource => Boolean(item)));
+    setResources(ids.map((id) => byRelation.get(id)).filter((item): item is SkillResource => Boolean(item)));
     loadedKeyRef.current = idsKey;
     setLoading(false);
-  }, []);
+  }, [view]);
 
   useEffect(() => {
     void refresh();
-    function onStorage(event: StorageEvent) {
-      if (!event.key || event.key.startsWith("saved:")) void refresh();
-    }
     function onFocus() {
       void refresh();
     }
-    window.addEventListener("storage", onStorage);
     window.addEventListener("focus", onFocus);
+
+    const supabase = getBrowserSupabase();
+    const authListener = supabase?.auth.onAuthStateChange(() => {
+      loadedKeyRef.current = null;
+      void refresh();
+    });
+    const subscription = authListener?.data.subscription;
+
     return () => {
-      window.removeEventListener("storage", onStorage);
       window.removeEventListener("focus", onFocus);
+      subscription?.unsubscribe();
     };
   }, [refresh]);
 
   return (
     <div className="pb-20">
       <PageHeader
-        title="Saved"
-        subtitle="Your library on this device."
+        title="Library"
+        subtitle="Saved and watched resources tied to your account."
         backHref="/"
         rightAccessory={<SuggestLinkButton />}
       />
 
       <section className="mx-auto mt-10 max-w-5xl px-4">
-        {loading ? <p className="text-sm text-muted">Loading saved resources...</p> : null}
+        <div className="mb-6 inline-flex rounded-lg bg-bgGroup p-1">
+          {(["saved", "watched"] as const).map((item) => (
+            <button
+              key={item}
+              type="button"
+              onClick={() => {
+                loadedKeyRef.current = null;
+                setView(item);
+              }}
+              className={`focus-ring rounded-md px-4 py-2 text-sm font-bold capitalize transition ${
+                view === item ? "bg-surface text-ink shadow-sm" : "text-muted hover:text-ink"
+              }`}
+            >
+              {item}
+            </button>
+          ))}
+        </div>
+        {loading ? <p className="text-sm text-muted">Loading {view} resources...</p> : null}
         {!loading && error ? <p className="text-sm font-medium text-red-600">{error}</p> : null}
-        {!loading && !error && savedIds.length === 0 ? (
+        {!loading && !error && signedIn === false ? (
           <p className="text-sm text-muted">
-            Nothing saved yet. Use the bookmark button on any resource to keep it here.
+            <Link className="focus-ring font-bold text-ink underline underline-offset-2" href="/sign-in?next=/saved">
+              Sign in
+            </Link>{" "}
+            to save resources, mark them watched, and keep your library across devices.
           </p>
         ) : null}
-        {!loading && !error && savedIds.length > 0 && resources.length === 0 ? (
-          <p className="text-sm text-muted">Saved resources were not found in the active catalog.</p>
+        {!loading && !error && signedIn && relationIds.length === 0 ? (
+          <p className="text-sm text-muted">
+            {view === "saved"
+              ? "Nothing saved yet. Use the bookmark button on any resource to keep it here."
+              : "Nothing watched yet. Use the check button on a resource after you watch it."}
+          </p>
+        ) : null}
+        {!loading && !error && relationIds.length > 0 && resources.length === 0 ? (
+          <p className="text-sm text-muted">Library resources were not found in the active catalog.</p>
         ) : null}
         {resources.length > 0 ? (
           <div className="divide-y divide-divider">

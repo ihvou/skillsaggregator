@@ -6,7 +6,7 @@ export const metadata = {
 const sections = [
   {
     title: "Data We Store On Your Device",
-    body: "The mobile app stores saved-resource IDs, saved-resource snapshots, completion flags, and local voting flags on your device so the Library can work after a cold start without network access. This local data stays on your device unless you remove the app or clear app data.",
+    body: "The mobile app stores app settings such as onboarding preferences and authentication session data on your device. Saved resources, watched state, and resource votes require sign-in and are stored in your private account state.",
   },
   {
     title: "Account And Contribution Data",
@@ -26,7 +26,7 @@ const sections = [
   },
   {
     title: "Data Deletion",
-    body: "You can remove local saved data by unsaving resources or deleting the app. For server-side contribution data, open a request through the project issue tracker.",
+    body: "You can remove saved resources and watched state in the app. For account, contribution, or server-side state deletion requests, open a request through the project issue tracker.",
   },
   {
     title: "Changes",
@@ -71,4 +71,3 @@ export default function PrivacyPage() {
     </div>
   );
 }
-

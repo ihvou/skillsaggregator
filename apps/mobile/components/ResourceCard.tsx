@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Linking, Pressable, StyleSheet, Text, View } from "react-native";
+import { Alert, Linking, Pressable, StyleSheet, Text, View } from "react-native";
 import { Image } from "expo-image";
 import * as Haptics from "expo-haptics";
 import {
@@ -14,17 +14,8 @@ import {
   UserRound,
 } from "lucide-react-native";
 import { Swipeable } from "react-native-gesture-handler";
-import { getLinkSource, type SkillResource } from "@skillsaggregator/shared";
+import { getLinkSource, resourceQualityRating, type SkillResource } from "@skillsaggregator/shared";
 import { useAuth } from "@/lib/auth";
-import {
-  earliestIsoTimestamp,
-  getFlag,
-  removeCompletedAt,
-  removeSavedResourceSnapshot,
-  setCompletedAt,
-  setFlag,
-  setSavedResourceSnapshot,
-} from "@/lib/localState";
 import { getSupabase } from "@/lib/supabase";
 import { colors, radius, shadows, spacing, typography } from "@/lib/theme";
 
@@ -39,7 +30,7 @@ type SwipeDirection = "left" | "right";
  * title line 1, title line 2, domain+actions). The 16/9 thumbnail then
  * stretches to match it via `alignSelf: "stretch"` + `aspectRatio`.
  */
-const BODY_HEIGHT = 96;
+const BODY_HEIGHT = 120;
 
 function triggerSelectionHaptic() {
   Haptics.selectionAsync().catch(() => undefined);
@@ -59,16 +50,6 @@ function capitalize(value: string) {
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
-function formatCount(value: number): string {
-  if (!Number.isFinite(value)) return "0";
-  const abs = Math.abs(value);
-  if (abs >= 1000) {
-    const rounded = (abs / 1000).toFixed(abs >= 10000 ? 0 : 1);
-    return `${value < 0 ? "-" : ""}${rounded}k`;
-  }
-  return String(value);
-}
-
 // Small platform icon shown top-left, before the date, in place of the domain text.
 function SourceIcon({ link }: { link: SkillResource["link"] }) {
   const source = getLinkSource(link);
@@ -83,76 +64,6 @@ function isPortraitResource(resource: SkillResource) {
   return getLinkSource(resource.link) === "tiktok";
 }
 
-async function persistCompletedAction(
-  userId: string | undefined,
-  linkId: string,
-  completedAt: string | null,
-  next: boolean,
-) {
-  const supabase = userId ? getSupabase() : null;
-  if (!supabase || !userId) return;
-
-  if (!next) {
-    const { error } = await supabase
-      .from("user_actions")
-      .delete()
-      .eq("user_id", userId)
-      .eq("link_id", linkId)
-      .eq("action_type", "completed")
-      .is("link_skill_relation_id", null);
-    if (error) console.warn("[completed-sync] Failed to delete completed action", { linkId, error: error.message });
-    else console.info("[completed-sync] Deleted completed action", { linkId });
-    return;
-  }
-
-  const fallbackAt = completedAt ?? new Date().toISOString();
-  const { data: existing, error: selectError } = await supabase
-    .from("user_actions")
-    .select("created_at")
-    .eq("user_id", userId)
-    .eq("link_id", linkId)
-    .eq("action_type", "completed")
-    .is("link_skill_relation_id", null)
-    .maybeSingle();
-  if (selectError) {
-    console.warn("[completed-sync] Failed to read existing completed action", { linkId, error: selectError.message });
-  }
-
-  const createdAt = earliestIsoTimestamp(fallbackAt, existing?.created_at) ?? fallbackAt;
-  const { error: insertError } = await supabase
-    .from("user_actions")
-    .upsert(
-      {
-        user_id: userId,
-        link_id: linkId,
-        action_type: "completed",
-        link_skill_relation_id: null,
-        created_at: createdAt,
-      },
-      { onConflict: "user_id,link_id,action_type,action_context_id", ignoreDuplicates: true },
-    );
-  if (insertError) {
-    console.warn("[completed-sync] Failed to upsert completed action", { linkId, error: insertError.message });
-    return;
-  }
-
-  if (existing?.created_at && Date.parse(createdAt) < Date.parse(existing.created_at)) {
-    const { error: updateError } = await supabase
-      .from("user_actions")
-      .update({ created_at: createdAt })
-      .eq("user_id", userId)
-      .eq("link_id", linkId)
-      .eq("action_type", "completed")
-      .is("link_skill_relation_id", null);
-    if (updateError) {
-      console.warn("[completed-sync] Failed to repair completed timestamp", { linkId, error: updateError.message });
-      return;
-    }
-  }
-
-  console.info("[completed-sync] Persisted completed action", { linkId, completedAt: createdAt });
-}
-
 /**
  * Skill-screen resource row.
  *  - 16/9 thumbnail on the left at row-height (so its bottom aligns with
@@ -164,57 +75,129 @@ async function persistCompletedAction(
 export function ResourceCard({ resource }: ResourceCardProps) {
   const relationId = resource.id;
   const { user, actionSyncRevision } = useAuth();
-  const [isSaved, setIsSaved] = useState(() => getFlag(`saved:${resource.link.id}`));
-  const [isCompleted, setIsCompleted] = useState(() => getFlag(`completed:${resource.link.id}`));
-  const [upvoted, setUpvoted] = useState(() => getFlag(`upvote:${resource.link.id}:${relationId}`));
-  const [downvoted, setDownvoted] = useState(() => getFlag(`downvote:${resource.link.id}:${relationId}`));
+  const [isSaved, setIsSaved] = useState(false);
+  const [isCompleted, setIsCompleted] = useState(false);
+  const [vote, setVote] = useState<-1 | 0 | 1>(0);
 
   useEffect(() => {
-    setIsSaved(getFlag(`saved:${resource.link.id}`));
-    setIsCompleted(getFlag(`completed:${resource.link.id}`));
-    setUpvoted(getFlag(`upvote:${resource.link.id}:${relationId}`));
-    setDownvoted(getFlag(`downvote:${resource.link.id}:${relationId}`));
-  }, [actionSyncRevision, relationId, resource.link.id]);
+    let cancelled = false;
+    const supabase = getSupabase();
+    if (!supabase || !user) {
+      setIsSaved(false);
+      setIsCompleted(false);
+      setVote(0);
+      return;
+    }
+    const supabaseClient = supabase;
+    const currentUser = user;
 
-  function toggleSaved() {
+    async function loadState() {
+      const [bookmarkResult, watchedResult, voteResult] = await Promise.all([
+        supabaseClient
+          .from("user_bookmarks")
+          .select("created_at")
+          .eq("user_id", currentUser.id)
+          .eq("link_skill_relation_id", relationId)
+          .maybeSingle(),
+        supabaseClient
+          .from("user_watched")
+          .select("watched_at")
+          .eq("user_id", currentUser.id)
+          .eq("link_skill_relation_id", relationId)
+          .maybeSingle(),
+        supabaseClient
+          .from("user_relation_votes")
+          .select("vote")
+          .eq("user_id", currentUser.id)
+          .eq("link_skill_relation_id", relationId)
+          .maybeSingle(),
+      ]);
+      if (cancelled) return;
+      if (bookmarkResult.error) console.warn("[resource-actions] Bookmark load failed", bookmarkResult.error.message);
+      if (watchedResult.error) console.warn("[resource-actions] Watched load failed", watchedResult.error.message);
+      if (voteResult.error) console.warn("[resource-actions] Vote load failed", voteResult.error.message);
+      setIsSaved(Boolean(bookmarkResult.data));
+      setIsCompleted(Boolean(watchedResult.data));
+      setVote(voteResult.data?.vote === -1 ? -1 : voteResult.data?.vote === 1 ? 1 : 0);
+    }
+
+    void loadState();
+    return () => {
+      cancelled = true;
+    };
+  }, [actionSyncRevision, relationId, user]);
+
+  function requireSignedIn(action: string) {
+    if (user) return true;
+    Alert.alert("Sign in to continue", `Sign in from the Account tab to ${action}.`);
+    return false;
+  }
+
+  async function toggleSaved() {
+    if (!requireSignedIn("save resources")) return;
+    const supabase = getSupabase();
+    if (!supabase) return;
     const next = !isSaved;
     setIsSaved(next);
-    setFlag(`saved:${resource.link.id}`, next);
-    if (next) setSavedResourceSnapshot(resource);
-    else removeSavedResourceSnapshot(resource.link.id);
+    const { error } = await supabase.rpc("set_user_bookmark", {
+      p_relation_id: relationId,
+      p_saved: next,
+    });
+    if (error) {
+      setIsSaved(!next);
+      Alert.alert("Save failed", error.message);
+      console.warn("[resource-actions] Bookmark write failed", { relationId, error: error.message });
+      return;
+    }
     triggerSelectionHaptic();
   }
 
-  function toggleCompleted() {
+  async function toggleCompleted() {
+    if (!requireSignedIn("mark resources watched")) return;
+    const supabase = getSupabase();
+    if (!supabase) return;
     const next = !isCompleted;
-    const completedAt = next ? setCompletedAt(resource.link.id) : null;
     setIsCompleted(next);
-    setFlag(`completed:${resource.link.id}`, next);
-    if (!next) removeCompletedAt(resource.link.id);
-    void persistCompletedAction(user?.id, resource.link.id, completedAt, next);
+    const { error } = await supabase.rpc("set_user_watched", {
+      p_relation_id: relationId,
+      p_watched: next,
+    });
+    if (error) {
+      setIsCompleted(!next);
+      Alert.alert("Watched update failed", error.message);
+      console.warn("[resource-actions] Watched write failed", { relationId, error: error.message });
+      return;
+    }
+    triggerSelectionHaptic();
+  }
+
+  async function writeVote(nextVote: -1 | 0 | 1) {
+    if (!requireSignedIn("vote on resources")) return;
+    const supabase = getSupabase();
+    if (!supabase) return;
+    const previousVote = vote;
+    setVote(nextVote);
+    const { data, error } = await supabase.rpc("set_user_vote", {
+      p_relation_id: relationId,
+      p_vote: nextVote,
+    }).single();
+    if (error) {
+      setVote(previousVote);
+      Alert.alert("Vote failed", error.message);
+      console.warn("[resource-actions] Vote write failed", { relationId, vote: nextVote, error: error.message });
+      return;
+    }
+    const returnedVote = (data as { vote?: number | null } | null)?.vote;
+    setVote(returnedVote === -1 ? -1 : returnedVote === 1 ? 1 : 0);
     triggerSelectionHaptic();
   }
 
   function toggleUpvote() {
-    const next = !upvoted;
-    setUpvoted(next);
-    setFlag(`upvote:${resource.link.id}:${relationId}`, next);
-    if (next && downvoted) {
-      setDownvoted(false);
-      setFlag(`downvote:${resource.link.id}:${relationId}`, false);
-    }
-    triggerSelectionHaptic();
+    void writeVote(vote === 1 ? 0 : 1);
   }
 
   function toggleDownvote() {
-    const next = !downvoted;
-    setDownvoted(next);
-    setFlag(`downvote:${resource.link.id}:${relationId}`, next);
-    if (next && upvoted) {
-      setUpvoted(false);
-      setFlag(`upvote:${resource.link.id}:${relationId}`, false);
-    }
-    triggerSelectionHaptic();
+    void writeVote(vote === -1 ? 0 : -1);
   }
 
   function handleSwipeOpen(direction: SwipeDirection, swipeable: Swipeable) {
@@ -245,18 +228,11 @@ export function ResourceCard({ resource }: ResourceCardProps) {
   const SavedIcon = isSaved ? BookmarkCheck : Bookmark;
   const contributor = resource.link.contributor_profile;
   const portrait = isPortraitResource(resource);
-
-  // Reddit-style net score: server vote_score + local vote delta.
-  const ratingCount = useMemo(() => {
-    const upvoteCount = Number.isFinite(resource.upvote_count) ? resource.upvote_count : 0;
-    const downvoteCount = Number.isFinite(resource.downvote_count) ? (resource.downvote_count ?? 0) : 0;
-    const base = Number.isFinite(resource.vote_score)
-      ? (resource.vote_score ?? 0)
-      : Math.max(0, upvoteCount - downvoteCount);
-    return Math.max(0, base + (upvoted ? 1 : 0) - (downvoted ? 1 : 0));
-  }, [resource.upvote_count, resource.downvote_count, resource.vote_score, upvoted, downvoted]);
-
-  const ratingColor = upvoted ? colors.accent : downvoted ? colors.ink : colors.muted;
+  const quality = useMemo(() => resourceQualityRating(resource), [
+    resource.combined_score,
+    resource.curator_score,
+    resource.value_score,
+  ]);
 
   return (
     <Swipeable
@@ -302,15 +278,27 @@ export function ResourceCard({ resource }: ResourceCardProps) {
               <SourceIcon link={resource.link} />
               {dateLabel ? <Text style={styles.date}>{dateLabel}</Text> : null}
             </View>
-            {resource.skill_level ? (
-              <View style={styles.levelPill}>
-                <Text style={styles.levelText}>{capitalize(resource.skill_level)}</Text>
-              </View>
-            ) : null}
+            <View style={styles.pillGroup}>
+              {quality ? (
+                <View style={styles.qualityPill}>
+                  <Text style={styles.qualityText}>{quality.label} {quality.percent}%</Text>
+                </View>
+              ) : null}
+              {resource.skill_level ? (
+                <View style={styles.levelPill}>
+                  <Text style={styles.levelText}>{capitalize(resource.skill_level)}</Text>
+                </View>
+              ) : null}
+            </View>
           </View>
           <Text style={styles.title} numberOfLines={2}>
             {resource.link.title ?? resource.link.url}
           </Text>
+          {resource.coach_take ? (
+            <Text style={styles.coachTake} numberOfLines={1}>
+              Coach's take: {resource.coach_take}
+            </Text>
+          ) : null}
           <View style={styles.bottomRow}>
             <View style={styles.metaLine}>
               {contributor ? (
@@ -358,29 +346,26 @@ export function ResourceCard({ resource }: ResourceCardProps) {
                   hitSlop={{ top: 8, right: 4, bottom: 8, left: 4 }}
                   style={styles.ratingTap}
                   accessibilityRole="button"
-                  accessibilityLabel={upvoted ? "Remove upvote" : "Upvote"}
+                  accessibilityLabel={vote === 1 ? "Remove upvote" : "Upvote"}
                 >
                   <ThumbsUp
-                    size={18}
-                    color={upvoted ? colors.accent : colors.muted}
-                    fill={upvoted ? colors.accent : "transparent"}
+                  size={18}
+                    color={vote === 1 ? colors.accent : colors.muted}
+                    fill={vote === 1 ? colors.accent : "transparent"}
                     strokeWidth={2}
                   />
                 </Pressable>
-                <Text style={[styles.ratingCount, { color: ratingColor }]}>
-                  {formatCount(ratingCount)}
-                </Text>
                 <Pressable
                   onPress={toggleDownvote}
                   hitSlop={{ top: 8, right: 4, bottom: 8, left: 4 }}
                   style={styles.ratingTap}
                   accessibilityRole="button"
-                  accessibilityLabel={downvoted ? "Remove downvote" : "Downvote"}
+                  accessibilityLabel={vote === -1 ? "Remove downvote" : "Downvote"}
                 >
                   <ThumbsDown
                     size={18}
-                    color={downvoted ? colors.ink : colors.muted}
-                    fill={downvoted ? colors.ink : "transparent"}
+                    color={vote === -1 ? colors.ink : colors.muted}
+                    fill={vote === -1 ? colors.ink : "transparent"}
                     strokeWidth={2}
                   />
                 </Pressable>
@@ -464,6 +449,24 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.muted,
   },
+  pillGroup: {
+    flexShrink: 1,
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    alignItems: "center",
+    gap: 4,
+  },
+  qualityPill: {
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: radius.pill,
+    backgroundColor: "#e7f4ed",
+  },
+  qualityText: {
+    color: colors.accent,
+    fontSize: 10,
+    fontWeight: "800",
+  },
   levelPill: {
     paddingHorizontal: 8,
     paddingVertical: 2,
@@ -480,6 +483,12 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 22,
     fontWeight: "700",
+  },
+  coachTake: {
+    color: colors.muted,
+    fontSize: 11,
+    lineHeight: 15,
+    fontWeight: "600",
   },
   bottomRow: {
     flexDirection: "row",
@@ -530,11 +539,5 @@ const styles = StyleSheet.create({
     minHeight: 22,
     alignItems: "center",
     justifyContent: "center",
-  },
-  ratingCount: {
-    minWidth: 16,
-    textAlign: "center",
-    fontSize: 12,
-    fontWeight: "700",
   },
 });

@@ -1,8 +1,7 @@
 import { Linking, Pressable, StyleSheet, View } from "react-native";
 import { Image } from "expo-image";
-import { BookmarkCheck, Globe, Music2, PlaySquare } from "lucide-react-native";
+import { Globe, Music2, PlaySquare } from "lucide-react-native";
 import { getLinkSource, type SkillResource } from "@skillsaggregator/shared";
-import { getFlag } from "@/lib/localState";
 import { colors, radius, shadows } from "@/lib/theme";
 
 interface ResourceTileProps {
@@ -28,7 +27,6 @@ function SourceIcon({ resource }: { resource: SkillResource }) {
  * Skill-screen card thumbnail.
  */
 export function ResourceTile({ resource, width = 170 }: ResourceTileProps) {
-  const isSaved = getFlag(`saved:${resource.link.id}`);
   const portrait = isPortraitResource(resource);
   const height = Math.round((width * 9) / 16);
   const style = [styles.thumbnail, { width, height }];
@@ -64,11 +62,6 @@ export function ResourceTile({ resource, width = 170 }: ResourceTileProps) {
         <View style={styles.sourceOverlay}>
           <SourceIcon resource={resource} />
         </View>
-        {isSaved ? (
-          <View style={styles.savedOverlay}>
-            <BookmarkCheck size={12} color={colors.surface} fill={colors.surface} />
-          </View>
-        ) : null}
       </View>
     </Pressable>
   );
@@ -98,17 +91,6 @@ const styles = StyleSheet.create({
   fallback: {
     flex: 1,
     backgroundColor: colors.bgGroup,
-  },
-  savedOverlay: {
-    position: "absolute",
-    top: 8,
-    right: 8,
-    width: 22,
-    height: 22,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 11,
-    backgroundColor: colors.accent,
   },
   sourceOverlay: {
     position: "absolute",

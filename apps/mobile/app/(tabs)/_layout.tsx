@@ -1,5 +1,5 @@
 import { Tabs } from "expo-router";
-import { Bookmark, Compass, UserRound } from "lucide-react-native";
+import { BookOpen, Compass, UserRound } from "lucide-react-native";
 import { colors } from "@/lib/theme";
 
 /**
@@ -34,8 +34,8 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="(library)"
         options={{
-          title: "Saved",
-          tabBarIcon: ({ color, size }) => <Bookmark color={color} size={size} />,
+          title: "Library",
+          tabBarIcon: ({ color, size }) => <BookOpen color={color} size={size} />,
         }}
       />
       <Tabs.Screen

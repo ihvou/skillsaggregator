@@ -1,87 +1,55 @@
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
 import { FlashList } from "@shopify/flash-list";
-import { useFocusEffect, useRouter } from "expo-router";
+import { useRouter } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
-import { Bookmark, PlusCircle } from "lucide-react-native";
+import { Bookmark, CheckCircle, PlusCircle } from "lucide-react-native";
 import type { SkillResource } from "@skillsaggregator/shared";
 import { EmptyState } from "@/components/EmptyState";
 import { PageHeader } from "@/components/PageHeader";
 import { ResourceCard } from "@/components/ResourceCard";
 import { Screen } from "@/components/Screen";
 import { SkeletonList } from "@/components/SkeletonList";
-import { getSavedResources } from "@/lib/data";
-import {
-  getKeys,
-  getSavedResourceSnapshots,
-  reconcileSavedResourceSnapshots,
-} from "@/lib/localState";
+import { getUserLibraryResources, type UserLibraryView } from "@/lib/data";
+import { useAuth } from "@/lib/auth";
 import { useOnboardingGate } from "@/lib/useOnboardingGate";
-import { colors, spacing } from "@/lib/theme";
-
-function readSavedIds() {
-  return getKeys("saved:").map((key) => key.replace("saved:", ""));
-}
-
-function sameIds(left: string[], right: string[]) {
-  return left.length === right.length && left.every((id, index) => id === right[index]);
-}
+import { colors, radius, spacing } from "@/lib/theme";
 
 export default function SavedTab() {
   const router = useRouter();
   useOnboardingGate();
-  const [savedIds, setSavedIds] = useState<string[]>([]);
-  const [localSnapshots, setLocalSnapshots] = useState<SkillResource[]>([]);
-
-  const refreshLocalLibrary = useCallback(() => {
-    const ids = readSavedIds();
-    const snapshots = getSavedResourceSnapshots(ids);
-    setSavedIds((current) => (sameIds(current, ids) ? current : ids));
-    setLocalSnapshots(snapshots);
-    console.info("[saved-library] Refreshed local saved library", {
-      savedCount: ids.length,
-      snapshotCount: snapshots.length,
-    });
-  }, []);
-
-  useFocusEffect(
-    useCallback(() => {
-      refreshLocalLibrary();
-    }, [refreshLocalLibrary]),
-  );
+  const { user } = useAuth();
+  const [view, setView] = useState<UserLibraryView>("saved");
 
   const query = useQuery({
-    queryKey: ["saved", savedIds],
-    queryFn: () => getSavedResources(savedIds),
-    enabled: savedIds.length > 0,
+    queryKey: ["user-library", user?.id, view],
+    queryFn: () => getUserLibraryResources(user!.id, view),
+    enabled: Boolean(user),
     staleTime: 600000,
-    ...(localSnapshots.length > 0 ? { placeholderData: localSnapshots } : {}),
   });
 
-  useEffect(() => {
-    if (!query.isSuccess || query.isPlaceholderData || savedIds.length === 0) return;
-    const refreshed = query.data ?? [];
-    reconcileSavedResourceSnapshots(savedIds, refreshed);
-    refreshLocalLibrary();
-    console.info("[saved-library] Reconciled saved library from network", {
-      requestedCount: savedIds.length,
-      refreshedCount: refreshed.length,
-    });
-  }, [
-    query.data,
-    query.isPlaceholderData,
-    query.isSuccess,
-    refreshLocalLibrary,
-    savedIds,
-  ]);
-
-  const displayResources = query.data ?? localSnapshots;
-  const showSkeleton = savedIds.length > 0 && displayResources.length === 0 && query.isLoading;
+  const displayResources = query.data ?? [];
+  const showSkeleton = Boolean(user) && displayResources.length === 0 && query.isLoading;
+  const emptyIcon = view === "saved" ? Bookmark : CheckCircle;
 
   return (
     <Screen edges={["top"]} padded={false}>
       <View style={styles.headerWrap}>
-        <PageHeader title="Saved" subtitle="Your library" />
+        <PageHeader title="Library" subtitle="Saved and watched resources" />
+        <View style={styles.tabs}>
+          {(["saved", "watched"] as const).map((item) => (
+            <Pressable
+              key={item}
+              onPress={() => setView(item)}
+              style={[styles.tab, view === item && styles.tabActive]}
+              accessibilityRole="button"
+            >
+              <Text style={[styles.tabText, view === item && styles.tabTextActive]}>
+                {item === "saved" ? "Saved" : "Watched"}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
       </View>
       {showSkeleton ? (
         <View style={styles.skeletonWrap}>
@@ -94,11 +62,23 @@ export default function SavedTab() {
           keyExtractor={(item) => item.id}
           ListEmptyComponent={
             <View style={styles.emptyWrap}>
-              <EmptyState
-                icon={Bookmark}
-                title="Nothing saved yet"
-                subtitle="Tap the bookmark on any resource to keep it for later."
-              />
+              {user ? (
+                <EmptyState
+                  icon={emptyIcon}
+                  title={view === "saved" ? "Nothing saved yet" : "Nothing watched yet"}
+                  subtitle={
+                    view === "saved"
+                      ? "Tap the bookmark on any resource to keep it for later."
+                      : "Tap the check button after you watch a resource."
+                  }
+                />
+              ) : (
+                <EmptyState
+                  icon={Bookmark}
+                  title="Sign in to use your library"
+                  subtitle="Saved and watched resources sync across devices after sign-in."
+                />
+              )}
             </View>
           }
           ItemSeparatorComponent={() => <View style={styles.divider} />}
@@ -120,7 +100,6 @@ export default function SavedTab() {
             <RefreshControl
               refreshing={query.isRefetching}
               onRefresh={() => {
-                refreshLocalLibrary();
                 query.refetch();
               }}
               tintColor={colors.ink}
@@ -152,6 +131,31 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.page,
     paddingTop: spacing.md,
     paddingBottom: spacing.md,
+  },
+  tabs: {
+    flexDirection: "row",
+    gap: 4,
+    padding: 4,
+    borderRadius: radius.sm,
+    backgroundColor: colors.bgGroup,
+  },
+  tab: {
+    minHeight: 34,
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: radius.sm,
+  },
+  tabActive: {
+    backgroundColor: colors.surface,
+  },
+  tabText: {
+    color: colors.muted,
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  tabTextActive: {
+    color: colors.ink,
   },
   list: {
     flex: 1,
