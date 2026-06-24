@@ -18,7 +18,8 @@
       "distribution": "internal",
       "env": {
         "EXPO_PUBLIC_SUPABASE_URL": "https://vqxsaabskkkjdljxiyqi.supabase.co",
-        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_GSowsbQ04aJmrQ5EgZTWQQ_h959Qs-c"
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_GSowsbQ04aJmrQ5EgZTWQQ_h959Qs-c",
+        "EXPO_PUBLIC_WEB_BASE_URL": "https://subskills.xyz"
       },
       "ios": {
         "simulator": false
@@ -29,6 +30,11 @@
     },
     "production": {
       "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_SUPABASE_URL": "https://vqxsaabskkkjdljxiyqi.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_GSowsbQ04aJmrQ5EgZTWQQ_h959Qs-c",
+        "EXPO_PUBLIC_WEB_BASE_URL": "https://subskills.xyz"
+      },
       "android": {
         "buildType": "app-bundle"
       }

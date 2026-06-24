@@ -1,15 +1,18 @@
 import { createContext, PropsWithChildren, useContext, useEffect, useState } from "react";
 import { Linking } from "react-native";
+import * as AppleAuthentication from "expo-apple-authentication";
 import * as ExpoLinking from "expo-linking";
 import type { Session, User } from "@supabase/supabase-js";
 import {
   earliestIsoTimestamp,
+  clearAccountLocalState,
   getCompletedAt,
   getKeys,
   setCompletedAt,
   setFlag,
 } from "./localState";
 import { getSupabase } from "./supabase";
+import { webUrl } from "./webLinks";
 
 export interface ContributorProfile {
   id: string;
@@ -26,7 +29,9 @@ interface AuthContextValue {
   isLoading: boolean;
   signInWithMagicLink: (email: string) => Promise<string>;
   signInWithGoogle: () => Promise<void>;
+  signInWithApple: () => Promise<void>;
   signOut: () => Promise<void>;
+  deleteAccount: () => Promise<void>;
   refreshProfile: () => Promise<void>;
   actionSyncRevision: number;
 }
@@ -53,6 +58,15 @@ interface ServerActionRow {
 
 function redirectTo() {
   return ExpoLinking.createURL("auth/callback");
+}
+
+function appleFullName(fullName: AppleAuthentication.AppleAuthenticationFullName | null | undefined) {
+  if (!fullName) return null;
+  const name = [fullName.givenName, fullName.middleName, fullName.familyName]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+  return name.length > 0 ? name : null;
 }
 
 function parseActionKey(key: string): { actionType: ActionType; linkId: string; linkSkillRelationId: string | null } | null {
@@ -305,11 +319,75 @@ export function AuthProvider({ children }: PropsWithChildren) {
       if (error) throw error;
       if (data.url) await Linking.openURL(data.url);
     },
+    async signInWithApple() {
+      if (!supabase) throw new Error("Supabase is not configured.");
+      const isAvailable = await AppleAuthentication.isAvailableAsync();
+      if (!isAvailable) throw new Error("Sign in with Apple is not available on this device.");
+
+      const credential = await AppleAuthentication.signInAsync({
+        requestedScopes: [
+          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+          AppleAuthentication.AppleAuthenticationScope.EMAIL,
+        ],
+      });
+
+      if (!credential.identityToken) {
+        throw new Error("Apple did not return an identity token.");
+      }
+
+      const { data, error } = await supabase.auth.signInWithIdToken({
+        provider: "apple",
+        token: credential.identityToken,
+      });
+      if (error) throw error;
+
+      const fullName = appleFullName(credential.fullName);
+      if (fullName) {
+        const { error: updateError } = await supabase.auth.updateUser({
+          data: {
+            full_name: fullName,
+            given_name: credential.fullName?.givenName ?? undefined,
+            family_name: credential.fullName?.familyName ?? undefined,
+          },
+        });
+        if (updateError) console.warn("mobile_apple_profile_name_update_failed", updateError.message);
+      }
+
+      await refreshProfileForSession(data.session ?? session);
+    },
     async signOut() {
       if (!supabase) return;
       await supabase.auth.signOut();
       setSession(null);
       setProfile(null);
+    },
+    async deleteAccount() {
+      if (!supabase) throw new Error("Supabase is not configured.");
+      const activeSession = session ?? (await supabase.auth.getSession()).data.session;
+      if (!activeSession?.access_token) throw new Error("Sign in again before deleting your account.");
+
+      const response = await fetch(webUrl("/api/account/delete"), {
+        method: "DELETE",
+        headers: {
+          Accept: "application/json",
+          Authorization: `Bearer ${activeSession.access_token}`,
+        },
+      });
+      let responseBody: { error?: string } | null = null;
+      try {
+        responseBody = (await response.json()) as { error?: string };
+      } catch {
+        responseBody = null;
+      }
+      if (!response.ok) {
+        throw new Error(responseBody?.error ?? "Account deletion failed.");
+      }
+
+      await supabase.auth.signOut();
+      clearAccountLocalState();
+      setSession(null);
+      setProfile(null);
+      setActionSyncRevision((value) => value + 1);
     },
     refreshProfile() {
       return refreshProfileForSession(session);

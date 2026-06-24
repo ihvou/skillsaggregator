@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 export const metadata = {
   title: "Privacy Policy",
   description: "Privacy policy for Subskills.",
@@ -10,7 +12,7 @@ const sections = [
   },
   {
     title: "Account And Contribution Data",
-    body: "If contribution or moderation features are enabled, Subskills may use Supabase authentication to identify contributors and store submitted links, skill suggestions, moderation decisions, display names, and contribution history.",
+    body: "Subskills uses Supabase authentication to identify signed-in users and may store email addresses, auth identifiers, saved resources, watched state, votes, submitted links, public notes, display names, profile slugs, and contribution history.",
   },
   {
     title: "Network Data",
@@ -26,7 +28,7 @@ const sections = [
   },
   {
     title: "Data Deletion",
-    body: "You can remove saved resources and watched state in the app. For account, contribution, or server-side state deletion requests, open a request through the project issue tracker.",
+    body: "Signed-in users can delete their account from the mobile Account tab or from /account/delete on the web. Deletion removes the auth account, private saved/watched/vote state, and contributor profile. Public resources previously submitted by the account may remain in the catalog without the deleted profile attached, so learners do not lose reviewed resources.",
   },
   {
     title: "Changes",
@@ -37,7 +39,7 @@ const sections = [
 export default function PrivacyPage() {
   return (
     <div className="mx-auto max-w-3xl px-4 pb-20 pt-10">
-      <p className="text-sm font-semibold uppercase tracking-wide text-muted">Last updated May 29, 2026</p>
+      <p className="text-sm font-semibold uppercase tracking-wide text-muted">Last updated June 25, 2026</p>
       <h1 className="mt-4 text-4xl font-extrabold tracking-tight text-ink md:text-5xl">
         Privacy Policy
       </h1>
@@ -65,6 +67,14 @@ export default function PrivacyPage() {
           >
             github.com/ihvou/skillsaggregator/issues
           </a>
+          .
+          {" "}For account deletion, use{" "}
+          <Link
+            className="focus-ring font-semibold text-ink underline decoration-divider underline-offset-4 transition hover:decoration-ink"
+            href="/account/delete"
+          >
+            subskills.xyz/account/delete
+          </Link>
           .
         </p>
       </section>

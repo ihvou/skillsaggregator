@@ -29,6 +29,27 @@ export function getKeys(prefix: string) {
   return keys.filter((key) => key.startsWith(prefix) && getFlag(key));
 }
 
+export function deleteKeysWithPrefixes(prefixes: string[]) {
+  const keys = storage ? storage.getAllKeys() : [...memory.keys()];
+  let deleted = 0;
+  for (const key of keys) {
+    if (!prefixes.some((prefix) => key.startsWith(prefix))) continue;
+    deleteKey(key);
+    deleted += 1;
+  }
+  return deleted;
+}
+
+export function clearAccountLocalState() {
+  const deleted = deleteKeysWithPrefixes([
+    "saved:",
+    "completed:",
+    SAVED_RESOURCE_PREFIX,
+    COMPLETED_AT_PREFIX,
+  ]);
+  console.info("[account-delete] Cleared local account state", { deleted });
+}
+
 function normalizedIsoTimestamp(value: string | null | undefined) {
   if (!value) return null;
   const parsed = Date.parse(value);
