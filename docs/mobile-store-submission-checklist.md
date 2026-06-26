@@ -51,6 +51,7 @@ This checklist tracks the release-readiness items that cannot be fully proven by
   - `react-native-svg@15.12.1` as the Expo SDK-compatible mobile dependency and `react-native-svg@15.15.4` installed at the root to satisfy `lucide-react-native`.
   - Nested `expo-constants@18.0.13` copies under Expo packages.
 - Current mitigation: `apps/mobile/metro.config.js` resolves React and React Native singleton imports to canonical paths during bundling. The release blocker checks fixed by M94 now pass: direct `expo-constants`, SDK patch drift, and default Metro watch folders.
+- Confirmed unavoidable (2026-06-26): forcing a single React via root `overrides` (react/react-dom 19.1.0) + `npm dedupe` fails with ERESOLVE — a web dependency resolves React 19.2.x while Expo 54 pins 19.1.0, so the split cannot be flattened without `--legacy-peer-deps`. It is inherent to a web+mobile monorepo, not a lockfile glitch. The metro singleton resolver above is the accepted mitigation (the bundled app loads ONE React instance regardless of the node_modules layout), and the web typechecks on React 19.1.0, so neither app is harmed.
 - Follow-up if a clean 18/18 doctor result becomes mandatory: split the mobile app install from the web workspace, or align the monorepo dependency graph so the root does not install web React/native peer copies while running mobile doctor.
 
 ## Reviewer Notes Draft
