@@ -13,7 +13,7 @@ import {
   ThumbsUp,
   UserRound,
 } from "lucide-react";
-import { getLinkSource, resourceQualityRating, type SkillResource } from "@skillsaggregator/shared";
+import { getLinkSource, type SkillResource } from "@skillsaggregator/shared";
 import { useResourceActions } from "@/lib/useResourceActions";
 
 interface ResourceCardProps {
@@ -49,7 +49,7 @@ function SourceIcon({ resource }: { resource: SkillResource }) {
  * Web counterpart to the mobile ResourceCard row.
  *  - 16/9 thumbnail (left, click → opens link)
  *  - Source + date + level pill (top), bold 2-line title (clickable),
- *    quality badge + watched/saved/vote actions.
+ *    level badge + watched/saved/vote actions.
  *  - State (save / watched / vote) is authenticated and stored server-side.
  */
 export function ResourceCard({ resource }: ResourceCardProps) {
@@ -71,7 +71,6 @@ export function ResourceCard({ resource }: ResourceCardProps) {
   const portrait = isPortraitResource(resource);
   const url = resource.link.url;
   const contributor = resource.link.contributor_profile;
-  const quality = resourceQualityRating(resource);
 
   function onUpvote() {
     void setUserVote(vote === 1 ? 0 : 1);
@@ -123,15 +122,6 @@ export function ResourceCard({ resource }: ResourceCardProps) {
             {dateLabel ? <span className="text-sm text-muted">{dateLabel}</span> : null}
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            {quality ? (
-              <span className="inline-flex items-center rounded-pill bg-accent/12 px-2.5 py-0.5 text-xs font-bold text-accent">
-                {quality.label} {quality.percent}%
-              </span>
-            ) : (
-              <span className="inline-flex items-center rounded-pill bg-bgGroup px-2.5 py-0.5 text-xs font-bold text-muted">
-                Quality pending
-              </span>
-            )}
             {resource.skill_level ? (
               <span className="inline-flex items-center rounded-pill bg-muted px-2.5 py-0.5 text-xs font-bold text-surface">
                 {capitalize(resource.skill_level)}

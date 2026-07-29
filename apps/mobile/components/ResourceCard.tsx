@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Alert, Linking, Pressable, StyleSheet, Text, View } from "react-native";
 import { Image } from "expo-image";
 import * as Haptics from "expo-haptics";
@@ -14,7 +14,7 @@ import {
   UserRound,
 } from "lucide-react-native";
 import { Swipeable } from "react-native-gesture-handler";
-import { getLinkSource, resourceQualityRating, type SkillResource } from "@skillsaggregator/shared";
+import { getLinkSource, type SkillResource } from "@skillsaggregator/shared";
 import { useAuth } from "@/lib/auth";
 import { getSupabase } from "@/lib/supabase";
 import { colors, radius, shadows, spacing, typography } from "@/lib/theme";
@@ -30,7 +30,10 @@ type SwipeDirection = "left" | "right";
  * title line 1, title line 2, domain+actions). The 16/9 thumbnail then
  * stretches to match it via `alignSelf: "stretch"` + `aspectRatio`.
  */
-const BODY_HEIGHT = 120;
+// The 16/9 thumbnail stretches to this height, so it also sets the thumbnail size:
+// 96 -> 171x96, which matches ResourceTile (170x96) on the Home/Category screens.
+// Keep them in sync — raising this silently enlarges the Skill-screen thumbnails.
+const BODY_HEIGHT = 96;
 
 function triggerSelectionHaptic() {
   Haptics.selectionAsync().catch(() => undefined);
@@ -228,11 +231,6 @@ export function ResourceCard({ resource }: ResourceCardProps) {
   const SavedIcon = isSaved ? BookmarkCheck : Bookmark;
   const contributor = resource.link.contributor_profile;
   const portrait = isPortraitResource(resource);
-  const quality = useMemo(() => resourceQualityRating(resource), [
-    resource.combined_score,
-    resource.curator_score,
-    resource.value_score,
-  ]);
 
   return (
     <Swipeable
@@ -279,14 +277,13 @@ export function ResourceCard({ resource }: ResourceCardProps) {
               {dateLabel ? <Text style={styles.date}>{dateLabel}</Text> : null}
             </View>
             <View style={styles.pillGroup}>
-              {quality ? (
-                <View style={styles.qualityPill}>
-                  <Text style={styles.qualityText}>{quality.label} {quality.percent}%</Text>
-                </View>
-              ) : null}
               {resource.skill_level ? (
                 <View style={styles.levelPill}>
-                  <Text style={styles.levelText}>{capitalize(resource.skill_level)}</Text>
+                  {/* numberOfLines guards against "Intermedi/ate" wrapping mid-word
+                      when the title row is tight on narrow screens. */}
+                  <Text style={styles.levelText} numberOfLines={1}>
+                    {capitalize(resource.skill_level)}
+                  </Text>
                 </View>
               ) : null}
             </View>
@@ -294,11 +291,6 @@ export function ResourceCard({ resource }: ResourceCardProps) {
           <Text style={styles.title} numberOfLines={2}>
             {resource.link.title ?? resource.link.url}
           </Text>
-          {resource.coach_take ? (
-            <Text style={styles.coachTake} numberOfLines={1}>
-              Coach's take: {resource.coach_take}
-            </Text>
-          ) : null}
           <View style={styles.bottomRow}>
             <View style={styles.metaLine}>
               {contributor ? (
@@ -456,17 +448,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 4,
   },
-  qualityPill: {
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    borderRadius: radius.pill,
-    backgroundColor: "#e7f4ed",
-  },
-  qualityText: {
-    color: colors.accent,
-    fontSize: 10,
-    fontWeight: "800",
-  },
   levelPill: {
     paddingHorizontal: 8,
     paddingVertical: 2,
@@ -483,12 +464,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 22,
     fontWeight: "700",
-  },
-  coachTake: {
-    color: colors.muted,
-    fontSize: 11,
-    lineHeight: 15,
-    fontWeight: "600",
   },
   bottomRow: {
     flexDirection: "row",
