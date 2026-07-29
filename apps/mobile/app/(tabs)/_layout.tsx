@@ -7,6 +7,17 @@ import { colors } from "@/lib/theme";
  *  Each tab is a route group containing its own Stack so we can push
  *  Category and Skill screens while the tab bar stays visible.
  */
+
+/**
+ * The tab BAR order comes from the <Tabs.Screen> order below, but the tab the app
+ * OPENS on comes from the filesystem route order, which is alphabetical — so
+ * `(account)` silently became the launch tab when it was added. Pin the launch tab
+ * to Discover explicitly.
+ */
+export const unstable_settings = {
+  initialRouteName: "(home)",
+};
+
 export default function TabsLayout() {
   return (
     <Tabs
