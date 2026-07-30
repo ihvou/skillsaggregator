@@ -13,7 +13,7 @@ export function BrandMark({ className = "h-7 w-7" }: BrandMarkProps) {
       <rect width="64" height="64" rx="16" fill="#0F3D2E" />
       <path d="M18 21h20a5 5 0 0 1 0 10H18a5 5 0 0 1 0-10Z" fill="#B8F2D0" />
       <path d="M18 36h28a5 5 0 0 1 0 10H18a5 5 0 0 1 0-10Z" fill="#F6F1E8" />
-      <path d="M40 23.5 52 32 40 40.5v-17Z" fill="#54D17A" />
+      <path d="M40 23.5 52 32 40 40.5v-17Z" fill="#E53D2F" />
     </svg>
   );
 }
