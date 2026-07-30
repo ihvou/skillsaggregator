@@ -239,8 +239,30 @@ export async function preflightTranscriptBrowser() {
   const page = await ctx.newPage();
   await enableFocusEmulation(page);
   let loggedIn = null;
+  let navOk = false;
+  let lastError = null;
+  // Retry the YouTube nav with escalating timeouts. A cold-start / slow-network
+  // morning can push the load just past a single 25s timeout (observed 2026-06-24:
+  // the run died here while an interactive run took ~50s and barely passed), so
+  // one shot is too brittle. Escalating timeouts + short waits absorb that without
+  // hanging indefinitely.
+  const navTimeouts = [
+    config.navTimeoutMs,
+    config.navTimeoutMs + 20_000,
+    config.navTimeoutMs + 35_000,
+  ];
   try {
-    await page.goto("https://www.youtube.com", { waitUntil: "domcontentloaded", timeout: config.navTimeoutMs });
+    for (let i = 0; i < navTimeouts.length; i += 1) {
+      try {
+        await page.goto("https://www.youtube.com", { waitUntil: "domcontentloaded", timeout: navTimeouts[i] });
+        navOk = true;
+        break;
+      } catch (error) {
+        lastError = error;
+        if (i < navTimeouts.length - 1) await sleep(5_000);
+      }
+    }
+    if (!navOk) throw lastError ?? new Error("youtube_nav_failed");
     loggedIn = await page.evaluate(() => {
       try { return !!(window.ytcfg && (window.ytcfg.get ? window.ytcfg.get("LOGGED_IN") : window.ytcfg.data_ && window.ytcfg.data_.LOGGED_IN)); } catch { return null; }
     }).catch(() => null);

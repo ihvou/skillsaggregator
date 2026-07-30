@@ -822,6 +822,14 @@ function searchQueriesForSkill(skill) {
   const categoryPrefix = skill.category_name ? `${skill.category_name} ` : "";
   return [
     skill.name,
+    // Instructional-biased query. The bare name + level queries pull the generic
+    // "workout / follow-along / wrong-variant" pool that the coach keeps rejecting
+    // (verified 2026-06-24: dumbbell-bench-press = 24/25 rejected, mostly off-target
+    // workouts/barbell). An explicit "how to … technique" query chases dedicated
+    // tutorials for the exact sub-skill, lifting the publish rate on content-poor
+    // skills. Cheap: search isn't the bottleneck (transcripts are), and candidates
+    // stay capped per skill — so this improves WHAT gets found, not the volume.
+    `how to ${skill.name} technique`,
     ...neededLevels.map((level) => `${level} ${categoryPrefix}${skill.name}`),
   ];
 }
@@ -2224,10 +2232,18 @@ async function preflightCheck() {
         ...browserTranscriptPreflight,
       });
     } catch (error) {
-      throw new InfrastructureError("browser_transcript_preflight_failed", "browser_transcript_preflight_failed", {
-        transcript_fetcher: config.transcriptFetcher,
-        cause: errorMessage(error),
-      });
+      // NON-FATAL: a slow-network / cold-start morning can make the YouTube
+      // preflight time out even after retries, but that must NOT kill the whole
+      // 6h run — the actual transcript fetches happen over hours with their own
+      // retry + consecutive-failure circuit breaker, and the network usually
+      // recovers. Warn and continue (TikTok + YouTube discovery still run; a
+      // genuinely dead browser self-limits via the transcript circuit breaker).
+      browserTranscriptPreflight = { ok: false, error: errorMessage(error) };
+      log("warn", "browser_transcript_preflight_failed_nonfatal",
+        "Browser transcript preflight failed after retries; continuing (transcript fetches will retry as the network recovers)", {
+          transcript_fetcher: config.transcriptFetcher,
+          cause: errorMessage(error),
+        });
     }
   }
 
