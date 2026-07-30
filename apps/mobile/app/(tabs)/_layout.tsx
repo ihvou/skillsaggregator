@@ -9,10 +9,14 @@ import { colors } from "@/lib/theme";
  */
 
 /**
- * The tab BAR order comes from the <Tabs.Screen> order below, but the tab the app
- * OPENS on comes from the filesystem route order, which is alphabetical — so
- * `(account)` silently became the launch tab when it was added. Pin the launch tab
- * to Discover explicitly.
+ * Only `(home)` is a route GROUP, so it owns "/". Library and Account are real path
+ * segments ("/library", "/account").
+ *
+ * They used to be groups too — and since groups contribute no path segment, all three
+ * index routes resolved to "/", which expo-router settled alphabetically onto
+ * `(account)`. That is why the app opened on the Account tab, and why neither
+ * `unstable_settings.initialRouteName` nor the `<Tabs initialRouteName>` prop fixed it:
+ * the tab was not chosen by initial-route order, it was chosen by path resolution.
  */
 export const unstable_settings = {
   initialRouteName: "(home)",
@@ -43,14 +47,14 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
-        name="(library)"
+        name="library"
         options={{
           title: "Library",
           tabBarIcon: ({ color, size }) => <BookOpen color={color} size={size} />,
         }}
       />
       <Tabs.Screen
-        name="(account)"
+        name="account"
         options={{
           title: "Account",
           tabBarIcon: ({ color, size }) => <UserRound color={color} size={size} />,

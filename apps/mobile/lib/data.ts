@@ -125,6 +125,14 @@ const RELATION_PAGE_SIZE = 1000;
 
 type SupabaseClient = NonNullable<ReturnType<typeof getSupabase>>;
 
+type LatestSkillThumbnailRow = {
+  skill_id: string;
+  thumbnail_url: string | null;
+  thumbnail_storage_path: string | null;
+  canonical_url: string | null;
+  url: string | null;
+};
+
 type LinkRow = {
   id: string;
   url?: string | null;
@@ -203,27 +211,39 @@ async function fetchActiveSkillRelations(
   return relations;
 }
 
-async function fetchLatestSkillThumbnail(
+/**
+ * Newest thumbnail for MANY skills in one round-trip.
+ *
+ * This used to be one request per skill; with ~152 active skills that was ~152 REST
+ * round-trips on every cold start (~10s of skeletons on Discover). The RPC does the
+ * same `distinct on (skill_id) ... order by created_at desc` server-side.
+ */
+async function fetchLatestSkillThumbnails(
   supabase: SupabaseClient,
-  skillId: string,
-) {
-  const { data } = await supabase
-    .from("link_skill_relations")
-    .select("created_at, links!inner(thumbnail_url, thumbnail_storage_path, canonical_url, url)")
-    .eq("skill_id", skillId)
-    .eq("is_active", true)
-    .eq("published", true)
-    .eq("links.is_active", true)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  skillIds: string[],
+): Promise<Map<string, string | null>> {
+  const result = new Map<string, string | null>();
+  if (skillIds.length === 0) return result;
 
-  const link = unwrapRow(data?.links as LinkRow | LinkRow[] | null | undefined);
-  return normalizeThumbnailUrl(
-    link?.thumbnail_storage_path ?? link?.thumbnail_url ?? null,
-    link?.canonical_url ?? link?.url ?? null,
-    link?.thumbnail_storage_path ? link?.thumbnail_url ?? null : null,
-  );
+  const { data, error } = await supabase.rpc("get_latest_skill_thumbnails", {
+    p_skill_ids: skillIds,
+  });
+  if (error) {
+    console.warn("mobile_latest_skill_thumbnails_failed", error.message);
+    return result;
+  }
+
+  for (const row of (data ?? []) as LatestSkillThumbnailRow[]) {
+    result.set(
+      row.skill_id,
+      normalizeThumbnailUrl(
+        row.thumbnail_storage_path ?? row.thumbnail_url ?? null,
+        row.canonical_url ?? row.url ?? null,
+        row.thumbnail_storage_path ? row.thumbnail_url ?? null : null,
+      ),
+    );
+  }
+  return result;
 }
 
 function shapeRelationResource(
@@ -469,34 +489,32 @@ export async function getDiscoverSections(perCategorySkills: number | null = nul
   }
 
   // For each category we want active skills and their latest resource thumbnail.
-  const sections = await Promise.all(
+  // Resolve the skill lists first, then fetch every thumbnail in ONE round-trip —
+  // doing it per skill meant ~152 sequential-ish REST calls on a cold start.
+  const categorySkills = await Promise.all(
     categories.map(async (category) => {
       const { skills } = await getSkillsForCategory(category.slug);
-      const skillsWithResources = skills
-        .filter((skill) => skill.resource_count > 0)
-        .slice(0, perCategorySkills ?? undefined);
-      if (skillsWithResources.length === 0) {
-        return { category, skills: [] as DiscoverSkillTile[] };
-      }
-
-      const latestThumbBySkill = new Map(
-        await Promise.all(
-          skillsWithResources.map(async (skill) => [
-            skill.id,
-            await fetchLatestSkillThumbnail(supabase, skill.id),
-          ] as const),
-        ),
-      );
-
       return {
         category,
-        skills: skillsWithResources.map((skill) => ({
-          skill,
-          latest_thumbnail: latestThumbBySkill.get(skill.id) ?? null,
-        })),
+        skills: skills
+          .filter((skill) => skill.resource_count > 0)
+          .slice(0, perCategorySkills ?? undefined),
       };
     }),
   );
+
+  const latestThumbBySkill = await fetchLatestSkillThumbnails(
+    supabase,
+    categorySkills.flatMap((entry) => entry.skills.map((skill) => skill.id)),
+  );
+
+  const sections = categorySkills.map(({ category, skills }) => ({
+    category,
+    skills: skills.map((skill) => ({
+      skill,
+      latest_thumbnail: latestThumbBySkill.get(skill.id) ?? null,
+    })) as DiscoverSkillTile[],
+  }));
 
   return sections.filter((section) => section.skills.length > 0);
 }
