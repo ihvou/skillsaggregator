@@ -11,12 +11,12 @@ export default function manifest(): MetadataRoute.Manifest {
     theme_color: "#171717",
     icons: [
       {
-        src: "/icon.svg",
+        src: "/icon-v2.svg",
         sizes: "any",
         type: "image/svg+xml",
       },
       {
-        src: "/apple-icon.png",
+        src: "/apple-icon-v2.png",
         sizes: "180x180",
         type: "image/png",
       },

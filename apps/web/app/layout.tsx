@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { BrandMark } from "@/components/BrandMark";
 import { LocalActionSync } from "@/components/LocalActionSync";
+import { FooterNavLinks, HeaderNavLinks } from "@/components/NavLinks";
 import { getBaseUrl } from "@/lib/env";
 import "./globals.css";
 
@@ -13,9 +14,14 @@ export const metadata: Metadata = {
   },
   description:
     "Find the best free tutorials for any skill you want to learn, across sports and training.",
+  // Served from /public under a VERSIONED filename on purpose. Next serves the
+  // app/icon.* convention at a stable URL with `max-age=31536000, immutable`, so a
+  // rebrand is invisible to anyone who ever loaded the old icon (we shipped a red
+  // mark and browsers/CDN kept serving the green one for days). Bump the -vN suffix
+  // whenever the icon changes so the URL — and therefore the cache entry — is new.
   icons: {
-    icon: "/icon.svg",
-    apple: "/apple-icon.png",
+    icon: "/icon-v2.svg",
+    apple: "/apple-icon-v2.png",
   },
   manifest: "/manifest.webmanifest",
   openGraph: {
@@ -40,21 +46,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
               Subskills
             </Link>
             <div className="flex items-center gap-3 text-[13px] font-medium text-muted sm:gap-4 sm:text-sm">
-              <Link className="focus-ring whitespace-nowrap transition hover:text-ink" href="/saved">
-                Library
-              </Link>
-              <Link className="focus-ring whitespace-nowrap transition hover:text-ink" href="/suggest">
-                Suggest
-              </Link>
-              <Link className="focus-ring whitespace-nowrap transition hover:text-ink" href="/contributors">
-                Contributors
-              </Link>
-              <Link className="focus-ring whitespace-nowrap transition hover:text-ink" href="/sign-in">
-                Sign in
-              </Link>
-              <Link className="focus-ring whitespace-nowrap transition hover:text-ink" href="/admin">
-                Admin
-              </Link>
+              <HeaderNavLinks />
             </div>
           </nav>
         </header>
@@ -64,18 +56,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
           <div className="mx-auto flex w-full max-w-5xl flex-wrap items-center justify-between gap-3 px-4 py-6 text-sm text-muted">
             <span>© {new Date().getFullYear()} Subskills</span>
             <div className="flex items-center gap-4">
-              <Link className="focus-ring transition hover:text-ink" href="/privacy">
-                Privacy
-              </Link>
-              <Link className="focus-ring transition hover:text-ink" href="/saved">
-                Library
-              </Link>
-              <Link className="focus-ring transition hover:text-ink" href="/suggest">
-                Suggest a link
-              </Link>
-              <Link className="focus-ring transition hover:text-ink" href="/contributors">
-                Contributors
-              </Link>
+              <FooterNavLinks />
             </div>
           </div>
         </footer>
