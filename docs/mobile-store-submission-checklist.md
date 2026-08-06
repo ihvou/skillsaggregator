@@ -1,154 +1,96 @@
 # Mobile Store Submission Checklist
 
-Date: 2026-06-25 · **Last updated: 2026-07-31**
+Last updated: 2026-07-31
 
-**This is the living document for shipping the mobile apps** — current state, what's verified, and the step-by-step submission runbooks.
+**Work from the two checklists below.** Everything under "Reference" is background — read it only when a checklist item needs detail.
 
-`docs/mobile-store-readiness-audit.md` is the *historical* audit (2026-06-23) that produced tasks M89–M96. Its hard blockers are now resolved; keep it for context, work from this file.
+`docs/mobile-store-readiness-audit.md` is the historical audit (2026-06-23) that produced tasks M89–M96. Its blockers are resolved; it is context, not a to-do list.
 
-## Status At A Glance (2026-07-31)
+Legend: `[x]` done · `[ ]` not started · `[~]` partly done
+
+---
+
+# ANDROID — do these in order
+
+**Code / build**
+- [x] 1. Store-readiness code landed (M89–M96: account deletion, privacy links, prod env, ATS/cleartext, permissions, icon)
+- [x] 2. Preview APK built and exercised on a real device (Pixel 6a) — see *Verified: Android*
+- [ ] 3. **Create a Google Play Developer account** — $25 once, ~48h ID verification. *Gate for everything below.*
+- [ ] 4. **Build the production AAB** — `npx eas-cli build --platform android --profile production` (see *Runbook A*; an AAB is NOT the preview APK)
+- [ ] 5. Verify `targetSdkVersion >= 35` in the generated AAB (Play requirement since Aug 2025)
+
+**Play Console setup**
+- [ ] 6. Create the app in Play Console (name, language, free/paid, declarations)
+- [ ] 7. Store listing assets: short + full description, screenshots (phone, required), feature graphic, app icon
+- [ ] 8. App content declarations: privacy policy URL, ads, content rating questionnaire, target audience
+- [ ] 9. **Data Safety form** — see *Privacy disclosures* for exactly what to declare
+
+**Test then ship**
+- [ ] 10. Upload the AAB to **Internal testing**, add testers (email list, max 100), share the opt-in link
+- [ ] 11. **Smoke test the release build installed from Play** on a real device — first time the release (minified) build is ever exercised
+- [ ] 12. Promote to production (or closed/open testing first)
+
+---
+
+# iOS — do these in order
+
+**Local (free — no Apple account needed)**
+- [x] 1. Xcode + CocoaPods installed; Simulator working
+- [x] 2. Simulator build + full UI pass, no bugs found — see *Verified: iOS*
+- [ ] 3. Sign in on the Simulator and confirm the authenticated write path (save / watched / vote) — *only untested area on iOS*
+
+**Apple account setup**
+- [ ] 4. **Enrol in the Apple Developer Program** — $99/yr. *Gate for everything below.*
+- [ ] 5. Create App ID `com.skillsaggregator.mobile` and enable the **Sign in with Apple** capability
+- [ ] 6. Enable the Apple provider in Supabase Auth (client ID = `com.skillsaggregator.mobile`; native id_token flow, no client secret)
+- [ ] 7. Test Sign in with Apple end-to-end on a real device
+
+**Build and ship**
+- [ ] 8. `npx eas-cli build --platform ios --profile production` (EAS manages certificates/profiles)
+- [ ] 9. Verify the generated `Info.plist` does not allow arbitrary ATS loads
+- [ ] 10. Upload to App Store Connect (`eas submit --platform ios`)
+- [ ] 11. Store listing: description, screenshots (per required device sizes), **Apple privacy labels**
+- [ ] 12. Reviewer notes + demo access (see *Reviewer notes draft*)
+- [ ] 13. **TestFlight** build, smoke test on a real iPhone
+- [ ] 14. Submit for App Store review
+
+---
+
+# REFERENCE
+
+## Status at a glance
 
 | Area | State |
 |---|---|
-| Android **preview APK** | ✅ built, installed and exercised on a real Pixel 6a |
-| Android **production AAB** | ❌ **never built or tested** — required before any Play release |
-| iOS **Simulator** | ✅ builds, runs, full UI pass — **no bugs found** (2026-07-31) |
-| iOS on a real device / TestFlight | ❌ needs the Apple Developer account |
-| Sign in with Apple | ❌ untestable until the Apple Developer Program account exists |
-| Store paperwork (Data Safety / privacy labels / reviewer notes) | ❌ not submitted |
+| Android preview APK | ✅ built, exercised on a real Pixel 6a |
+| Android production AAB | ❌ never built or tested |
+| iOS Simulator | ✅ builds, runs, full UI pass — no bugs found |
+| iOS real device / TestFlight | ❌ needs the Apple Developer account |
+| Sign in with Apple | ❌ UI ready; backend needs the paid account |
+| Store paperwork | ❌ not started |
 
-**Read this before deciding to publish:** everything verified so far is a *preview* APK. The production AAB adds R8 minification, resource shrinking and bundle splitting, so it is a genuinely different artifact and must be built and smoke-tested on a device before release.
-
-## Verified On A Real Device (Pixel 6a, 2026-07-29/31)
-
-Confirmed working by driving the installed app, not by inspection:
-
-- Cold launch opens **Discover** (was opening Account — fixed via real route paths)
-- Catalog loads: Discover rows, category → skill navigation, resource lists
-- Card layout: 170×96 thumbnails matching other screens, level badge, no rating pill
-- Link-out to YouTube opens the resource
-- Tab switching (Discover / Library / Account)
-- **Save + mark-watched + vote write to the DB and read back** in Library with correct state
-- Account screen: delete-account entry, Privacy / Terms / Support / web-deletion links
-- `App info → Permissions: No permissions requested` (confirms the permission allowlist)
-- Red launcher icon
-
-### Bugs found ONLY by running the app — none caught by typecheck/lint/CI
-
-Worth remembering when judging release readiness:
-
-1. **Launch crash** — duplicate `react-native-safe-area-context` registered `RNCSafeAreaProvider` twice; app died instantly on every launch.
-2. **Metro bundle failure** — a stale root `expo-router` copy had been satisfying `babel-preset-expo`'s plugin check by accident; removing it broke every build.
-3. **All user writes failed** — `set_user_bookmark/watched/vote` raised `column reference "link_skill_relation_id" is ambiguous`; saving, watching and voting were completely broken in production on web *and* mobile.
-4. **Wrong launch tab** — route groups all resolved to `/`, so the app opened on Account.
-
-## Verified On The iOS Simulator (iPhone 17 Pro, 2026-07-31)
-
-First time this app has ever run on iOS. Everything below was driven, not inspected:
-
-- Builds (`BUILD SUCCEEDED`) and launches with no crash
-- Onboarding renders; safe-area correct around the Dynamic Island and home indicator
-- **Lands on Discover** — the route-path fix works cross-platform
-- Discover catalog, category rows and thumbnails; skill page cards, level badges, action icons
-- Auth gate fires natively: *"Sign in to continue — Sign in from the Account tab to save resources."*
-- Library (Saved/Watched + signed-out state) and Suggest (gate, URL field, category/skill chips)
-- **Sign in with Apple renders** and uses Apple's native `AppleAuthenticationButton` (CONTINUE / BLACK) — HIG-compliant, so no rejection risk on that front
-- No layout regressions: no clipping, overlap or safe-area problems
-
-Not yet tested on iOS: the authenticated write path (fresh simulator install; signing in needs a magic link or Google credentials) and Apple sign-in's backend (provider not configured, capability needs the paid account). The write RPCs are shared with Android, where the full round-trip is verified.
-
-## Local Testing Setup (so this is reproducible)
-
-- **Android**: JDK 17 (`brew install openjdk@17`) + Android SDK 36 in `~/Library/Android/sdk` (cmdline-tools from Google, no sudo). `JAVA_HOME=/opt/homebrew/opt/openjdk@17`, `ANDROID_HOME=~/Library/Android/sdk`. First `expo run:android` ≈ 6 min, rebuilds far less.
-- The debug build sets `applicationIdSuffix ".dev"` in `android/app/build.gradle` so it installs **alongside** the EAS-signed app instead of failing with `INSTALL_FAILED_UPDATE_INCOMPATIBLE` — no uninstall, no sign-out. (`android/` is gitignored and regenerated by prebuild, so re-apply after a fresh prebuild.)
-- **Device access**: wireless adb (`adb pair <ip:port> <code>` then `adb connect`). Note the phone's 30s screen timeout kills automated runs — enable Developer options → **Stay awake**, or inject a keep-alive keystroke between steps.
-- **iOS**: Xcode 26.6 installed 2026-07-31; CocoaPods via `brew install cocoapods`. Simulator testing needs **no** Apple Developer account.
-
-## Implemented In Repo
-
-- Sign in with Apple is enabled for iOS through `expo-apple-authentication`, `ios.usesAppleSignIn`, and the native Apple button in the mobile Account screen.
-- The mobile Account screen exposes production Privacy, Terms, Support, and web account-deletion links.
-- Account deletion is available in-app and on the web through `/account/delete`; the privileged deletion work happens in the web API route with the Supabase service role.
-- The production EAS profile includes the public Supabase URL, publishable anon key, and `EXPO_PUBLIC_WEB_BASE_URL=https://subskills.xyz`.
-- Android cleartext traffic is disabled and Android permissions are explicitly allowlisted to `INTERNET` and `VIBRATE`.
-- The iOS app icon at `apps/mobile/assets/icon.png` is an opaque RGB PNG.
-- The support page documents how to report inaccurate, unsafe, duplicated, broken, or off-topic catalog resources.
-
-## Required External Setup Before Submission
-
-1. Enable the Apple provider in Supabase Auth and Apple Developer Console.
-   - App/bundle ID: `com.skillsaggregator.mobile`
-   - Supabase project: `https://vqxsaabskkkjdljxiyqi.supabase.co`
-   - Confirm Apple Sign In capability is enabled for the bundle ID.
-
-2. ✅ **DONE** — Supabase redirect allowlist includes:
-   - `skillsaggregator://auth/callback`
-   - `https://subskills.xyz/auth/callback`
-
-3. Complete store privacy disclosures.
-   - Apple privacy labels and Google Play Data Safety should disclose email/auth identifiers, saved resources, watched state, votes, submitted links/notes, contributor profile data, and network requests to Supabase/external resources.
-   - Do not disclose advertising, cross-app tracking, precise location, contacts, photos, microphone, or camera unless new SDKs/features are added.
-
-4. Prepare reviewer access.
-   - Provide either a reviewer account or review notes explaining magic-link/Google/Apple sign-in.
-   - Keep Supabase Auth and the production web backend enabled during review.
-
-5. Verify production native builds.
-   - Build iOS and Android from the `production` EAS profile.
-   - Verify Android target SDK is 35 or newer in the generated AAB.
-   - Inspect the generated iOS `Info.plist` and confirm App Transport Security does not allow arbitrary loads.
-   - Install and smoke test on real iOS and Android devices.
-
-6. Submit through staged channels first.
-   - TestFlight for iOS.
-   - Google Play internal testing before public review.
-
-## Release Check Results
-
-- `npx expo-doctor`: **16/18** (2026-07-31). Two failures, both accepted:
-  1. duplicate dependencies — the monorepo React/react-native-svg split documented below;
-  2. patch drift — `expo 54.0.35` vs an upstream `~54.0.36` released later. Deliberately not bumped mid-debugging; safe to update.
-- Documented exception: the duplicate-dependency check still flags the workspace layout:
-  - `react@19.1.0` in `apps/mobile` and `react@19.2.5` at the monorepo root for the web app.
-  - `react-native-svg@15.12.1` as the Expo SDK-compatible mobile dependency and `react-native-svg@15.15.4` installed at the root to satisfy `lucide-react-native`.
-  - Nested `expo-constants@18.0.13` copies under Expo packages.
-- Current mitigation: `apps/mobile/metro.config.js` resolves React and React Native singleton imports to canonical paths during bundling. The release blocker checks fixed by M94 now pass: direct `expo-constants`, SDK patch drift, and default Metro watch folders.
-- Confirmed unavoidable (2026-06-26): forcing a single React via root `overrides` (react/react-dom 19.1.0) + `npm dedupe` fails with ERESOLVE — a web dependency resolves React 19.2.x while Expo 54 pins 19.1.0, so the split cannot be flattened without `--legacy-peer-deps`. It is inherent to a web+mobile monorepo, not a lockfile glitch. The metro singleton resolver above is the accepted mitigation (the bundled app loads ONE React instance regardless of the node_modules layout), and the web typechecks on React 19.1.0, so neither app is harmed.
-- Follow-up if a clean 18/18 doctor result becomes mandatory: split the mobile app install from the web workspace, or align the monorepo dependency graph so the root does not install web React/native peer copies while running mobile doctor.
-
-## Accounts And Costs (prerequisites)
+## Accounts and costs
 
 | Need | Cost | Required for |
 |---|---|---|
-| Google Play Developer account | **$25 once** (~48h ID verification) | Any Play release, including *internal testing* |
-| Apple Developer Program | **$99/yr** | Real iPhone installs, TestFlight, App Store, **and Sign in with Apple** |
+| Google Play Developer account | **$25 once** (~48h verification) | Any Play release, *including internal testing* |
+| Apple Developer Program | **$99/yr** | Real iPhone, TestFlight, App Store, **and Sign in with Apple** |
 | Xcode | free | iOS Simulator development — **no Apple account needed** |
-| EAS (Expo) | free tier works | Cloud builds (~4h queue on free) |
+| EAS (Expo) | free tier works | Cloud builds (~4h queue on free tier) |
 
-**Do not confuse "can't build for iOS" with "must pay Apple".** `expo run:ios` fails on Xcode 26 with
-`CommandError: No code signing certificates are available to use.` — which reads as "buy the $99 account". It is misleading: Expo misidentifies the *simulator* as a physical device (`Unexpected devicectl JSON version output from devicectl`), and simulator builds need no signing at all. Build directly instead (see the iOS runbook) and it works with zero certificates.
+⚠️ **Do not read "can't build for iOS" as "must pay Apple".** `expo run:ios` fails on Xcode 26 with `CommandError: No code signing certificates are available to use.`, which looks like it demands the $99 account. It doesn't: Expo misidentifies the *simulator* as a physical device (`Unexpected devicectl JSON version output from devicectl`), and simulator builds need no signing. Build with `xcodebuild` directly (Runbook B) — zero certificates required.
 
-## Runbook A — Android: internal testing → production
+## Runbook A — Android production AAB → Play
 
-Preview APKs (what we sideload for testing) are **not** what Play accepts. Play requires an **AAB** (Android App Bundle); it generates per-device APKs from it. The `production` EAS profile builds an AAB (`buildType: "app-bundle"`, `autoIncrement: true`) in *release* configuration — R8 minification, resource shrinking, Play App Signing. That is a genuinely different artifact from the preview APK, so **it must be built and smoke-tested before release** even though the preview APK works.
+Preview APKs (what we sideload) are **not** what Play accepts. Play requires an **AAB**; it generates per-device APKs from it. The `production` profile builds an AAB (`buildType: "app-bundle"`, `autoIncrement: true`) in *release* configuration — R8 minification, resource shrinking, Play App Signing. Genuinely different from the preview APK, so it must be smoke-tested even though the APK works. An AAB cannot be sideloaded, so building it and internal testing are one workflow.
 
-An AAB cannot be sideloaded, so building it and doing internal testing are the same workflow.
+```bash
+cd apps/mobile && npx eas-cli build --platform android --profile production
+```
+Then Play Console → Testing → Internal testing → Create release → upload the `.aab` → add testers → share the opt-in link.
+Optional: `eas submit --platform android` automates upload but needs a Google service-account JSON; manual upload is simpler the first time.
 
-1. **Build it**
-   ```bash
-   cd apps/mobile && npx eas-cli build --platform android --profile production
-   ```
-2. **Verify the artifact** — confirm `targetSdkVersion >= 35` in the generated AAB (Play requirement since Aug 2025).
-3. **Play Console → Create app** — name, default language, App, free/paid, declarations.
-4. **Testing → Internal testing → Create new release** → upload the `.aab`.
-5. **Add testers** — email list (max 100), share the opt-in link; testers install via Play as normal.
-6. **Complete required declarations** (needed even for internal testing): privacy policy URL, ads declaration, content rating questionnaire, target audience, and **Data Safety**.
-7. **Smoke test from Play** on a real device — this is the first time the *release* build is exercised.
-8. **Promote to production** only after that passes. Optional: `eas submit --platform android` automates upload but needs a Google service-account JSON; manual upload is simpler for the first release.
-
-## Runbook B — iOS: Simulator → TestFlight → App Store
-
-**Simulator (free, no Apple account)** — the working local loop:
+## Runbook B — iOS Simulator (the working local loop)
 
 ```bash
 cd apps/mobile
@@ -162,15 +104,54 @@ cd ios && xcodebuild -workspace Subskills.xcworkspace -scheme Subskills \
 xcrun simctl install booted ios/build/Build/Products/Debug-iphonesimulator/Subskills.app
 xcrun simctl launch booted com.skillsaggregator.mobile
 ```
-Metro must be running (`npx expo start`) for the debug build. Use `xcodebuild` directly — **not** `expo run:ios` (see the signing note above). The Claude Simulator panel needs `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer` once.
+Metro must be running (`npx expo start`). Use `xcodebuild` directly — **not** `expo run:ios`. The Claude Simulator panel needs `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer` once.
 
-**TestFlight / App Store (needs the $99 account):**
-1. Enrol in the Apple Developer Program; create the App ID `com.skillsaggregator.mobile` and enable the **Sign in with Apple** capability.
-2. Enable the Apple provider in Supabase Auth with client ID `com.skillsaggregator.mobile` (native `id_token` flow — no client secret needed).
-3. `npx eas-cli build --platform ios --profile production` (EAS manages certificates/profiles).
-4. Upload to App Store Connect (`eas submit --platform ios`), complete privacy labels, add reviewer notes/demo access.
-5. Ship to **TestFlight** first, smoke test on a real iPhone, then submit for review.
+## Privacy disclosures (Data Safety + Apple labels)
 
-## Reviewer Notes Draft
+Declare: email/auth identifiers, saved resources, watched state, votes, submitted links and public notes, contributor profile data, and network requests to Supabase / external resources.
+Do **not** declare advertising, cross-app tracking, precise location, contacts, photos, microphone or camera unless new SDKs are added.
+
+## Verified: Android (Pixel 6a, 2026-07-29/31)
+
+Driven on-device, not inspected: cold launch opens **Discover**; catalog and category → skill navigation; card layout (170×96 thumbnails, level badge, no rating pill); link-out to YouTube; tab switching; **save + watched + vote write to the DB and read back in Library**; Account screen with deletion and Privacy/Terms/Support links; `Permissions: No permissions requested`; red launcher icon.
+
+## Verified: iOS Simulator (iPhone 17 Pro, 2026-07-31)
+
+First run on iOS ever. Builds and launches with no crash; onboarding with correct safe-area around the Dynamic Island; **lands on Discover**; catalog, skill pages, level badges, action icons; native auth-gate alert; Library and Suggest screens; **Sign in with Apple renders via Apple's native `AppleAuthenticationButton`** (CONTINUE/BLACK — HIG-compliant). No layout regressions.
+Untested on iOS: authenticated write path (item 3 above) and Apple sign-in backend.
+
+## Bugs found ONLY by running the app
+
+None of these were caught by typecheck, lint or CI — the argument for staged rollout:
+1. **Launch crash** — duplicate `react-native-safe-area-context` registered `RNCSafeAreaProvider` twice.
+2. **Metro bundle failure** — a stale root `expo-router` copy had been satisfying `babel-preset-expo`'s plugin check by accident.
+3. **All user writes failed** — `set_user_bookmark/watched/vote` raised `column reference "link_skill_relation_id" is ambiguous`; save/watch/vote were broken on web *and* mobile in production.
+4. **Wrong launch tab** — route groups all resolved to `/`, so the app opened on Account.
+
+## Local testing setup
+
+- **Android**: JDK 17 (`brew install openjdk@17`) + Android SDK 36 in `~/Library/Android/sdk` (cmdline-tools from Google, no sudo). `JAVA_HOME=/opt/homebrew/opt/openjdk@17`, `ANDROID_HOME=~/Library/Android/sdk`. First `expo run:android` ≈ 6 min.
+- Debug builds set `applicationIdSuffix ".dev"` in `android/app/build.gradle` so they install **alongside** the EAS-signed app instead of failing `INSTALL_FAILED_UPDATE_INCOMPATIBLE`. (`android/` is gitignored and regenerated by prebuild — re-apply after a fresh prebuild.)
+- **Device**: wireless adb (`adb pair <ip:port> <code>` then `adb connect`). The phone's 30s screen timeout kills automated runs — enable Developer options → **Stay awake**.
+- **iOS**: Xcode 26.6, CocoaPods via brew. Simulator needs **no** Apple account.
+
+## Implemented in repo
+
+- Sign in with Apple: `expo-apple-authentication`, `ios.usesAppleSignIn`, native Apple button in the Account screen.
+- Account screen exposes production Privacy, Terms, Support and web account-deletion links.
+- Account deletion in-app and on the web at `/account/delete`; privileged deletion runs in the web API route with the service role.
+- Production EAS profile carries the Supabase URL, publishable key, and `EXPO_PUBLIC_WEB_BASE_URL=https://subskills.xyz`.
+- Android cleartext disabled; permissions allowlisted to `INTERNET` + `VIBRATE`.
+- iOS app icon is an opaque RGB PNG.
+- Support page documents how to report inaccurate/unsafe/broken/off-topic resources.
+
+## Release check results
+
+- `npx expo-doctor`: **16/18** (2026-07-31). Two accepted failures:
+  1. **Duplicate dependencies** — `react@19.1.0` (mobile) vs `19.2.5` (root, for web); `react-native-svg@15.12.1` vs `15.15.4` (root, for `lucide-react-native`); nested `expo-constants` copies. Confirmed unflattenable: root `overrides` + `npm dedupe` fails with ERESOLVE because web resolves React 19.2.x while Expo 54 pins 19.1.0. Mitigated by `apps/mobile/metro.config.js` forcing a singleton React/React Native in the bundle; web typechecks on 19.1.0, so neither app is harmed.
+  2. **Patch drift** — `expo 54.0.35` vs upstream `~54.0.36`. Deliberately not bumped mid-debugging; safe to update.
+- If a clean 18/18 ever becomes mandatory: split the mobile install from the web workspace.
+
+## Reviewer notes draft
 
 Subskills is a learning-resource discovery app. Signed-in users can save resources, mark resources watched, vote on published resources, and suggest links. Suggested resources are not published directly; they go through the same review/moderation pipeline as collected content. Users can report catalog problems through the Support page at `https://subskills.xyz/support`.
