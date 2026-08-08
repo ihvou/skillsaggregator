@@ -57,6 +57,11 @@ export default function SavedTab() {
         </View>
       ) : (
         <FlashList<SkillResource>
+          // Saved and Watched are different datasets in the SAME list, and FlashList
+          // keeps its scroll offset across the swap — switching while scrolled lands you
+          // mid-list, or past the shorter list's content, which reads as a big blank gap
+          // under the header. Keying by view remounts it so the new list starts at the top.
+          key={view}
           data={displayResources}
           style={styles.list}
           keyExtractor={(item) => item.id}

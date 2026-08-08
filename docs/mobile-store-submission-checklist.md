@@ -37,7 +37,7 @@ Legend: `[x]` done · `[ ]` not started · `[~]` partly done
 **Local (free — no Apple account needed)**
 - [x] 1. Xcode + CocoaPods installed; Simulator working
 - [x] 2. Simulator build + full UI pass, no bugs found — see *Verified: iOS*
-- [ ] 3. Sign in on the Simulator and confirm the authenticated write path (save / watched / vote) — *only untested area on iOS*
+- [x] 3. Signed in on the Simulator; authenticated write path (save / watched / vote) verified **and persists across a full app restart** — server-side, not local
 
 **Apple account setup**
 - [ ] 4. **Enrol in the Apple Developer Program** — $99/yr. *Gate for everything below.*
@@ -118,7 +118,7 @@ Driven on-device, not inspected: cold launch opens **Discover**; catalog and cat
 ## Verified: iOS Simulator (iPhone 17 Pro, 2026-07-31)
 
 First run on iOS ever. Builds and launches with no crash; onboarding with correct safe-area around the Dynamic Island; **lands on Discover**; catalog, skill pages, level badges, action icons; native auth-gate alert; Library and Suggest screens; **Sign in with Apple renders via Apple's native `AppleAuthenticationButton`** (CONTINUE/BLACK — HIG-compliant). No layout regressions.
-Untested on iOS: authenticated write path (item 3 above) and Apple sign-in backend.
+Authenticated write path verified 2026-07-31 (magic-link sign-in; save/watched/vote persist across a full terminate+relaunch). Still untested on iOS: Apple sign-in backend (needs the paid account).
 
 ## Bugs found ONLY by running the app
 
