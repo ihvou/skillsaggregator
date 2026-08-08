@@ -1,7 +1,7 @@
 import { Redirect } from "expo-router";
 
 /**
- * Auth deep-link landing for `skillsaggregator://auth/callback?code=...`.
+ * Auth deep-link landing for `subskills://auth/callback?code=...`.
  *
  * Without this static route, expo-router matches the `/auth/callback` path
  * against the dynamic `[category]/[skill]` route (category="auth", skill="callback")

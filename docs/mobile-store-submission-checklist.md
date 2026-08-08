@@ -41,8 +41,8 @@ Legend: `[x]` done · `[ ]` not started · `[~]` partly done
 
 **Apple account setup**
 - [ ] 4. **Enrol in the Apple Developer Program** — $99/yr. *Gate for everything below.*
-- [ ] 5. Create App ID `com.skillsaggregator.mobile` and enable the **Sign in with Apple** capability
-- [ ] 6. Enable the Apple provider in Supabase Auth (client ID = `com.skillsaggregator.mobile`; native id_token flow, no client secret)
+- [ ] 5. Create App ID `xyz.subskills.app` and enable the **Sign in with Apple** capability
+- [ ] 6. Enable the Apple provider in Supabase Auth (client ID = `xyz.subskills.app`; native id_token flow, no client secret)
 - [ ] 7. Test Sign in with Apple end-to-end on a real device
 
 **Build and ship**
@@ -68,6 +68,22 @@ Legend: `[x]` done · `[ ]` not started · `[~]` partly done
 | iOS real device / TestFlight | ❌ needs the Apple Developer account |
 | Sign in with Apple | ❌ UI ready; backend needs the paid account |
 | Store paperwork | ❌ not started |
+
+## App identity (permanent after publish)
+
+| field | value |
+|---|---|
+| iOS bundle ID / Android package | `xyz.subskills.app` |
+| Deep-link scheme | `subskills://` |
+| Expo slug | `subskills` |
+| Display name | Subskills |
+
+Renamed 2026-07-31 from `com.skillsaggregator.mobile` / `skillsaggregator://` (the old repo name) **before first publish, deliberately** — the bundle ID and package name are immutable once an app ships, and the package is user-visible in the Play Store URL and Android app-info. `xyz.subskills.app` is reverse-DNS of the domain we own.
+
+Because the scheme changed, these external records must match or auth breaks:
+- Supabase → Auth → URL Configuration → Redirect URLs must include `subskills://auth/callback`
+- The Google OAuth client is bound to the package/scheme and needs reconfiguring
+- EAS regenerates the Android keystore (per-package) on the next build — harmless pre-launch
 
 ## Accounts and costs
 
@@ -102,7 +118,7 @@ cd ios && xcodebuild -workspace Subskills.xcworkspace -scheme Subskills \
   -destination 'platform=iOS Simulator,id=<udid>' \
   -derivedDataPath ./build CODE_SIGNING_ALLOWED=NO
 xcrun simctl install booted ios/build/Build/Products/Debug-iphonesimulator/Subskills.app
-xcrun simctl launch booted com.skillsaggregator.mobile
+xcrun simctl launch booted xyz.subskills.app
 ```
 Metro must be running (`npx expo start`). Use `xcodebuild` directly — **not** `expo run:ios`. The Claude Simulator panel needs `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer` once.
 

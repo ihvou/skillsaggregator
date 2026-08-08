@@ -1,8 +1,8 @@
 {
   "expo": {
     "name": "Subskills",
-    "slug": "skillsaggregator",
-    "scheme": "skillsaggregator",
+    "slug": "subskills",
+    "scheme": "subskills",
     "version": "0.1.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -15,7 +15,7 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.skillsaggregator.mobile",
+      "bundleIdentifier": "xyz.subskills.app",
       "icon": "./assets/icon.png",
       "usesAppleSignIn": true,
       "infoPlist": {
@@ -26,7 +26,7 @@
       }
     },
     "android": {
-      "package": "com.skillsaggregator.mobile",
+      "package": "xyz.subskills.app",
       "permissions": [
         "android.permission.INTERNET",
         "android.permission.VIBRATE"
