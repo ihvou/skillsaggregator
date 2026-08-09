@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Subskills",
-    "slug": "subskills",
+    "slug": "skillsaggregator",
     "scheme": "subskills",
     "version": "0.1.0",
     "orientation": "portrait",
