@@ -105,10 +105,17 @@ Think as a veteran {category_name} coach. Decide them IN ORDER, and keep the two
 
 (3) DIFFICULTY — who is this video FOR as a way to learn {skill_name}? Exactly one of:
   beginner | intermediate | advanced.
-  beginner = assumes no prior knowledge; teaches fundamentals / how to start / basic form, slow + explicit.
-  intermediate = assumes the basics; refines technique, fixes common mistakes, drills (the DEFAULT tutorial).
-  advanced = assumes solid technique; high-level nuance, competition detail, complex variations, pro analysis.
-  Judge from the transcript's depth and the knowledge it ASSUMES, not the title. When unsure, use intermediate.
+  beginner = would make sense to someone doing this for the FIRST time. Explains what the thing is,
+    covers setup / starting position / basic form, fixes the most basic errors, assumes no vocabulary.
+    Typical shapes: "how to X", "X for beginners", "fundamentals of X", "X in N easy steps".
+  intermediate = assumes you already DO this and are refining it. Fixes specific non-obvious mistakes,
+    drills to sharpen an existing movement, compares variations, programming for someone already training.
+  advanced = assumes solid competence. High-level nuance, competition detail, complex variations,
+    pro analysis, coaching-level breakdowns.
+  Judge from the transcript's depth and the knowledge it ASSUMES, not the title.
+  THERE IS NO DEFAULT LEVEL. Do NOT fall back to intermediate when uncertain — decide who the video
+  actually serves. If a first-timer could follow it and come away able to attempt the skill, it is
+  beginner, even if it also contains depth for others.
 
 Use CONTINUOUS values for the two scores (e.g. +1.4, -0.5). With a transcript, judge the actual content;
 without one the signal is thin (title/caption + engagement) — be calibrated, not overconfident.
@@ -139,13 +146,19 @@ skipped and why.
 
 ---
 
-## Routine B — difficulty-backfill (difficulty only, for already-reviewed rows)
+## Routine B — difficulty-recheck (difficulty only; re-judges the old rubric's mistakes)
 
 ```
-You backfill the DIFFICULTY tag for "Subskills", a curated catalog of sport & training tutorials.
+You judge the DIFFICULTY level for "Subskills", a curated catalog of sport & training tutorials.
 Each resource is a video attached to ONE sub-skill (e.g. "Master the late backhand" attached to
-"Backhand clear" in "Badminton"). These rows were already judged by the curation coaches for relevance
-and value; the ONLY thing missing is a difficulty level. You assign exactly that — nothing else.
+"Backhand clear" in "Badminton"). These rows were already judged for relevance and value; difficulty
+is the ONLY thing you decide. Do NOT re-judge relevance or value.
+
+IMPORTANT CONTEXT — most rows arrive ALREADY TAGGED "intermediate", and that tag is UNRELIABLE.
+It was assigned under an earlier rubric that said "intermediate is the default" and "when unsure, use
+intermediate", so a large share of genuinely beginner content was filed as intermediate. Treat
+current_level as a previous guess, NOT as a starting point. Judge fresh from the transcript. It is
+expected and CORRECT that many rows change to beginner — that is the entire purpose of this run.
 
 === CONNECT (internal coach edge function — token-gated, service-role server-side) ===
 Endpoint: https://vqxsaabskkkjdljxiyqi.supabase.co/functions/v1/coach-curation
@@ -153,34 +166,50 @@ The internal token is in the INTERNAL_TOKEN environment variable — pass it as 
 header (verify_jwt is off; ONLY x-internal-token, no apikey/Authorization). You run as an autonomous
 cloud routine (no permission prompts) — use normal shell tooling. Only ever call THIS endpoint.
 
-=== STEP 1 — fetch up to 30 already-reviewed resources that still lack a difficulty tag ===
+=== STEP 1 — fetch up to 30 rows whose difficulty needs judging ===
   curl -s -X POST "https://vqxsaabskkkjdljxiyqi.supabase.co/functions/v1/coach-curation" -H "x-internal-token: $INTERNAL_TOKEN" -H "Content-Type: application/json" -d '{"action":"difficulty_queue","limit":30}'
 The response is {"ok":true,"items":[...]}. Each item has: relation_id, source, title, description, url,
-duration_seconds, skill_name, category_name, transcript (a ~3500-char excerpt — enough to judge
-difficulty). If two items point at the same video, judge and tag each relation_id anyway.
-If "items" is empty [] -> log "nothing to tag" and stop. (Once the backlog is drained this is normal.)
+duration_seconds, skill_name, category_name, current_level (the old, unreliable tag — may be null for
+never-tagged rows), transcript (a ~3500-char excerpt). If two items point at the same video, judge and
+tag each relation_id separately.
+If "items" is empty [] -> log "nothing to judge" and stop. (Once drained this is normal — pause me.)
 
 === STEP 2 — for each row, read the transcript and pick ONE difficulty ===
 Think as a veteran {category_name} coach. Who is this video FOR as a way to learn {skill_name}?
 Exactly one of: beginner | intermediate | advanced.
-  beginner = assumes no prior knowledge; teaches fundamentals / how to start / basic form, slow + explicit.
-  intermediate = assumes the basics; refines technique, fixes common mistakes, drills (the DEFAULT tutorial).
-  advanced = assumes solid technique; high-level nuance, competition detail, complex variations, pro analysis.
-Judge from the transcript's depth and the knowledge it ASSUMES, not the title. When genuinely unsure,
-use intermediate. Judge difficulty ONLY — do NOT re-judge relevance or value.
+  beginner = would make sense to someone doing this for the FIRST time. Explains what the thing is,
+    covers setup / starting position / basic form, fixes the most basic errors, assumes no vocabulary.
+    Typical shapes: "how to X", "X for beginners", "fundamentals of X", "X in N easy steps".
+  intermediate = assumes you already DO this and are refining it. Fixes specific non-obvious mistakes,
+    drills to sharpen an existing movement, compares variations, programming for someone already training.
+  advanced = assumes solid competence. High-level nuance, competition detail, complex variations,
+    pro analysis, coaching-level breakdowns.
+Judge from the transcript's depth and the knowledge it ASSUMES, not the title.
+THERE IS NO DEFAULT LEVEL. Do NOT fall back to intermediate when uncertain — decide who the video
+actually serves. If a first-timer could follow it and come away able to attempt the skill, it is
+beginner, even if it also contains depth for others. Ignore current_level when deciding.
 
 === STEP 3 — store the tag (one curl per row) ===
-  curl -s -X POST "https://vqxsaabskkkjdljxiyqi.supabase.co/functions/v1/coach-curation" -H "x-internal-token: $INTERNAL_TOKEN" -H "Content-Type: application/json" -d '{"action":"tag","relation_id":"<RELATION_ID>","skill_level":"intermediate"}'
-Replace <RELATION_ID> and "intermediate" with your choice. Response {"ok":true,...} = stored.
-Idempotent: re-running REPLACES the tag.
+  curl -s -X POST "https://vqxsaabskkkjdljxiyqi.supabase.co/functions/v1/coach-curation" -H "x-internal-token: $INTERNAL_TOKEN" -H "Content-Type: application/json" -d '{"action":"tag","relation_id":"<RELATION_ID>","skill_level":"beginner"}'
+Replace <RELATION_ID> and the level with your judgement. Response {"ok":true,...} = stored.
+
+*** SEND A TAG FOR EVERY ROW — INCLUDING ROWS WHERE YOU CONFIRM THE EXISTING LEVEL. ***
+Storing the tag is what marks the row as judged and removes it from the queue. A row you skip, or
+merely "agree with" without sending the curl, comes back next run forever and the backlog never
+drains. If your verdict equals current_level, still send it.
 
 === RULES ===
 - At most 30 rows per run. Only tag relation_ids returned in Step 1's "items".
 - skill_level must be exactly one of: beginner, intermediate, advanced. Never touch any other endpoint.
 
 === STEP 4 — report (plain text) ===
-Print: rows tagged; the count at each level (beginner / intermediate / advanced); any rows skipped and why.
+Print: rows judged; the count at each level (beginner / intermediate / advanced); how many CHANGED
+from current_level and in which direction; any rows skipped and why.
 ```
+
+**Expected outcome:** ~1,628 published rows are queued. At 30/run hourly that is ~54 runs (~2.3 days).
+A large share should move intermediate → beginner; if a run reports almost no changes, the rubric
+isn't landing and the prompt needs another pass. Pause the routine once it reports "nothing to judge".
 
 ---
 
