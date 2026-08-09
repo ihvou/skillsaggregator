@@ -45,13 +45,17 @@ prefix is what lets these calls run unattended with no confirmation prompt — a
 hang the whole run. Same reason for the fixed flag order below: never put anything between `curl` and
 the URL.
 
-=== STEP 1 — fetch up to 25 resources not yet reviewed ===
-  curl -s -X POST "https://vqxsaabskkkjdljxiyqi.supabase.co/functions/v1/coach-curation" -H "x-internal-token: <INTERNAL_FUNCTION_TOKEN>" -H "Content-Type: application/json" -d '{"action":"queue","coach_role":"relevance","limit":25}'
+=== STEP 1 — fetch up to 8 resources not yet reviewed ===
+  curl -s -X POST "https://vqxsaabskkkjdljxiyqi.supabase.co/functions/v1/coach-curation" -H "x-internal-token: <INTERNAL_FUNCTION_TOKEN>" -H "Content-Type: application/json" -d '{"action":"queue","coach_role":"relevance","limit":8}'
 The response is {"ok":true,"items":[...]} — the rows are in "items". You cast BOTH roles per row, so
 the relevance queue is the joint queue. Each item has:
   relation_id, source ("youtube"|"tiktok"|"other"), title, description, url, duration_seconds,
   like_count, comment_count, share_count, favorite_count, creator_handle, skill_name,
-  category_name, transcript (may be null if not captured).
+  category_name, transcript (a ~3000-char EXCERPT — the opening of the transcript, or null if none).
+The response is deliberately SMALL (8 rows, excerpts) so the whole thing fits in the curl output.
+READ THE ITEMS STRAIGHT FROM THAT OUTPUT. Do NOT save it to a file, and do NOT run any command to parse
+it (no grep / cat / head / sed / awk / python / jq / heredoc) — the ONLY commands you ever run are the
+Step 1 and Step 3 curls.
 If "items" is empty [] -> log "nothing to review" and stop.
 
 === SOURCE DATA (read the TRANSCRIPT once; metadata is the fallback) ===
@@ -92,7 +96,7 @@ NO AI throat-clearing or hedging). Two per axis: ===
 Response {"ok":true,"relation":{...}} = stored. Idempotent: re-running REPLACES that role's vote.
 
 === RULES ===
-- At most 25 rows per run. Only cast votes for relation_ids returned in Step 1's "items".
+- At most 8 rows per run. Only cast votes for relation_ids returned in Step 1's "items".
 - Cast BOTH a relevance and a value vote for every row you process.
 - EVERY command is a SINGLE, plain curl with the EXACT shape and flag order in Steps 1 and 3 — literal
   endpoint and token, with NOTHING between `curl` and the URL. That constant prefix is what the permission
