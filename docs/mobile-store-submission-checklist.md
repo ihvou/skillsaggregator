@@ -16,8 +16,8 @@ Legend: `[x]` done · `[ ]` not started · `[~]` partly done
 - [x] 1. Store-readiness code landed (M89–M96: account deletion, privacy links, prod env, ATS/cleartext, permissions, icon)
 - [x] 2. Preview APK built and exercised on a real device (Pixel 6a) — see *Verified: Android*
 - [ ] 3. **Create a Google Play Developer account** — $25 once, ~48h ID verification. *Gate for everything below.*
-- [ ] 4. **Build the production AAB** — `npx eas-cli build --platform android --profile production` (see *Runbook A*; an AAB is NOT the preview APK)
-- [ ] 5. Verify `targetSdkVersion >= 35` in the generated AAB (Play requirement since Aug 2025)
+- [x] 4. **Production AAB built** (2026-07-31, versionCode 2) — first release-config compile; no build errors
+- [x] 5. AAB manifest verified: `package=xyz.subskills.app`, `targetSdkVersion=36` (≥35 ✓), `minSdkVersion=24`, `versionCode=2`
 
 **Play Console setup**
 - [ ] 6. Create the app in Play Console (name, language, free/paid, declarations)
@@ -63,7 +63,7 @@ Legend: `[x]` done · `[ ]` not started · `[~]` partly done
 | Area | State |
 |---|---|
 | Android preview APK | ✅ built, exercised on a real Pixel 6a |
-| Android production AAB | ❌ never built or tested |
+| Android production AAB | ✅ built (versionCode 2); manifest verified. **Not yet run on a device** — needs Play internal testing |
 | iOS Simulator | ✅ builds, runs, full UI pass — no bugs found |
 | iOS real device / TestFlight | ❌ needs the Apple Developer account |
 | Sign in with Apple | ❌ UI ready; backend needs the paid account |
