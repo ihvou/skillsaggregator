@@ -80,10 +80,13 @@ Legend: `[x]` done · `[ ]` not started · `[~]` partly done
 
 Renamed 2026-07-31 from `com.skillsaggregator.mobile` / `skillsaggregator://` (the old repo name) **before first publish, deliberately** — the bundle ID and package name are immutable once an app ships, and the package is user-visible in the Play Store URL and Android app-info. `xyz.subskills.app` is reverse-DNS of the domain we own.
 
-Because the scheme changed, these external records must match or auth breaks:
-- Supabase → Auth → URL Configuration → Redirect URLs must include `subskills://auth/callback`
-- The Google OAuth client is bound to the package/scheme and needs reconfiguring
-- EAS regenerates the Android keystore (per-package) on the next build — harmless pre-launch
+Because the scheme changed, **one** external record must be updated or mobile auth breaks:
+- Supabase → Auth → URL Configuration → Redirect URLs must include `subskills://auth/callback` (keep the old entry until every old build is gone)
+
+Nothing else needs touching:
+- **Google Cloud Console needs no change.** Google sign-in uses Supabase's web OAuth flow (`signInWithOAuth`), not a native SDK, so the redirect URI registered with Google is Supabase's own `https://vqxsaabskkkjdljxiyqi.supabase.co/auth/v1/callback` — unaffected by the app rename. (A *native* Google SDK would have been bound to the package name + SHA-1; this app has none.)
+- No code change: `redirectTo()` is `ExpoLinking.createURL("auth/callback")`, which derives the scheme from app.json and now emits `subskills://auth/callback` automatically.
+- EAS regenerates the Android keystore (per-package) on the next build — harmless pre-launch.
 
 ## Accounts and costs
 
