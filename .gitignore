@@ -20,3 +20,8 @@ supabase/.temp
 /tsconfig.json
 .env.hosted
 .vercel
+
+# Store listing: raw device captures are large and reproducible from the
+# runbooks; the composed upload artifacts next to them ARE committed.
+store-assets/ios/
+store-assets/android/
