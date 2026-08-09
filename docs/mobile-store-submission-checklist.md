@@ -27,7 +27,7 @@ Legend: `[x]` done · `[ ]` not started · `[~]` partly done
 
 **Test then ship**
 - [ ] 10. Upload the AAB to **Internal testing**, add testers (email list, max 100), share the opt-in link
-- [ ] 11. **Smoke test the release build installed from Play** on a real device — first time the release (minified) build is ever exercised
+- [~] 11. **Smoke test the release build.** The minified code has now been run (2026-08-09) — see *Release build, exercised early*. Still required from Play itself: real device, Play-signed, split APKs.
 - [ ] 12. Promote to production (or closed/open testing first)
 
 ---
@@ -63,7 +63,7 @@ Legend: `[x]` done · `[ ]` not started · `[~]` partly done
 | Area | State |
 |---|---|
 | Android preview APK | ✅ built, exercised on a real Pixel 6a |
-| Android production AAB | ✅ built (versionCode 2); manifest verified. **Not yet run on a device** — needs Play internal testing |
+| Android production AAB | ✅ built (versionCode 2), manifest verified, and the minified code now actually run via a bundletool universal APK. Still needs the Play-delivered artifact on real hardware |
 | iOS Simulator | ✅ builds, runs, full UI pass — no bugs found |
 | iOS real device / TestFlight | ❌ needs the Apple Developer account |
 | Sign in with Apple | ❌ UI ready; backend needs the paid account |
@@ -99,6 +99,32 @@ Nothing else needs touching:
 | EAS (Expo) | free tier works | Cloud builds (~4h queue on free tier) |
 
 ⚠️ **Do not read "can't build for iOS" as "must pay Apple".** `expo run:ios` fails on Xcode 26 with `CommandError: No code signing certificates are available to use.`, which looks like it demands the $99 account. It doesn't: Expo misidentifies the *simulator* as a physical device (`Unexpected devicectl JSON version output from devicectl`), and simulator builds need no signing. Build with `xcodebuild` directly (Runbook B) — zero certificates required.
+
+## Release build, exercised early (without Play)
+
+An `.aab` cannot be installed on a device — it is a publishing format Play consumes to
+generate per-device APKs. That normally means the R8-minified release build is first
+run by *end users*, which is the single riskiest step in the whole list.
+
+It does not have to be. `bundletool` can convert the AAB into an installable universal
+APK, signed with any local key:
+
+```bash
+java -jar bundletool.jar build-apks --bundle=app.aab --output=app.apks --mode=universal \
+  --ks=~/.android/debug.keystore --ks-pass=pass:android --ks-key-alias=androiddebugkey --key-pass=pass:android
+unzip -o app.apks -d apks   # -> apks/universal.apk
+```
+
+Done 2026-08-09 on the `subskills_pixel` emulator, with **Metro deliberately not
+connected** so the app had to run from its own bundled JS. Result: onboarding →
+Discover with live data and thumbnails → category → skill page, no crash and no
+runtime errors in logcat. So R8 minification and resource shrinking do not break the
+app — the failure mode this step exists to catch.
+
+What this still does **not** cover, and why item 11 stays open:
+- signed with a debug key, not Play's app-signing key
+- one universal APK (~78 MB) rather than the per-device splits Play generates (~30-40 MB)
+- an emulator, not real hardware
 
 ## Runbook A — Android production AAB → Play
 
