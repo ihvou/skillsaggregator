@@ -38,6 +38,8 @@
  *   COLLECT_SEARCH_RESULTS_PER_CHANNEL default 25
  *   COLLECT_FRESH_UPLOAD_AGE_DAYS default 30
  *   COLLECT_LEVEL_TARGET_PER_SKILL default 3
+ *   COLLECT_LOW_PUBLISH_MIN_ACTIVE default 60   (0 disables the low-publish guard)
+ *   COLLECT_LOW_PUBLISH_RATIO      default 0.05
  *   COLLECT_SATURATION_COOLDOWN_DAYS default 7
  *   COLLECT_ZERO_YIELD_CONSECUTIVE_THRESHOLD default 3 (consecutive 0-sub runs)
  *   COLLECT_ZERO_YIELD_COOLDOWN_DAYS default 7
@@ -228,6 +230,15 @@ const config = {
   searchResultsPerChannel: Number(process.env.COLLECT_SEARCH_RESULTS_PER_CHANNEL ?? 25),
   freshUploadAgeDays: Number(process.env.COLLECT_FRESH_UPLOAD_AGE_DAYS ?? 30),
   levelTargetPerSkill: Number(process.env.COLLECT_LEVEL_TARGET_PER_SKILL ?? 3),
+  // Low-publish-ratio guard: park a skill that has collected at least N active
+  // relations but publishes fewer than R of them. Those are taxonomy problems
+  // (topic YouTube doesn't teach, or a name that retrieves the wrong pool), not
+  // collection problems, so re-running only burns cycles. Deliberately
+  // conservative: the "how to <name> technique" query added 2026-06 may still
+  // lift some of them, so only clearly-hopeless pages are parked.
+  // COLLECT_LOW_PUBLISH_MIN_ACTIVE=0 disables the guard entirely.
+  lowPublishMinActive: Number(process.env.COLLECT_LOW_PUBLISH_MIN_ACTIVE ?? 60),
+  lowPublishRatio: Number(process.env.COLLECT_LOW_PUBLISH_RATIO ?? 0.05),
   saturationDuplicateThreshold: Number(process.env.COLLECT_SATURATION_DUPLICATE_THRESHOLD ?? 0.9),
   saturationCooldownDays: Number(process.env.COLLECT_SATURATION_COOLDOWN_DAYS ?? 7),
   // Chronic zero-submission cooldown (R30/staleness lever). A skill that has
@@ -586,13 +597,18 @@ async function loadSkills(slug) {
     const params = categorySlugFilter ? [slug, categorySlugFilter] : [slug];
     const rows = await dbQuery(
       `with relation_counts as (
+         -- PUBLISHED-only, matching the rotation query below: these counts feed
+         -- levelGaps(), so counting unpublished relations would tell an explicit
+         -- --skill run that its level targets are already met by content no user
+         -- can see. The low-publish guard is deliberately NOT applied on this
+         -- path: naming a skill explicitly is the operator's override.
          select
            s.id as skill_id,
-           count(lsr.id) filter (where lsr.is_active and l.is_active)::integer as link_count,
-           count(lsr.id) filter (where lsr.is_active and l.is_active and lsr.skill_level = 'beginner')::integer as beginner_count,
-           count(lsr.id) filter (where lsr.is_active and l.is_active and lsr.skill_level = 'intermediate')::integer as intermediate_count,
-           count(lsr.id) filter (where lsr.is_active and l.is_active and lsr.skill_level = 'advanced')::integer as advanced_count,
-           count(lsr.id) filter (where lsr.is_active and l.is_active and lsr.skill_level is null)::integer as unknown_count
+           count(lsr.id) filter (where lsr.is_active and l.is_active and lsr.published)::integer as link_count,
+           count(lsr.id) filter (where lsr.is_active and l.is_active and lsr.published and lsr.skill_level = 'beginner')::integer as beginner_count,
+           count(lsr.id) filter (where lsr.is_active and l.is_active and lsr.published and lsr.skill_level = 'intermediate')::integer as intermediate_count,
+           count(lsr.id) filter (where lsr.is_active and l.is_active and lsr.published and lsr.skill_level = 'advanced')::integer as advanced_count,
+           count(lsr.id) filter (where lsr.is_active and l.is_active and lsr.published and lsr.skill_level is null)::integer as unknown_count
          from public.skills s
          left join public.link_skill_relations lsr on lsr.skill_id = s.id
          left join public.links l on l.id = lsr.link_id
@@ -629,17 +645,42 @@ async function loadSkills(slug) {
   const params = categorySlugFilter ? [categorySlugFilter] : [];
   const rows = await dbQuery(
     `with relation_counts as (
+       -- Counts are PUBLISHED-only, because that is what a learner actually sees on
+       -- the page. Counting merely-active relations (the behaviour before 2026-08)
+       -- let a skill whose candidates the coach keeps rejecting look well-covered
+       -- and then starve: Gym (women) "Dumbbell bench press" sat at 68 active / 1
+       -- published, so it sorted to the BACK of the fewest-first rotation and never
+       -- improved. The same counts feed levelGaps(), so the level targets were also
+       -- satisfied by content no user could see. See docs/taxonomy-audit-2026-08.md.
        select
          s.id as skill_id,
-         count(lsr.id) filter (where lsr.is_active and l.is_active)::integer as link_count,
-         count(lsr.id) filter (where lsr.is_active and l.is_active and lsr.skill_level = 'beginner')::integer as beginner_count,
-         count(lsr.id) filter (where lsr.is_active and l.is_active and lsr.skill_level = 'intermediate')::integer as intermediate_count,
-         count(lsr.id) filter (where lsr.is_active and l.is_active and lsr.skill_level = 'advanced')::integer as advanced_count,
-         count(lsr.id) filter (where lsr.is_active and l.is_active and lsr.skill_level is null)::integer as unknown_count
+         count(lsr.id) filter (where lsr.is_active and l.is_active and lsr.published)::integer as link_count,
+         count(lsr.id) filter (where lsr.is_active and l.is_active and lsr.published and lsr.skill_level = 'beginner')::integer as beginner_count,
+         count(lsr.id) filter (where lsr.is_active and l.is_active and lsr.published and lsr.skill_level = 'intermediate')::integer as intermediate_count,
+         count(lsr.id) filter (where lsr.is_active and l.is_active and lsr.published and lsr.skill_level = 'advanced')::integer as advanced_count,
+         count(lsr.id) filter (where lsr.is_active and l.is_active and lsr.published and lsr.skill_level is null)::integer as unknown_count,
+         -- Kept only to drive the low-publish-ratio guard below.
+         count(lsr.id) filter (where lsr.is_active and l.is_active)::integer as active_count
        from public.skills s
        left join public.link_skill_relations lsr on lsr.skill_id = s.id
        left join public.links l on l.id = lsr.link_id
        group by s.id
+     ),
+     low_publish_ratio as (
+       -- Skills where collection keeps finding candidates but the coach keeps
+       -- rejecting them, i.e. the sub-skill's topic isn't what YouTube actually
+       -- teaches, or the name retrieves the wrong pool. Sorting by published count
+       -- alone would grind on these forever, because they never reach a decent
+       -- count no matter how often we run. recent_zero_yield does NOT catch them:
+       -- it only skips skills that produce ZERO suggestions, and these produce
+       -- plenty. The fix for these is taxonomy work (rename / re-scope / split),
+       -- not more collection, so park them and surface them to the operator.
+       -- Set COLLECT_LOW_PUBLISH_MIN_ACTIVE=0 to disable the guard.
+       select rc.skill_id
+       from relation_counts rc
+       where ${config.lowPublishMinActive} > 0
+         and rc.active_count >= ${config.lowPublishMinActive}
+         and rc.link_count::numeric / nullif(rc.active_count, 0)::numeric < ${config.lowPublishRatio}
      ),
      last_runs as (
        select target_id as skill_id, max(started_at) as last_run_at
@@ -688,14 +729,55 @@ async function loadSkills(slug) {
      left join last_runs lr on lr.skill_id = s.id
      left join recent_saturation rs on rs.skill_id = s.id
      left join recent_zero_yield rzy on rzy.skill_id = s.id
+     left join low_publish_ratio lpr on lpr.skill_id = s.id
      where s.is_active
        and rs.skill_id is null
        and rzy.skill_id is null
+       and lpr.skill_id is null
        ${categorySlugFilter ? "and c.slug = $1" : ""}
      order by coalesce(rc.link_count, 0) asc, lr.last_run_at asc nulls first, c.slug, s.name`,
     params,
   );
   return rows.map(shapeSkillRow);
+}
+
+// Logs the skills currently parked by the low-publish-ratio guard so they are
+// visible in the nightly log instead of silently vanishing from the rotation.
+// Non-fatal: a reporting failure must never abort a collection run.
+async function reportLowPublishSkills() {
+  if (!(config.lowPublishMinActive > 0)) return;
+  try {
+    const rows = await dbQuery(
+      `select c.name, s.name, count(lsr.id) filter (where lsr.is_active and l.is_active)::integer,
+              count(lsr.id) filter (where lsr.is_active and l.is_active and lsr.published)::integer
+         from public.skills s
+         join public.categories c on c.id = s.category_id
+         left join public.link_skill_relations lsr on lsr.skill_id = s.id
+         left join public.links l on l.id = lsr.link_id
+        where s.is_active and c.is_active
+        group by c.name, s.name
+       having count(lsr.id) filter (where lsr.is_active and l.is_active) >= ${config.lowPublishMinActive}
+          and count(lsr.id) filter (where lsr.is_active and l.is_active and lsr.published)::numeric
+              / nullif(count(lsr.id) filter (where lsr.is_active and l.is_active), 0)::numeric < ${config.lowPublishRatio}
+        order by 1, 2`,
+    );
+    if (!rows.length) return;
+    log("warn", "skills_parked_low_publish_ratio", "Skills parked for taxonomy review (collecting but not publishing)", {
+      count: rows.length,
+      min_active: config.lowPublishMinActive,
+      max_ratio: config.lowPublishRatio,
+      skills: rows.map(([category, skill, active, published]) => ({
+        category,
+        skill,
+        active: Number(active),
+        published: Number(published),
+      })),
+    });
+  } catch (error) {
+    log("warn", "low_publish_report_failed", "Could not report low-publish skills", {
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
 }
 
 function shapeSkillRow([
@@ -3171,6 +3253,10 @@ async function main() {
 
     const skills = await loadSkills(skillSlugFilter);
     if (!skills.length) throw new Error(`No active skills found${categorySlugFilter ? ` for category ${categorySlugFilter}` : ""}.`);
+    // Surface skills parked by the low-publish-ratio guard. They are excluded from
+    // the rotation on purpose (they need taxonomy work, not more collection), but
+    // they must not disappear silently — this list IS the taxonomy-review queue.
+    await reportLowPublishSkills();
     log("info", "collection_started", "Starting collection", {
       skills: skills.length,
       category: categorySlugFilter,
