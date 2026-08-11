@@ -831,10 +831,23 @@ async function loadCategorySkills(categoryId) {
 }
 
 async function loadChannels(categoryId) {
+  // Category match is EXPLICIT. This used to be `(category_id is null or
+  // category_id = $1)`, which made any uncategorised channel global — searched
+  // for every skill in every category. The six rows that had no category were
+  // all windsurfing channels left over from a category that does not exist, so
+  // e.g. Padel searched 8 channels of which only 2 were padel, and the run
+  // produced junk like "Windsurfing at Home" attached to Badminton "Serve (low)"
+  // (187 relations, 0 ever published). Retired in migration 0033.
+  //
+  // Keeping the match explicit means a channel inserted without a category is
+  // simply unused instead of silently polluting all 13 categories — which
+  // matters because trusted_sources is about to be bulk-expanded from research.
+  // loadTikTokSources() is unaffected: it filters by category only when the
+  // operator passes --category, which is a deliberate scoping flag.
   const rows = await dbQuery(
     `select identifier, display_name from public.trusted_sources
      where source_type = 'youtube_channel' and is_active
-       and (category_id is null or category_id = $1)`,
+       and category_id = $1`,
     [categoryId],
   );
   return rows.map(([identifier, display_name]) => ({ identifier, display_name }));
