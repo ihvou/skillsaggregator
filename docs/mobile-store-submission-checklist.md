@@ -10,6 +10,25 @@ Legend: `[x]` done · `[ ]` not started · `[~]` partly done
 
 ---
 
+# BLOCKER — fix before either store goes live
+
+- [ ] 0. **Redeploy `submit-suggestion`.** Production runs version 6 (deployed 2026-06-18); the
+  sign-in guard landed in the repo on 2026-06-23 (`14b268a`) and was never shipped. Verified
+  2026-08-12 against production: a `POST` to `/functions/v1/submit-suggestion` with **no
+  `Authorization` header at all** returns `200` and inserts a `pending`, `origin_type=human`
+  suggestion with `submitted_by_user_id = null`. The anon key is publishable and sits in the web
+  bundle, so anyone can flood the moderation queue — and the deployed version predates the
+  per-IP rate limit too. Publishing the apps advertises the endpoint.
+
+  ```bash
+  supabase functions deploy submit-suggestion --project-ref vqxsaabskkkjdljxiyqi
+  ```
+  Re-verify after deploying: the same unauthenticated POST must return **401 "Sign in to suggest
+  a resource."** `apply-suggestion` is also behind the repo (deployed 2026-06-18, last commit
+  2026-06-19) — check what changed before shipping it in the same pass.
+
+---
+
 # ANDROID — do these in order
 
 **Code / build**
@@ -165,6 +184,48 @@ Driven on-device, not inspected: cold launch opens **Discover**; catalog and cat
 
 First run on iOS ever. Builds and launches with no crash; onboarding with correct safe-area around the Dynamic Island; **lands on Discover**; catalog, skill pages, level badges, action icons; native auth-gate alert; Library and Suggest screens; **Sign in with Apple renders via Apple's native `AppleAuthenticationButton`** (CONTINUE/BLACK — HIG-compliant). No layout regressions.
 Authenticated write path verified 2026-07-31 (magic-link sign-in; save/watched/vote persist across a full terminate+relaunch). Still untested on iOS: Apple sign-in backend (needs the paid account).
+
+## Edge functions: deployed vs repo (checked 2026-08-12)
+
+Nothing warns when a function's source moves ahead of what is deployed, and the CLI does not
+report it either — you have to compare `supabase functions list` timestamps against `git log`.
+That gap hid the auth bug above for seven weeks.
+
+| function | last commit | deployed | |
+|---|---|---|---|
+| `submit-suggestion` | 2026-06-23 | 2026-06-18 (v6) | **stale — auth guard missing in prod** |
+| `apply-suggestion` | 2026-06-19 | 2026-06-18 (v8) | stale — diff unreviewed |
+| `coach-curation` | 2026-06-23 | 2026-06-23 (v2) | current |
+
+Also in the repo but **never deployed**: `health`, `link-checker`, `link-searcher`,
+`revalidate-web`, `triangulate`. Some may be deliberately local-only — worth confirming, because
+`revalidate-web` sounds like something the web cache depends on.
+
+```bash
+supabase functions list --project-ref vqxsaabskkkjdljxiyqi   # compare against: git log -1 --date=short --format=%ad -- supabase/functions/<name>/
+```
+
+## Suggestion flow: verified 2026-08-12
+
+Driven end-to-end, both clients, against production.
+
+- **Mobile (iOS Simulator, signed in):** Suggest form → real submission → alert "queued for coach
+  review" → row lands `pending`, `origin_type=human`, `origin_name=mobile_<slug>`, correct
+  `submitted_by_user_id`, target skill, normalised `canonical_url`, extracted `domain`, level and
+  public note. Nothing auto-publishes. ✅
+- **Web (signed out):** form renders the full catalogue; submit is refused client-side with
+  "Sign in to suggest a resource." and no request is sent. ✅
+- **Web (authenticated payload, replayed against the API):** accepted; dedupe and validation
+  behave as below. The one hop not exercised in a real browser is the cookie session feeding
+  `SuggestForm`'s `getSession()` — signing in needs a PKCE flow that a server-minted link cannot
+  complete.
+- **Dedupe is URL-scoped, not skill-scoped.** Suggesting an already-suggested URL for a *different*
+  sub-skill returns the *other* skill's suggestion with "already submitted, thanks". Fine as
+  anti-spam; wrong if a video legitimately belongs to several sub-skills, and the user gets no
+  feedback that their chosen skill was ignored. Decide which it is.
+- **URL validation returns HTTP 500.** `validateHumanLinkUrl` throws without a `status`, so
+  "Public links only, please." surfaces as a server error rather than a 400. The user sees the
+  right message, but every rejected paste is logged as a 5xx.
 
 ## Bugs found ONLY by running the app
 
