@@ -15,6 +15,9 @@ type SourceAddPayload = {
 type LinkAddPayload = {
   url?: string;
   canonical_url?: string;
+  title?: string | null;
+  description?: string | null;
+  content_type?: string | null;
   thumbnail_url?: string | null;
   thumbnail_dynamic_url?: string | null;
   thumbnail_storage_path?: string | null;
@@ -201,6 +204,81 @@ async function updateSuggestionPayload(suggestionId: string, payload: LinkAddPay
     .update({ payload_json: payload })
     .eq("id", suggestionId);
   if (error) throw error;
+}
+
+/**
+ * A human suggestion carries only a URL. Both clients send url, canonical_url,
+ * target_skill_id, public_note, skill_level and language — no title, description or
+ * thumbnail (apps/web/components/SuggestForm.tsx, apps/mobile/app/suggest.tsx).
+ * Collector submissions arrive fully populated, so nothing downstream ever had to
+ * cope with a bare link.
+ *
+ * Without this, a genuinely new user-suggested URL lands with title, description,
+ * thumbnail_url and content_type all NULL and preview_status 'pending' — nothing
+ * backfills that — so the card renders blank and get_unscored_for_coach hands the
+ * coach a NULL title, description and transcript to judge. (URLs already in the
+ * catalogue hid this: the RPC's `on conflict ... coalesce` keeps existing metadata.)
+ *
+ * oEmbed needs no API key and returns exactly the shape the collector stores — the
+ * same i.ytimg.com/vi/<id>/hqdefault.jpg thumbnail and a "video" type. Enrich the
+ * PAYLOAD rather than the row, so apply_suggestion_transaction's own insert consumes
+ * it, including the CASE that flips preview_status to 'fetched' once a thumbnail
+ * exists. Best-effort by design: the caller swallows failures so a flaky oEmbed can
+ * never block an otherwise valid suggestion.
+ */
+async function enrichBareLinkPayloadIfNeeded(suggestionId: string) {
+  const supabase = getServiceClient();
+  const { data: suggestion, error } = await supabase
+    .from("suggestions")
+    .select("id, type, payload_json")
+    .eq("id", suggestionId)
+    .single();
+  if (error) throw error;
+  if (suggestion.type !== "LINK_ADD") return;
+
+  const payload = suggestion.payload_json as LinkAddPayload;
+  // Anything the collector produced already has these; only bare human links need it.
+  if (payload.title || payload.thumbnail_url) return;
+
+  const videoId = youtubeVideoIdFromUrl(payload.canonical_url) ?? youtubeVideoIdFromUrl(payload.url);
+  if (!videoId) return; // non-YouTube: no keyless metadata source, leave it to the collector
+
+  const watchUrl = `https://www.youtube.com/watch?v=${videoId}`;
+  const endpoint = `https://www.youtube.com/oembed?url=${encodeURIComponent(watchUrl)}&format=json`;
+
+  const response = await fetch(endpoint, { signal: AbortSignal.timeout(10_000) });
+  if (!response.ok) {
+    // 404 here is meaningful: private, deleted or bogus video id.
+    console.warn("apply_suggestion_oembed_failed", {
+      suggestion_id: suggestionId,
+      video_id: videoId,
+      status: response.status,
+    });
+    return;
+  }
+
+  const body = await response.json() as {
+    title?: string;
+    thumbnail_url?: string;
+    author_name?: string;
+  };
+
+  await updateSuggestionPayload(suggestionId, {
+    ...payload,
+    title: body.title ?? null,
+    // Fall back to the deterministic thumbnail path; oEmbed always has one, but the
+    // link is useless without an image and this URL is derivable from the id alone.
+    thumbnail_url: body.thumbnail_url ?? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+    content_type: "video",
+    creator_handle: payload.creator_handle ?? body.author_name ?? null,
+    creator_platform: payload.creator_platform ?? "youtube",
+  });
+
+  console.info("apply_suggestion_link_metadata_enriched", {
+    suggestion_id: suggestionId,
+    video_id: videoId,
+    has_title: Boolean(body.title),
+  });
 }
 
 async function cacheThumbnailIfNeeded(suggestionId: string) {
@@ -480,6 +558,18 @@ Deno.serve(async (request) => {
       body.moderator_user_id ?? null,
     );
     if (sourceResult) return jsonResponse(sourceResult, 200, request);
+
+    // Must run BEFORE the transaction: the RPC reads title/thumbnail/content_type
+    // straight out of payload_json, and its `on conflict ... coalesce` means a value
+    // written afterwards would not reach an existing row anyway.
+    try {
+      await enrichBareLinkPayloadIfNeeded(body.suggestion_id);
+    } catch (enrichError) {
+      console.warn("apply_suggestion_link_metadata_enrich_failed", {
+        suggestion_id: body.suggestion_id,
+        message: enrichError instanceof Error ? enrichError.message : String(enrichError),
+      });
+    }
 
     const supabase = getServiceClient();
     const { data, error } = await supabase.rpc("apply_suggestion_transaction", {

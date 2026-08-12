@@ -12,7 +12,13 @@ Legend: `[x]` done · `[ ]` not started · `[~]` partly done
 
 # BLOCKER — fix before either store goes live
 
-- [ ] 0. **Redeploy `submit-suggestion`.** Production runs version 6 (deployed 2026-06-18); the
+- [x] 0. **Redeploy `submit-suggestion`** — done 2026-08-12. Re-verified against production: a POST
+  with no `Authorization` header, and one with the anon key as bearer, both now return
+  **401 "Sign in to suggest a resource."** and write nothing. A signed-in submission returns
+  `approved` with `applied_changes: [link_upserted, relation_upserted]`, so the new inline
+  auto-apply works end to end. Original report kept below.
+
+  Production runs version 6 (deployed 2026-06-18); the
   sign-in guard landed in the repo on 2026-06-23 (`14b268a`) and was never shipped. Verified
   2026-08-12 against production: a `POST` to `/functions/v1/submit-suggestion` with **no
   `Authorization` header at all** returns `200` and inserts a `pending`, `origin_type=human`
@@ -56,8 +62,24 @@ Legend: `[x]` done · `[ ]` not started · `[~]` partly done
 
   Downstream: `get_unscored_for_coach` hands the coach `l.title`, `l.description` and
   `lt.transcript_text` — all NULL — so the coach judges a resource it cannot see, and the card
-  renders with no title or thumbnail. Fix before opening suggestions to the public: fetch metadata
-  on apply for non-TikTok links, or queue new links for the existing transcript/preview fetcher.
+  renders with no title or thumbnail.
+
+  **Confirmed live, then half fixed (2026-08-12).** Submitting a real new URL produced exactly
+  that row: every metadata column NULL, `preview_status='pending'`, no transcript.
+  `apply-suggestion` now calls YouTube **oEmbed** (no API key) before the transaction and fills
+  `title`, `thumbnail_url` and `content_type` into the payload, which the RPC's own insert
+  consumes — and its existing CASE flips `preview_status` to `fetched`. Verified: a second new
+  URL landed with title and an `i.ytimg.com/.../hqdefault.jpg` thumbnail, matching what the
+  collector stores. Best-effort — a failing oEmbed is logged and never blocks the suggestion.
+
+  ⚠️ **Still open: `description`, `duration_seconds` and the transcript.** oEmbed does not carry
+  them; they need the yt-dlp path the nightly collector already owns. Until then a user-suggested
+  link reaches the coach with a title but no transcript, which is the coach's main signal. The
+  natural home is a backfill pass over `preview_status`/missing-transcript links in
+  `scripts/run-collection.mjs` — **not touched here on purpose**, because another agent has
+  uncommitted work in that file (a `skill_source_searches` / migration 0034 change).
+  Note `creator_handle` is set on the payload but the apply RPC's insert column list has no
+  creator columns, so it does not reach `links`; harmless, and true of collected links too.
 
 ---
 
@@ -255,10 +277,13 @@ Driven end-to-end, both clients, against production.
   behave as below. The one hop not exercised in a real browser is the cookie session feeding
   `SuggestForm`'s `getSession()` — signing in needs a PKCE flow that a server-minted link cannot
   complete.
-- **Dedupe is URL-scoped, not skill-scoped.** Suggesting an already-suggested URL for a *different*
-  sub-skill returns the *other* skill's suggestion with "already submitted, thanks". Fine as
-  anti-spam; wrong if a video legitimately belongs to several sub-skills, and the user gets no
-  feedback that their chosen skill was ignored. Decide which it is.
+- **Dedupe is URL-scoped for humans, skill-scoped for agents — deliberate.** The code says so:
+  the collector legitimately multi-tags one video across sub-skills, so it dedupes on
+  (URL, target skill); human submissions keep a broad 24h URL-level guard as anti-abuse. Two
+  consequences worth knowing rather than fixing: a user who suggests a video for a *second*
+  sub-skill gets "already submitted, thanks" with no hint their skill choice was dropped, and
+  because the nightly collector submits heavily, a user suggesting anything it touched in the
+  last 24 hours collides with it and gets no credit.
 - **URL validation returns HTTP 500.** `validateHumanLinkUrl` throws without a `status`, so
   "Public links only, please." surfaces as a server error rather than a 400. The user sees the
   right message, but every rejected paste is logged as a 5xx.
