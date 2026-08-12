@@ -230,6 +230,13 @@ const config = {
   ytdlpSleepSubtitles: Number(process.env.YTDLP_SLEEP_SUBTITLES ?? 5),
   candidatesToScorePerSkill: Number(process.env.COLLECT_CANDIDATES_TO_SCORE ?? 30),
   searchResultsPerChannel: Number(process.env.COLLECT_SEARCH_RESULTS_PER_CHANNEL ?? 25),
+  // How many trusted channels a single skill searches per run. Previously unbounded
+  // (every channel in the category), which made run time linear in pool size — fine at
+  // ~4 channels per category, ruinous at ~19. Channels are now rotated per skill via
+  // skill_source_searches (migration 0034), so a bounded slice still reaches the whole
+  // pool over successive runs. 5 ≈ the 4.2 average the run already sustained, so the
+  // nightly skill reach is preserved. 0 disables the cap (old behaviour).
+  channelsPerSkill: Number(process.env.COLLECT_CHANNELS_PER_SKILL ?? 5),
   freshUploadAgeDays: Number(process.env.COLLECT_FRESH_UPLOAD_AGE_DAYS ?? 30),
   levelTargetPerSkill: Number(process.env.COLLECT_LEVEL_TARGET_PER_SKILL ?? 3),
   // Low-publish-ratio guard: park a skill that has collected at least N active
@@ -838,7 +845,7 @@ async function loadCategorySkills(categoryId) {
   }));
 }
 
-async function loadChannels(categoryId) {
+async function loadChannels(categoryId, skillId) {
   // Category match is EXPLICIT. This used to be `(category_id is null or
   // category_id = $1)`, which made any uncategorised channel global — searched
   // for every skill in every category. The six rows that had no category were
@@ -849,16 +856,52 @@ async function loadChannels(categoryId) {
   //
   // Keeping the match explicit means a channel inserted without a category is
   // simply unused instead of silently polluting all 13 categories — which
-  // matters because trusted_sources is about to be bulk-expanded from research.
+  // mattered when trusted_sources was bulk-expanded from research on 2026-08-12
+  // (61 -> 243 channels); every imported row carries a category_id.
   // loadTikTokSources() is unaffected: it filters by category only when the
   // operator passes --category, which is a deliberate scoping flag.
+  // Bounded, rotated slice rather than the whole category. Ordering:
+  //   1. channels this skill has never been searched against (last_searched_at null)
+  //   2. then the ones it searched longest ago
+  //   3. discovery_score as the tiebreak, so higher-confidence sources lead
+  // A freshly inserted channel has no skill_source_searches row, so it sorts first for
+  // every skill and is consumed on that skill's next run. See migration 0034.
+  const limitClause = config.channelsPerSkill > 0 ? `limit ${config.channelsPerSkill}` : "";
   const rows = await dbQuery(
-    `select identifier, display_name from public.trusted_sources
-     where source_type = 'youtube_channel' and is_active
-       and category_id = $1`,
-    [categoryId],
+    `select ts.id, ts.identifier, ts.display_name
+     from public.trusted_sources ts
+     left join public.skill_source_searches sss
+       on sss.source_id = ts.id and sss.skill_id = $2
+     where ts.source_type = 'youtube_channel' and ts.is_active
+       and ts.category_id = $1
+     order by sss.last_searched_at asc nulls first,
+              ts.discovery_score desc nulls last,
+              ts.display_name
+     ${limitClause}`,
+    [categoryId, skillId],
   );
-  return rows.map(([identifier, display_name]) => ({ identifier, display_name }));
+  return rows.map(([id, identifier, display_name]) => ({ id, identifier, display_name }));
+}
+
+// Stamped per channel as soon as that channel's searches finish, not batched at the end
+// of the skill: the nightly run is killed by SIGTERM at the timeout (exit 124) partway
+// through a skill, and an unrecorded slice would be re-searched on the next run, so a
+// skill that always times out mid-pass would never advance past its first few channels.
+async function recordChannelSearched(skillId, sourceId) {
+  if (!sourceId) return;
+  try {
+    await dbQuery(
+      `insert into public.skill_source_searches (skill_id, source_id, last_searched_at, search_count)
+       values ($1, $2, now(), 1)
+       on conflict (skill_id, source_id) do update
+         set last_searched_at = now(),
+             search_count = public.skill_source_searches.search_count + 1`,
+      [skillId, sourceId],
+    );
+  } catch (error) {
+    // Non-fatal: losing a rotation stamp costs one repeated search, never the run.
+    log("warn", "channel_rotation_stamp_failed", errorMessage(error), { skill_id: skillId, source_id: sourceId });
+  }
 }
 
 async function loadTikTokSources() {
@@ -2557,7 +2600,7 @@ async function processSkill(skill, summary) {
     log("info", "skill_run_started", "Starting collection for skill", { skill: skill.slug, run_id: runId });
     await checkKillSwitch(skill);
 
-    const channels = await loadChannels(skill.category_id);
+    const channels = await loadChannels(skill.category_id, skill.id);
     const categorySkills = await loadCategorySkills(skill.category_id);
     const knownCanonicalUrls = await loadKnownCanonicalUrls(skill.id);
     const queries = searchQueriesForSkill(skill);
@@ -2573,6 +2616,11 @@ async function processSkill(skill, summary) {
       known_canonical_urls: knownCanonicalUrls.size,
       search_queries: queries,
       channels: channels.length,
+      // Which slice of the category's channel pool this skill drew this run. With the
+      // rotation cap on, this should differ run to run until the skill has walked the
+      // whole pool — flat-lining here means rotation stamps are not being written.
+      channels_cap: config.channelsPerSkill || null,
+      channel_names: channels.map((c) => c.display_name),
       priority_score: skill.next_skill_priority_score ?? skill.link_count ?? 0,
     });
 
@@ -2644,6 +2692,8 @@ async function processSkill(skill, summary) {
       } catch (error) {
         log("warn", "channel_fresh_uploads_failed", errorMessage(error), { channel: channel.display_name });
       }
+
+      await recordChannelSearched(skill.id, channel.id);
     }
 
     // OPEN SEARCH — whole of YouTube, not restricted to trusted channels. Runs
