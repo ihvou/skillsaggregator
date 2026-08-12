@@ -24,8 +24,40 @@ Legend: `[x]` done · `[ ]` not started · `[~]` partly done
   supabase functions deploy submit-suggestion --project-ref vqxsaabskkkjdljxiyqi
   ```
   Re-verify after deploying: the same unauthenticated POST must return **401 "Sign in to suggest
-  a resource."** `apply-suggestion` is also behind the repo (deployed 2026-06-18, last commit
-  2026-06-19) — check what changed before shipping it in the same pass.
+  a resource."**
+
+  **Deploy diff reviewed 2026-08-12** — exactly one commit (`14b268a`), 38 lines, nothing else:
+  1. the 401 guard, and the auth lookup moved earlier so it can run before the dedupe early-returns;
+  2. **signed-in `LINK_ADD` is auto-applied** — `apply-suggestion` is called inline, the suggestion
+     returns `approved`, and the relation is created straight away (unpublished). Human moderation
+     of user links effectively goes away; the coach gate becomes the only filter. **Accepted
+     deliberately** — the coach is the moderator.
+  3. a one-line `_shared/prompts.ts` rubric tweak that `submit-suggestion` does not import; it
+     reaches only `coach-curation`, which already runs it.
+
+  Checked and safe: `INTERNAL_FUNCTION_TOKEN` is set (the auto-apply call needs it, and the agent
+  `auto_approved` path already proves that hop works); no Turnstile secrets exist, so the deploy
+  will not start demanding a token neither client sends; the auth lookup swallows its own errors,
+  so agent submissions cannot 500 on it.
+
+  Two costs, both accepted: every request now pays one `auth.getUser()` even when it would have
+  short-circuited on dedupe (the collector generates many such duplicates nightly), and a user's
+  submission now waits on `apply-suggestion` before responding.
+
+- [ ] 0b. **Enrich user-submitted links, or they arrive blank.** Independent of the deploy, and
+  the more serious of the two. Both clients send only `url`, `canonical_url`, `target_skill_id`,
+  `public_note`, `skill_level`, `language` — no title, description or thumbnail. For a URL already
+  in the catalogue the RPC's `on conflict … coalesce` keeps the existing metadata, which is why the
+  2026-08-12 test looked clean: every URL tried was already known. A **genuinely new** URL creates
+  a `links` row with `title`, `description`, `thumbnail_url` all NULL and `preview_status='pending'`,
+  and nothing backfills it — no job scans for `pending` (there are 0 such rows today), and
+  `link-checker` has never been deployed. `apply-suggestion` does enrich, but only TikTok
+  (thumbnail) and only from `evidence_json` (transcript), which a human submission never has.
+
+  Downstream: `get_unscored_for_coach` hands the coach `l.title`, `l.description` and
+  `lt.transcript_text` — all NULL — so the coach judges a resource it cannot see, and the card
+  renders with no title or thumbnail. Fix before opening suggestions to the public: fetch metadata
+  on apply for non-TikTok links, or queue new links for the existing transcript/preview fetcher.
 
 ---
 
@@ -191,11 +223,15 @@ Nothing warns when a function's source moves ahead of what is deployed, and the 
 report it either — you have to compare `supabase functions list` timestamps against `git log`.
 That gap hid the auth bug above for seven weeks.
 
-| function | last commit | deployed | |
+Compare in **UTC**. `git log --date=short` prints the *author* date in local time; this repo's
+commits carry `+08:00`, so a commit made at 19:44 UTC shows as the 19th and looks newer than a
+20:10 UTC deploy on the 18th. That artifact made `apply-suggestion` look stale when it is not.
+
+| function | last commit (UTC) | deployed (UTC) | |
 |---|---|---|---|
-| `submit-suggestion` | 2026-06-23 | 2026-06-18 (v6) | **stale — auth guard missing in prod** |
-| `apply-suggestion` | 2026-06-19 | 2026-06-18 (v8) | stale — diff unreviewed |
-| `coach-curation` | 2026-06-23 | 2026-06-23 (v2) | current |
+| `submit-suggestion` | 2026-06-22 16:36 | 2026-06-18 10:31 (v6) | **stale — one commit behind, auth guard missing in prod** |
+| `apply-suggestion` | 2026-06-18 19:44 | 2026-06-18 20:10 (v8) | current |
+| `coach-curation` | 2026-06-22 16:36 | 2026-06-23 18:56 (v2) | current |
 
 Also in the repo but **never deployed**: `health`, `link-checker`, `link-searcher`,
 `revalidate-web`, `triangulate`. Some may be deliberately local-only — worth confirming, because
