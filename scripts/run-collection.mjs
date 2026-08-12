@@ -40,6 +40,8 @@
  *   COLLECT_LEVEL_TARGET_PER_SKILL default 3
  *   COLLECT_LOW_PUBLISH_MIN_ACTIVE default 60   (0 disables the low-publish guard)
  *   COLLECT_LOW_PUBLISH_RATIO      default 0.05
+ *   COLLECT_OPEN_SEARCH           on|off; off = trusted channels only (default on)
+ *   COLLECT_OPEN_SEARCH_RESULTS   default 25
  *   COLLECT_SATURATION_COOLDOWN_DAYS default 7
  *   COLLECT_ZERO_YIELD_CONSECUTIVE_THRESHOLD default 3 (consecutive 0-sub runs)
  *   COLLECT_ZERO_YIELD_COOLDOWN_DAYS default 7
@@ -239,6 +241,12 @@ const config = {
   // COLLECT_LOW_PUBLISH_MIN_ACTIVE=0 disables the guard entirely.
   lowPublishMinActive: Number(process.env.COLLECT_LOW_PUBLISH_MIN_ACTIVE ?? 60),
   lowPublishRatio: Number(process.env.COLLECT_LOW_PUBLISH_RATIO ?? 0.05),
+  // Open (whole-of-YouTube) search alongside the trusted-channel pass. The pool
+  // of 61 trusted channels is largely exhausted — only ~34% of channel-search
+  // candidates are new, versus ~85% for open search. Set COLLECT_OPEN_SEARCH=off
+  // to fall back to channels only.
+  openSearchEnabled: (process.env.COLLECT_OPEN_SEARCH ?? "on").toLowerCase() !== "off",
+  openSearchResults: Number(process.env.COLLECT_OPEN_SEARCH_RESULTS ?? 25),
   saturationDuplicateThreshold: Number(process.env.COLLECT_SATURATION_DUPLICATE_THRESHOLD ?? 0.9),
   saturationCooldownDays: Number(process.env.COLLECT_SATURATION_COOLDOWN_DAYS ?? 7),
   // Chronic zero-submission cooldown (R30/staleness lever). A skill that has
@@ -929,6 +937,28 @@ function searchQueriesForSkill(skill) {
   ];
 }
 
+// Open search needs DIFFERENT queries from channel search. Inside a padel channel
+// the bare skill name "Bandeja" is unambiguous; across all of YouTube it is a
+// Spanish noun and the name of a cumbia band, so the bare query returned
+// "La Bandeja, Flor Sosa - Yo quería (Video Oficial)" and friends — 6 of 8
+// submissions in the first live test were music videos. Every open-search query
+// therefore carries the category as disambiguating context, and the bare-name
+// query is dropped entirely.
+function openSearchQueriesForSkill(skill) {
+  const category = skill.category_name ? `${skill.category_name} ` : "";
+  const gaps = levelGaps(skill);
+  const neededLevels = Object.entries(gaps)
+    .filter(([, gap]) => gap > 0)
+    .sort(([, a], [, b]) => b - a)
+    .map(([level]) => level)
+    .slice(0, 1);
+  return [
+    `${category}${skill.name}`,
+    `how to ${category}${skill.name} technique`,
+    ...neededLevels.map((level) => `${level} ${category}${skill.name} tutorial`),
+  ];
+}
+
 function acceptsLevelForSkill(skill, level) {
   if (!level || !["beginner", "intermediate", "advanced"].includes(level)) return true;
   const count = clampFinite(skill.level_counts?.[level]);
@@ -1220,6 +1250,72 @@ async function searchChannelRaw(channelId, query, limit) {
       query,
     };
   });
+}
+
+// Open (whole-of-YouTube) search, as opposed to searching inside a trusted
+// channel. The trusted-channel pool is small and largely exhausted: on 2026-08-11
+// only ~34% of channel-search candidates were URLs we did not already have, while
+// a sample of open searches returned ~85% new ("padel bandeja technique" 68%,
+// "badminton net kill" 84%, "deadlift technique" 92%, "goblet squat how to" 96%).
+// Per yt-dlp call that is ~21 new videos versus ~1.2 from channel search.
+//
+// This is only safe because the AI coach is a strong downstream filter (it rejects
+// ~52% of what it reviews), so the top of the funnel does not have to be curated.
+// It also surfaces the small/mid-size creators the taxonomy audit found we need
+// and that no hand-curated channel list would naturally include.
+//
+// channel_id/channel are captured so accepted open-search results double as
+// channel DISCOVERY — a channel that repeatedly yields accepted candidates is a
+// trusted_sources candidate. See open_search_channels_seen in the run summary.
+async function searchOpenRaw(query, limit) {
+  const printFmt = "%(id)s\t%(title)s\t%(duration)s\t%(channel_id)s\t%(channel)s";
+  const { stdout } = await ytdlp([
+    "--flat-playlist", "--skip-download",
+    "--sleep-requests", String(config.ytdlpSleepRequests),
+    "--print", printFmt,
+    `ytsearch${limit}:${query}`,
+  ], { timeoutMs: config.ytdlpListTimeoutMs, label: "ytdlp_open_search" });
+  return stdout.trim().split("\n").filter(Boolean).map((line) => {
+    const [id, title, duration, channelId, channelName] = line.split("\t");
+    return {
+      video_id: id,
+      title,
+      duration_sec: duration && duration !== "NA" ? Number(duration) : null,
+      upload_date: null,
+      view_count: null,
+      channel_id: channelId && channelId !== "NA" ? channelId : null,
+      channel_name: channelName && channelName !== "NA" ? channelName : null,
+      url: `https://www.youtube.com/watch?v=${id}`,
+      canonical_url: `https://www.youtube.com/watch?v=${id}`,
+      source: "open_search",
+      query,
+    };
+  });
+}
+
+async function searchOpen(query, limit) {
+  await loadCollectionCache();
+  // Reuses the channel-search cache with a reserved pseudo-channel key, so an
+  // open search repeated across skills in the same night costs one yt-dlp call.
+  const key = channelSearchCacheKey("__open__", query);
+  const cached = collectionCache.channelSearch.get(key);
+  if (cached?.results && cached.limit >= limit) {
+    collectionCache.stats.channel_search_hits += 1;
+    return cloneCandidates(cached.results).slice(0, limit).map((c) => ({ ...c, query }));
+  }
+  collectionCache.stats.channel_search_misses += 1;
+  collectionCache.stats.channel_search_ytdlp_calls += 1;
+  const results = await searchOpenRaw(query, limit);
+  collectionCache.channelSearch.set(key, {
+    channel_id: "__open__",
+    query_normalized: normalizeSearchQuery(query),
+    limit,
+    cached_at: new Date().toISOString(),
+    results: cloneCandidates(results),
+  });
+  collectionCache.dirty = true;
+  await persistCollectionCache();
+  return cloneCandidates(results);
 }
 
 async function searchChannel(channelId, query, limit) {
@@ -2548,6 +2644,72 @@ async function processSkill(skill, summary) {
       } catch (error) {
         log("warn", "channel_fresh_uploads_failed", errorMessage(error), { channel: channel.display_name });
       }
+    }
+
+    // OPEN SEARCH — whole of YouTube, not restricted to trusted channels. Runs
+    // after the channel pass so channel-sourced candidates win the seenVideoIds
+    // race and keep their provenance. Everything found here still goes through
+    // the identical gauntlet: known-URL dedupe, soft filters, title relevance,
+    // transcript requirement, then the AI coach. Open search widens the funnel;
+    // it does not lower the bar.
+    if (config.openSearchEnabled) {
+      const openChannelsSeen = new Map();
+      let openNew = 0;
+      let openKnown = 0;
+      // NOT the channel-search `queries` — see openSearchQueriesForSkill().
+      for (const query of openSearchQueriesForSkill(skill)) {
+        try {
+          const openResults = await searchOpen(query, config.openSearchResults);
+          let acceptedForQuery = 0;
+          for (const candidate of openResults) {
+            if (seenVideoIds.has(candidate.video_id)) continue;
+            seenVideoIds.add(candidate.video_id);
+            if (knownCanonicalUrls.has(candidate.canonical_url)) {
+              openKnown += 1;
+              continue;
+            }
+            openNew += 1;
+            const soft = passesSoftFilters(candidate);
+            if (!soft.ok) {
+              log("debug", "candidate_rejected_soft", "Open-search candidate rejected by soft filter", {
+                video_id: candidate.video_id, reason: soft.reason, source: candidate.source,
+              });
+              continue;
+            }
+            candidate.title_relevance = relevanceForQuery(candidate, terms);
+            // Open search has no channel-level trust, so an off-topic title is the
+            // only cheap signal we have before spending a transcript fetch on it.
+            // Channel search keeps its zero-relevance tail; open search does not.
+            if (candidate.title_relevance <= 0) continue;
+            if (candidate.channel_id) {
+              const prev = openChannelsSeen.get(candidate.channel_id) ?? { name: candidate.channel_name, n: 0 };
+              prev.n += 1;
+              openChannelsSeen.set(candidate.channel_id, prev);
+            }
+            acceptedForQuery += 1;
+            allCandidates.push(candidate);
+          }
+          log("info", "open_search_completed", "Open YouTube search for skill", {
+            skill: skill.slug, query, returned: openResults.length, accepted: acceptedForQuery,
+          });
+        } catch (error) {
+          log("warn", "open_search_failed", errorMessage(error), { skill: skill.slug, query });
+        }
+      }
+      // Channels that repeatedly surface accepted candidates are trusted_sources
+      // candidates — this is the discovery side-effect of open search.
+      const topChannels = [...openChannelsSeen.entries()]
+        .sort((a, b) => b[1].n - a[1].n)
+        .slice(0, 10)
+        .map(([id, v]) => ({ channel_id: id, channel: v.name, accepted: v.n }));
+      log("info", "open_search_summary", "Open search results for skill", {
+        skill: skill.slug,
+        category: skill.category_name,
+        new_candidates: openNew,
+        already_known: openKnown,
+        new_pct: openNew + openKnown > 0 ? Math.round((openNew * 100) / (openNew + openKnown)) : null,
+        open_search_channels_seen: topChannels,
+      });
     }
 
     // Sort by title relevance and take top N for scoring (zero-relevance candidates fall to the bottom).
