@@ -1,5 +1,5 @@
-import { mkdir } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -33,6 +33,10 @@ const config = {
     ?? resolve(root, ".collection", "cdp-chrome-profile"),
   navTimeoutMs: Number(process.env.COLLECT_BROWSER_NAV_TIMEOUT_MS ?? 25_000),
   transcriptTimeoutMs: Number(process.env.COLLECT_BROWSER_TRANSCRIPT_TIMEOUT_MS ?? 12_000),
+  // How long to poll for the "Show transcript" control before concluding the
+  // video genuinely has none. Long enough to survive a slow mount, short enough
+  // that a caption-less video costs seconds instead of ~18s of fixed waits.
+  transcriptControlTimeoutMs: Number(process.env.COLLECT_BROWSER_CONTROL_TIMEOUT_MS ?? 4_000),
 };
 
 // ---------------------------------------------------------------------------
@@ -305,6 +309,32 @@ async function scrapeTranscriptElementClick(page) {
 
   // 2) "Show transcript" — native click on the button (or its ripple child,
   //    matching the webscraper selector). This opens ONE transcript panel.
+  //
+  // EARLY BAIL. A video with no captions has no "Show transcript" button and no
+  // Transcript tab, but the old code still walked the whole happy path: 2.5s +
+  // 1.5s of fixed waits and then a 12s wait for segments that can never render —
+  // ~18s of pure waiting per caption-less video. Measured on the 2026-08-11 run:
+  // 212 caption-less fetches at a 41.8s median = 147 min, i.e. 2.5 of the 6-hour
+  // budget spent learning "there is nothing here".
+  //
+  // We poll briefly rather than bailing instantly: on a slow page load the button
+  // may not have mounted yet, and a false "no captions" would silently discard a
+  // good video — far worse than being slow. Only a CONFIRMED absence after the
+  // poll window bails.
+  const controlDeadline = Date.now() + config.transcriptControlTimeoutMs;
+  let hasControl = false;
+  while (Date.now() < controlDeadline) {
+    hasControl = await page.evaluate(() => {
+      const btn = [...document.querySelectorAll(".ytd-watch-metadata button, ytd-watch-metadata button")]
+        .find((b) => /show transcript/i.test(b.textContent || ""));
+      if (btn) return true;
+      return Boolean(document.querySelector('[aria-label="Transcript"][role="tab"]'));
+    }).catch(() => false);
+    if (hasControl) break;
+    await page.waitForTimeout(500);
+  }
+  if (!hasControl) return { text: "", absent: true };
+
   await page.evaluate(() => {
     const btn = [...document.querySelectorAll(".ytd-watch-metadata button, ytd-watch-metadata button")]
       .find((b) => /show transcript/i.test(b.textContent || ""));
@@ -330,11 +360,13 @@ async function scrapeTranscriptElementClick(page) {
     await page.waitForTimeout(1500);
   }
 
-  // 4) Wait for segments to render.
+  // 4) Wait for segments to render. Reaching here means the control DID exist, so
+  //    a failure now is ambiguous (slow render, A/B layout, transient) — NOT a
+  //    confirmed absence, and must not be cached as one.
   try {
     await seg.first().waitFor({ state: "visible", timeout: config.transcriptTimeoutMs });
   } catch {
-    return "";
+    return { text: "", absent: false };
   }
   await page.waitForTimeout(600);
 
@@ -353,7 +385,7 @@ async function scrapeTranscriptElementClick(page) {
       .filter(Boolean)
       .join(" ");
   }).catch(() => "");
-  return text.replace(/\s+/g, " ").trim();
+  return { text: text.replace(/\s+/g, " ").trim(), absent: false };
 }
 
 async function fetchTranscriptBrowserOnce(videoId, { waitUntil }) {
@@ -365,8 +397,8 @@ async function fetchTranscriptBrowserOnce(videoId, { waitUntil }) {
     await page.goto(watchUrl, { waitUntil, timeout: config.navTimeoutMs });
     await page.waitForSelector("ytd-watch-metadata", { timeout: 15_000 }).catch(() => undefined);
     await acceptConsentIfPresent(page);
-    const panelText = await scrapeTranscriptElementClick(page);
-    return panelText || null;
+    const { text, absent } = await scrapeTranscriptElementClick(page);
+    return { text: text || null, absent };
   } finally {
     await page.close().catch(() => undefined);
   }
@@ -381,7 +413,53 @@ function isBrowserCrash(error) {
     || message.includes("crash");
 }
 
+// ---------------------------------------------------------------------------
+// Caption-less memo
+//
+// A video with no captions never becomes a link (the collector drops it with
+// candidate_skipped_no_transcript), so it leaves no known_url record — which
+// means the SAME caption-less videos are rediscovered and re-probed every single
+// night, at full price. This memo makes night 1 pay and every night after skip
+// them before even navigating.
+//
+// Only CONFIRMED absences are recorded (no "Show transcript" control after the
+// poll window). Ambiguous outcomes — nav timeouts, crashes, controls that exist
+// but never render segments — are deliberately not cached, because wrongly
+// memoising a captioned video would silently discard good content forever.
+// Entries expire so that captions added later are eventually picked up.
+// ---------------------------------------------------------------------------
+const CAPTIONLESS_PATH = process.env.COLLECT_CAPTIONLESS_CACHE
+  ?? join(process.env.COLLECT_CACHE_DIR ?? ".collection/cache", "captionless-videos.json");
+const CAPTIONLESS_TTL_DAYS = Number(process.env.COLLECT_CAPTIONLESS_TTL_DAYS ?? 60);
+let captionless = null;
+
+async function loadCaptionless() {
+  if (captionless) return captionless;
+  captionless = new Map();
+  try {
+    const raw = JSON.parse(await readFile(CAPTIONLESS_PATH, "utf8"));
+    const cutoff = Date.now() - CAPTIONLESS_TTL_DAYS * 86_400_000;
+    for (const [videoId, seenAt] of Object.entries(raw?.videos ?? {})) {
+      if (Date.parse(seenAt) > cutoff) captionless.set(videoId, seenAt);
+    }
+  } catch { /* absent or unreadable — start empty, this cache is disposable */ }
+  return captionless;
+}
+
+async function rememberCaptionless(videoId) {
+  const map = await loadCaptionless();
+  if (map.has(videoId)) return;
+  map.set(videoId, new Date().toISOString());
+  try {
+    await mkdir(dirname(CAPTIONLESS_PATH), { recursive: true });
+    await writeFile(CAPTIONLESS_PATH, JSON.stringify({ videos: Object.fromEntries(map) }), "utf8");
+  } catch { /* best-effort: losing the memo costs time, never correctness */ }
+}
+
 export async function fetchTranscriptBrowser(videoId) {
+  // Known caption-less → skip without opening a page at all.
+  if ((await loadCaptionless()).has(videoId)) return null;
+
   // Two attempts: domcontentloaded (fast), then networkidle for slow layouts.
   // The "execution context was destroyed" race (YouTube SPA soft-nav) is retried
   // by the second attempt. CDP disconnects/crashes relaunch once.
@@ -392,8 +470,15 @@ export async function fetchTranscriptBrowser(videoId) {
   let lastError = null;
   for (const attempt of attempts) {
     try {
-      const result = await fetchTranscriptBrowserOnce(videoId, attempt);
-      if (result) return result;
+      const { text, absent } = await fetchTranscriptBrowserOnce(videoId, attempt);
+      if (text) return text;
+      // Confirmed absent: do NOT spend the second, slower attempt on a video we
+      // just proved has no transcript control. This is where most of the saving
+      // comes from — the old code paid for both passes.
+      if (absent) {
+        await rememberCaptionless(videoId);
+        return null;
+      }
     } catch (error) {
       lastError = error;
       if (isBrowserCrash(error) && attempt.relaunchOnCrash) {
