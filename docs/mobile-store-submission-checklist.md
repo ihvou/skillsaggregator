@@ -88,12 +88,12 @@ Legend: `[x]` done · `[ ]` not started · `[~]` partly done
 **Code / build**
 - [x] 1. Store-readiness code landed (M89–M96: account deletion, privacy links, prod env, ATS/cleartext, permissions, icon)
 - [x] 2. Preview APK built and exercised on a real device (Pixel 6a) — see *Verified: Android*
-- [ ] 3. **Create a Google Play Developer account** — $25 once, ~48h ID verification. *Gate for everything below.*
+- [x] 3. **Google Play Developer account** — approved 2026-08-13.
 - [x] 4. **Production AAB built** (2026-07-31, versionCode 2) — first release-config compile; no build errors
 - [x] 5. AAB manifest verified: `package=xyz.subskills.app`, `targetSdkVersion=36` (≥35 ✓), `minSdkVersion=24`, `versionCode=2`
 
 **Play Console setup**
-- [ ] 6. Create the app in Play Console (name, language, free/paid, declarations)
+- [ ] 6. Create the app in Play Console — every field and the exact answer is in *Play Console — every value you get asked for* below. Two irreversible choices there: **Free**, and the package name Play takes from your first AAB.
 - [x] 7. Store listing assets **prepared** — copy in `docs/store-listing-copy.md`, images in `store-assets/`. Still to do: paste them into the console at step 6.
 - [ ] 8. App content declarations: privacy policy URL, ads, content rating questionnaire, target audience
 - [ ] 9. **Data Safety form** — see *Privacy disclosures* for exactly what to declare
@@ -198,6 +198,79 @@ What this still does **not** cover, and why item 11 stays open:
 - signed with a debug key, not Play's app-signing key
 - one universal APK (~78 MB) rather than the per-device splits Play generates (~30-40 MB)
 - an emulator, not real hardware
+
+## Play Console — every value you get asked for
+
+Verified against the repo and the live site on 2026-08-13. Work top to bottom; this is the
+order the console asks. Copy for the listing itself lives in `docs/store-listing-copy.md`.
+
+### Create app
+
+| Field | Value | Note |
+|---|---|---|
+| App name | `Subskills` | 9/30 chars. Changeable later. |
+| Default language | **English (United Kingdom)** | Our copy is British — "organised", "catalogue". Pick en-GB, or normalise the copy to en-US first. Do not mix. |
+| App or game | App | |
+| Free or paid | **Free** | ⚠️ **Irreversible.** A free app can never be switched to paid. Paid → free is allowed. |
+| Declarations | Developer Program Policies ✓, US export laws ✓ | |
+
+**Package name is not typed anywhere** — Play takes `xyz.subskills.app` from the first AAB you
+upload and it is then permanent for the life of the listing.
+
+### App identity (from `apps/mobile/app.json` + the built AAB)
+
+| | |
+|---|---|
+| Package | `xyz.subskills.app` |
+| versionName | `0.1.0` |
+| versionCode | `2` (EAS `autoIncrement` bumps this per production build) |
+| minSdk / targetSdk | 24 / 36 (Play requires ≥35) |
+| Permissions | `INTERNET`, `VIBRATE` only |
+| Orientation | portrait |
+| Signing | Play App Signing — accept the default. EAS holds the upload key. |
+| Expo slug | `skillsaggregator` (unchanged on purpose; the EAS project is bound to it) |
+
+### Store presence
+
+| Field | Value |
+|---|---|
+| App category | Education |
+| Tags | learning, sports, video, fitness, tutorials |
+| Contact email | serhii.knyr@gmail.com |
+| Website | https://subskills.xyz |
+| Privacy policy | https://subskills.xyz/privacy |
+
+### "Set up your app" declarations
+
+| Question | Answer | Why |
+|---|---|---|
+| App access | All functionality available without special access | Browsing needs no account, and sign-up is self-serve. Sign-in gates only save / watched / vote / suggest — say exactly that in the notes box. |
+| Ads | **No ads** | Verified: no ad SDK in `apps/mobile/package.json`. |
+| Content rating | Category: *Reference, News, or Educational* | ⚠️ Answer the user-generated-content question **yes** — users submit links and public notes that other users can see. There is no user-to-user messaging. Do not under-declare this; it is the answer most likely to be audited. |
+| Target audience | **13+** | Selecting any under-13 band opts you into the Families policy and a much stricter review. Nothing here targets children. |
+| News app | No | |
+| COVID-19 contact tracing/status | No | |
+| Government app | No | |
+| Financial features | None | |
+| Data safety | See *Privacy disclosures* above | Collected: email/auth id, saved + watched + vote activity, submitted links and public notes, contributor profile. Encrypted in transit ✓. Users can request deletion ✓. |
+
+⚠️ **Data-safety deletion URL — this one will bite.** Play requires a deletion URL that is
+reachable **without signing in**. `https://subskills.xyz/account/delete` returns **307 →
+`/sign-in?next=/account/delete`**, so it fails that test. Two options: point Play at
+`https://subskills.xyz/privacy`, which is public (200) and already documents both deletion routes;
+or make `/account/delete` render a public explainer with a sign-in button and keep the URL. The
+second is nicer and is a small web change.
+
+### Release
+
+1. Testing → **Internal testing** → Create new release.
+2. Upload `app-release.aab` (the production build, not a preview APK — an AAB cannot be sideloaded).
+3. Release name defaults to `2 (0.1.0)`. Release notes: first internal build.
+4. Testers: create an email list, **max 100**, then share the opt-in link. Each tester must accept it before the Play listing becomes visible to them.
+5. Countries: all, unless you want to limit it.
+
+Then do checklist item 11 — install from Play on a real device. That is the first time the
+minified release build runs from a Play-signed, per-device split APK.
 
 ## Runbook A — Android production AAB → Play
 
