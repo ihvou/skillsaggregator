@@ -21,6 +21,15 @@ supabase/.temp
 .env.hosted
 .vercel
 
+# macOS Finder view state. Recreated in any directory Finder opens; nothing to do
+# with the project.
+.DS_Store
+
+# Claude Code: per-machine settings and their dated backups stay local, but
+# .claude/launch.json is shared dev-server config and IS committed.
+.claude/settings.local.json
+.claude/*.bak-*
+
 # Store listing: raw device captures are large and reproducible from the
 # runbooks; the composed upload artifacts next to them ARE committed.
 store-assets/ios/
