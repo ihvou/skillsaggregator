@@ -2186,6 +2186,10 @@ async function postSuggestion(skill, candidate, transcript, score, viewCount) {
       channel_id: candidate.channel_id,
       video_id: candidate.video_id,
       view_count: viewCount,
+      // How this candidate was discovered: channel_search | fresh_uploads | open_search.
+      // `source` above is the submission pipeline; this is the discovery method, which
+      // the content-ops report splits on. Null for anything collected before 2026-08-13.
+      discovery_source: candidate.source ?? null,
       scoring_mode: scoringMode,
       transcript_fetcher: config.transcriptFetcher,
       transcript_available: hasTranscript,

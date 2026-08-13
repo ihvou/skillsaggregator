@@ -246,6 +246,32 @@ npm run collect:local
 
 `scripts/nightly-collect.sh` defaults to `COLLECT_TARGET=hosted`. It sources `apps/web/.env.local` first for tuning and `INTERNAL_FUNCTION_TOKEN`, then `.env.hosted` so hosted `SUPABASE_URL`, service role, and `COLLECT_DB_URL` win. Use `COLLECT_TARGET=local` when you intentionally want the old local-container path.
 
+## Content operations reports
+
+`scripts/nightly-collect.sh` regenerates two reports after every run — including failed runs, so a
+dead night shows up as a zero row rather than a gap. Both rebuild from scratch, so a missed day
+self-heals on the next run:
+
+```bash
+npm run report:content-ops
+```
+
+- `.collection/reports/content-ops.md` — dates as rows, pipeline stages as columns (collected,
+  channel vs open search, TikTok, no-transcript, ingested, scored, published).
+- `.collection/reports/skill-coverage.csv` — dates as rows, one column per category+skill (A–Z),
+  cells are cumulative counts of **published** links, dated by `published_at`. A `total` column
+  carries the catalog-wide curve. `skill-coverage.md` holds the same data transposed, sorted A–Z,
+  and trimmed to a recent window so it stays readable; its `All sub-skills` row reconciles exactly
+  with the Published total in `content-ops.md`.
+
+Flags: `--metric active` counts the whole collected catalog dated by `created_at` instead of only
+what the publish gate has made visible, `--days N` limits the report-1 window, `--md-days N` sets
+the transposed markdown width. `COLLECT_SKIP_REPORT=1` skips the nightly post-step.
+
+The channel-vs-open-search split reads `evidence_json.discovery_source`, which the collector only
+began persisting on 2026-08-13. Earlier nights show `-` there — the split was never recorded and is
+left blank rather than estimated. Note `.collection/` is gitignored, so these reports stay local.
+
 Weekly source discovery expands the trusted source graph before nightly collection:
 
 ```bash

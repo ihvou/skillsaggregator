@@ -134,4 +134,18 @@ if [ "$exit_code" -eq 0 ] && [ "$missing_transcripts_limit" != "0" ]; then
   fi
 fi
 
+# Content-ops reports rebuild from scratch, so this runs even when collection
+# failed: a dead night has to show up as a zero row rather than as a gap. Never
+# let a reporting failure change the collection exit code.
+if [ "${COLLECT_SKIP_REPORT:-0}" != "1" ]; then
+  echo "[$(date +%Y-%m-%dT%H:%M:%S%z)] content-ops report starting" | tee -a "$log_file"
+  set +e
+  node scripts/content-ops-report.mjs 2>&1 | tee -a "$log_file"
+  report_exit_code="${PIPESTATUS[0]}"
+  set -e
+  if [ "$report_exit_code" -ne 0 ]; then
+    echo "[$(date +%Y-%m-%dT%H:%M:%S%z)] WARNING: content-ops report failed with ${report_exit_code}; preserving collection exit code ${exit_code}" | tee -a "$log_file"
+  fi
+fi
+
 exit "$exit_code"

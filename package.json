@@ -23,6 +23,7 @@
     "discover:sources": "node scripts/discover-sources.mjs",
     "collect:health": "node scripts/check-supabase-health.mjs",
     "collect:report": "node scripts/nightly-report.mjs",
+    "report:content-ops": "node scripts/content-ops-report.mjs",
     "db:backup": "bash scripts/db-backup.sh",
     "db:restore": "bash scripts/db-restore.sh",
     "db:migrate:safe": "bash scripts/db-migrate-safe.sh",
