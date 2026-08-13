@@ -33,6 +33,22 @@ function buildCollectDbUrlFromEnv() {
 
 const collectDbUrl = buildCollectDbUrlFromEnv();
 
+// Keep the database password out of argv; psql picks it up from PGPASSWORD.
+// See the same helper in scripts/run-collection.mjs for why.
+function splitDbUrlSecret(url) {
+  if (!url) return { urlForArgv: url, passwordEnv: {} };
+  try {
+    const parsed = new URL(url);
+    if (!parsed.password) return { urlForArgv: url, passwordEnv: {} };
+    const password = decodeURIComponent(parsed.password);
+    parsed.password = "";
+    return { urlForArgv: parsed.toString(), passwordEnv: { PGPASSWORD: password } };
+  } catch {
+    return { urlForArgv: url, passwordEnv: {} };
+  }
+}
+const { urlForArgv: dbUrlForArgv, passwordEnv: dbPasswordEnv } = splitDbUrlSecret(collectDbUrl);
+
 const config = {
   dbContainer: process.env.SUPABASE_DB_CONTAINER ?? "supabase_db_skillsaggregator",
   collectDbUrl,
@@ -66,12 +82,16 @@ async function dbRows(sql, params = []) {
     sql,
   );
   const command = config.collectDbUrl ? config.psqlBin : "docker";
+  // Password travels in PGPASSWORD, never argv — argv is readable by any local
+  // process via `ps`, and execFile echoes the whole command into its error message.
+  // Same fix as scripts/run-collection.mjs.
   const args = config.collectDbUrl
-    ? [config.collectDbUrl, "-A", "-t", "-F", fieldSep, "-c", expanded]
+    ? [dbUrlForArgv, "-A", "-t", "-F", fieldSep, "-c", expanded]
     : ["exec", "-i", config.dbContainer, "psql", "-U", "postgres", "-A", "-t", "-F", fieldSep, "-c", expanded];
   const { stdout } = await execFileP(command, args, {
     maxBuffer: 32 * 1024 * 1024,
     timeout: config.dbTimeoutMs,
+    env: { ...process.env, ...dbPasswordEnv },
   });
   return stdout
     .trim()

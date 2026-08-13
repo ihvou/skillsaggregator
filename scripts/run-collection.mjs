@@ -168,6 +168,26 @@ function dbUrlHost(dbUrl) {
 }
 
 const collectDbUrl = buildCollectDbUrlFromEnv();
+
+// Keep the password out of argv. `ps` shows every process's arguments to any local
+// user, and execFile embeds the full command in its error message — which is how the
+// connection string (password included) reached .collection/logs on 2026-08-13.
+// psql reads PGPASSWORD from the environment, which is not exposed the same way.
+function splitDbUrlSecret(url) {
+  if (!url) return { urlForArgv: url, passwordEnv: {} };
+  try {
+    const parsed = new URL(url);
+    if (!parsed.password) return { urlForArgv: url, passwordEnv: {} };
+    const password = decodeURIComponent(parsed.password);
+    parsed.password = "";
+    return { urlForArgv: parsed.toString(), passwordEnv: { PGPASSWORD: password } };
+  } catch {
+    // Not a parseable URL (e.g. a libpq keyword string) — leave it alone rather
+    // than risk mangling a working connection.
+    return { urlForArgv: url, passwordEnv: {} };
+  }
+}
+const { urlForArgv: dbUrlForArgv, passwordEnv: dbPasswordEnv } = splitDbUrlSecret(collectDbUrl);
 const collectTarget = collectTargetFromEnv(collectDbUrl);
 
 const config = {
@@ -234,9 +254,18 @@ const config = {
   // (every channel in the category), which made run time linear in pool size — fine at
   // ~4 channels per category, ruinous at ~19. Channels are now rotated per skill via
   // skill_source_searches (migration 0034), so a bounded slice still reaches the whole
-  // pool over successive runs. 5 ≈ the 4.2 average the run already sustained, so the
-  // nightly skill reach is preserved. 0 disables the cap (old behaviour).
-  channelsPerSkill: Number(process.env.COLLECT_CHANNELS_PER_SKILL ?? 5),
+  // pool over successive runs. 0 disables the cap (old behaviour).
+  //
+  // Lowered 5 -> 3 on 2026-08-13. The 08-13 run reclaimed ~135 min from the
+  // caption-less fix but spent it on channel breadth rather than skill breadth:
+  // 1,650 channel searches, and still only 66 of 249 skills before the 6h SIGTERM.
+  // Channel searches are the dominant remaining cost (each carries a yt-dlp
+  // request sleep), and the catalogue has grown 152 -> 249 skills, so per-skill
+  // depth now matters less than covering more of the catalogue each night. The
+  // rotation makes this safe: a skill still reaches its whole category pool, just
+  // over ~6 nights instead of ~4, and open search now supplies most NEW content
+  // anyway (3,040 new candidates vs 0 already-known on 08-13).
+  channelsPerSkill: Number(process.env.COLLECT_CHANNELS_PER_SKILL ?? 3),
   freshUploadAgeDays: Number(process.env.COLLECT_FRESH_UPLOAD_AGE_DAYS ?? 30),
   levelTargetPerSkill: Number(process.env.COLLECT_LEVEL_TARGET_PER_SKILL ?? 3),
   // Low-publish-ratio guard: park a skill that has collected at least N active
@@ -386,8 +415,20 @@ class InfrastructureError extends Error {
   }
 }
 
+// Strips credentials out of anything we are about to log. execFile puts the whole
+// failed command into its error message, so a psql failure used to print the full
+// postgresql://user:PASSWORD@host connection string into .collection/logs — seen
+// on 2026-08-13 in link_transcript_persist_failed. The repo is public, so a pasted
+// log would leak the database password. Belt-and-braces alongside passing the
+// password via PGPASSWORD instead of argv (see dbEnv below).
+function redactSecrets(text) {
+  return String(text ?? "")
+    .replace(/(\b[a-z][a-z0-9+.-]*:\/\/[^\s:@/]+):[^\s@]*@/gi, "$1:***@")
+    .replace(/\bPGPASSWORD=\S+/gi, "PGPASSWORD=***");
+}
+
 function errorMessage(error) {
-  return error instanceof Error ? error.message : String(error);
+  return redactSecrets(error instanceof Error ? error.message : String(error));
 }
 
 function errorMetadata(error) {
@@ -593,12 +634,16 @@ async function dbQuery(sql, params = []) {
     sql,
   );
   const command = config.collectDbUrl ? config.psqlBin : "docker";
+  // dbUrlForArgv has the password removed; it travels in PGPASSWORD instead.
+  // argv is world-readable via `ps`, so embedding the password there exposed it to
+  // every local process, not just to whoever reads the logs.
   const args = config.collectDbUrl
-    ? [config.collectDbUrl, "-A", "-t", "-F", "|||", "-c", expanded]
+    ? [dbUrlForArgv, "-A", "-t", "-F", "|||", "-c", expanded]
     : ["exec", "-i", config.localDbContainer, "psql", "-U", "postgres", "-A", "-t", "-F", "|||", "-c", expanded];
   const { stdout } = await execFileP(command, args, {
     maxBuffer: 32 * 1024 * 1024,
     timeout: config.dbQueryTimeoutMs,
+    env: { ...process.env, ...dbPasswordEnv },
   });
   return stdout
     .trim()
