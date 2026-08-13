@@ -254,12 +254,11 @@ upload and it is then permanent for the life of the listing.
 | Financial features | None | |
 | Data safety | See *Privacy disclosures* above | Collected: email/auth id, saved + watched + vote activity, submitted links and public notes, contributor profile. Encrypted in transit ✓. Users can request deletion ✓. |
 
-⚠️ **Data-safety deletion URL — this one will bite.** Play requires a deletion URL that is
-reachable **without signing in**. `https://subskills.xyz/account/delete` returns **307 →
-`/sign-in?next=/account/delete`**, so it fails that test. Two options: point Play at
-`https://subskills.xyz/privacy`, which is public (200) and already documents both deletion routes;
-or make `/account/delete` render a public explainer with a sign-in button and keep the URL. The
-second is nicer and is a small web change.
+**Data-safety deletion URL:** `https://subskills.xyz/account/delete`. Play requires this to be
+reachable **without signing in**, and it now is — signed out it renders a public explainer (how to
+delete, what is removed, what stays, sign-in button); signed in it still shows the confirmation
+form. It used to 307 to `/sign-in?next=/account/delete`, which would have failed review. Keep the
+copy on that page in step with `/privacy`; a mismatch between the two is what an audit looks for.
 
 ### Release
 
