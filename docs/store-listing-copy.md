@@ -53,7 +53,7 @@ HOW YOU USE IT
 WHY IT IS DIFFERENT
 Nothing is auto-published. Every tutorial is scored for relevance and teaching quality against the specific sub-skill it is filed under, and weak content is left out rather than buried on page four. You get a shortlist, not an endless feed.
 
-No ads. No tracking. Everything is free to watch.
+No ads. No third-party trackers. Nothing about you is sold or shared. Everything is free to watch.
 
 Browsing needs no account. Sign in only if you want to save, mark watched, vote or suggest.
 ```
@@ -114,7 +114,7 @@ HOW YOU USE IT
 WHY IT IS DIFFERENT
 Nothing is auto-published. Every tutorial is scored for relevance and teaching quality against the specific sub-skill it is filed under, and weak content is left out rather than buried on page four. You get a shortlist, not an endless feed.
 
-No ads. No tracking. Everything is free to watch.
+No ads. No third-party trackers. Nothing about you is sold or shared. Everything is free to watch.
 
 Browsing needs no account. Sign in only if you want to save, mark watched, vote or suggest.
 ```
@@ -138,7 +138,7 @@ being true if the product changes.
 |---|---|
 | "reviewed before it appears" | publish gate: ≥2 coach reviews and `combined_score ≥ 1.3` on `link_skill_relations` |
 | "scored for relevance and teaching quality" | those are the literal coach vote dimensions |
-| "No ads. No tracking." | no ad or analytics SDK in `apps/mobile/package.json` — verified 2026-08-09. **Adding one breaks this claim and the Data Safety form.** |
+| "No ads. No third-party trackers. Nothing about you is sold or shared." | no ad SDK or third-party tracking SDK in `apps/mobile/package.json`; Apple defines tracking as linking app data with other companies' data for advertising/measurement or sharing with data brokers. First-party product analytics still require disclosure, but do not require ATT and do not make this claim false. |
 | "free to watch" | every resource links out to a free public video |
 | "Browsing needs no account" | catalogue reads are anonymous; only write actions gate on auth |
 | 13 sports / 150+ sub-skills / 2,000+ tutorials | live counts, rounded down |

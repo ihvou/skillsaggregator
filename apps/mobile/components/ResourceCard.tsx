@@ -26,7 +26,7 @@ interface ResourceCardProps {
 type SwipeDirection = "left" | "right";
 
 /**
- * The right-hand metadata column owns this height (4 visual rows: date+pill,
+ * The right-hand metadata column owns this height (4 visual rows: source+pill,
  * title line 1, title line 2, domain+actions). The 16/9 thumbnail then
  * stretches to match it via `alignSelf: "stretch"` + `aspectRatio`.
  */
@@ -39,21 +39,11 @@ function triggerSelectionHaptic() {
   Haptics.selectionAsync().catch(() => undefined);
 }
 
-function formatDate(iso?: string | null) {
-  if (!iso) return undefined;
-  const parsed = Date.parse(iso);
-  if (Number.isNaN(parsed)) return undefined;
-  const date = new Date(parsed);
-  const dd = String(date.getDate()).padStart(2, "0");
-  const mm = String(date.getMonth() + 1).padStart(2, "0");
-  return `${dd}.${mm}.${date.getFullYear()}`;
-}
-
 function capitalize(value: string) {
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
-// Small platform icon shown top-left, before the date, in place of the domain text.
+// Small platform icon shown top-left in place of the domain text.
 function SourceIcon({ link }: { link: SkillResource["link"] }) {
   const source = getLinkSource(link);
   if (source === "youtube") {
@@ -71,7 +61,7 @@ function isPortraitResource(resource: SkillResource) {
  * Skill-screen resource row.
  *  - 16/9 thumbnail on the left at row-height (so its bottom aligns with
  *    the bottom of the actions row)
- *  - Right column: top meta row (date + level pill), 2-line title,
+ *  - Right column: top meta row (source + level pill), 2-line title,
  *    bottom row (domain + check/bookmark/thumbs-up + count + thumbs-down)
  *  - Tap opens the URL; swipe right to save, swipe left to mark complete
  */
@@ -227,7 +217,6 @@ export function ResourceCard({ resource }: ResourceCardProps) {
     );
   }
 
-  const dateLabel = formatDate(resource.created_at);
   const SavedIcon = isSaved ? BookmarkCheck : Bookmark;
   const contributor = resource.link.contributor_profile;
   const portrait = isPortraitResource(resource);
@@ -274,7 +263,6 @@ export function ResourceCard({ resource }: ResourceCardProps) {
           <View style={styles.topRow}>
             <View style={styles.dateGroup}>
               <SourceIcon link={resource.link} />
-              {dateLabel ? <Text style={styles.date}>{dateLabel}</Text> : null}
             </View>
             <View style={styles.pillGroup}>
               {resource.skill_level ? (
@@ -435,11 +423,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 5,
-  },
-  date: {
-    ...typography.date,
-    fontSize: 12,
-    color: colors.muted,
   },
   pillGroup: {
     flexShrink: 1,

@@ -33,11 +33,6 @@ function homeJsonLd() {
         name: "Subskills",
         url: `${baseUrl}/`,
         description: homeDescription,
-        potentialAction: {
-          "@type": "SearchAction",
-          target: `${baseUrl}/?q={search_term_string}`,
-          "query-input": "required name=search_term_string",
-        },
       },
       {
         "@type": "Organization",

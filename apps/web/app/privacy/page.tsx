@@ -19,7 +19,11 @@ const sections = [
     body: "The app requests public catalog data from Subskills services, including categories, skills, links, vote counts, thumbnails, and contributor summaries. Opening a resource link leaves the app and is governed by the destination site's privacy policy.",
   },
   {
-    title: "Analytics And Tracking",
+    title: "Website Analytics",
+    body: "The website uses Cloudflare Web Analytics to measure aggregate page views, paths, referrer hosts, country, and device class. It is cookieless, does not store anything on your device, does not identify you across other sites, and is not sold or shared for advertising.",
+  },
+  {
+    title: "App Analytics And Tracking",
     body: "The current mobile app does not include third-party advertising SDKs or cross-app tracking. If analytics are added later, this policy should be updated before release.",
   },
   {
@@ -39,7 +43,7 @@ const sections = [
 export default function PrivacyPage() {
   return (
     <div className="mx-auto max-w-3xl px-4 pb-20 pt-10">
-      <p className="text-sm font-semibold uppercase tracking-wide text-muted">Last updated June 25, 2026</p>
+      <p className="text-sm font-semibold uppercase tracking-wide text-muted">Last updated August 14, 2026</p>
       <h1 className="mt-4 text-4xl font-extrabold tracking-tight text-ink md:text-5xl">
         Privacy Policy
       </h1>

@@ -24,16 +24,6 @@ function capitalize(value: string) {
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
-function formatDate(iso?: string | null) {
-  if (!iso) return undefined;
-  const parsed = Date.parse(iso);
-  if (Number.isNaN(parsed)) return undefined;
-  const date = new Date(parsed);
-  const dd = String(date.getDate()).padStart(2, "0");
-  const mm = String(date.getMonth() + 1).padStart(2, "0");
-  return `${dd}.${mm}.${date.getFullYear()}`;
-}
-
 function isPortraitResource(resource: SkillResource) {
   return getLinkSource(resource.link) === "tiktok";
 }
@@ -48,7 +38,7 @@ function SourceIcon({ resource }: { resource: SkillResource }) {
 /**
  * Web counterpart to the mobile ResourceCard row.
  *  - 16/9 thumbnail (left, click → opens link)
- *  - Source + date + level pill (top), bold 2-line title (clickable),
+ *  - Source + level pill (top), bold 2-line title (clickable),
  *    level badge + watched/saved/vote actions.
  *  - State (save / watched / vote) is authenticated and stored server-side.
  */
@@ -66,7 +56,6 @@ export function ResourceCard({ resource }: ResourceCardProps) {
     setUserVote,
   } = useResourceActions(relationId);
 
-  const dateLabel = formatDate(resource.created_at);
   const thumbnail = resource.link.thumbnail_url;
   const portrait = isPortraitResource(resource);
   const url = resource.link.url;
@@ -119,7 +108,6 @@ export function ResourceCard({ resource }: ResourceCardProps) {
         <div className="flex items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-2">
             <SourceIcon resource={resource} />
-            {dateLabel ? <span className="text-sm text-muted">{dateLabel}</span> : null}
           </div>
           <div className="flex shrink-0 items-center gap-2">
             {resource.skill_level ? (

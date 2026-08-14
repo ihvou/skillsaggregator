@@ -25,8 +25,12 @@ import { getPublicSupabase, getServiceSupabase } from "./supabase";
 import { normalizeThumbnailUrl } from "./thumbnails";
 
 export interface CatalogData {
-  category: CategorySummary;
+  category: CategorySummary | null;
   skills: SkillSummary[];
+}
+
+interface ResolvedCatalogData extends CatalogData {
+  category: CategorySummary;
 }
 
 export type ResourceSort = "newest" | "popular";
@@ -92,10 +96,14 @@ export async function getCatalog(
     .eq("is_active", true)
     .single();
 
+  if (!category) {
+    return { category: null, skills: [] };
+  }
+
   const { data: skills } = await supabase
     .from("skills")
     .select("id, category_id, slug, name, description, subskill_difficulty, learning_order, updated_at")
-    .eq("category_id", category?.id ?? badmintonCategory.id)
+    .eq("category_id", category.id)
     .eq("is_active", true)
     .order("name");
 
@@ -110,11 +118,11 @@ export async function getCatalog(
   }
 
   return {
-    category: category ?? badmintonCategory,
+    category,
     skills: filterPublicSkills(
       (skills ?? categorySkills(categorySlug)).map((skill) => ({
         ...skill,
-        category_slug: category?.slug ?? categorySlug,
+        category_slug: category.slug,
         resource_count: counts.get(skill.id) ?? 0,
       })),
       options.publicOnly,
@@ -122,7 +130,7 @@ export async function getCatalog(
   };
 }
 
-export async function getAllCatalogs(options: CatalogOptions = {}): Promise<Array<CatalogData>> {
+export async function getAllCatalogs(options: CatalogOptions = {}): Promise<Array<ResolvedCatalogData>> {
   const supabase = getPublicSupabase();
   if (!supabase) {
     return fallbackCategories.map((category) => ({
@@ -132,7 +140,8 @@ export async function getAllCatalogs(options: CatalogOptions = {}): Promise<Arra
   }
 
   const categories = await getCategories();
-  return Promise.all(categories.map((category) => getCatalog(category.slug, options)));
+  const catalogs = await Promise.all(categories.map((category) => getCatalog(category.slug, options)));
+  return catalogs.filter((catalog): catalog is ResolvedCatalogData => Boolean(catalog.category));
 }
 
 export async function getSkillPage(categorySlug: string, skillSlug: string) {
