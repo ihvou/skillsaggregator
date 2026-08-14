@@ -18,6 +18,10 @@ const config = {
   navTimeoutMs: Number(process.env.COLLECT_TIKTOK_NAV_TIMEOUT_MS ?? 25_000),
   resultsWaitMs: Number(process.env.COLLECT_TIKTOK_RESULTS_WAIT_MS ?? 4_000),
   detailWaitMs: Number(process.env.COLLECT_TIKTOK_DETAIL_WAIT_MS ?? 3_000),
+  // Retry/backoff for TikTok's burst throttling — see gotoDetailWithRetry().
+  detailRetryAttempts: Number(process.env.COLLECT_TIKTOK_DETAIL_RETRIES ?? 3),
+  detailRetryBackoffMs: Number(process.env.COLLECT_TIKTOK_DETAIL_BACKOFF_MS ?? 4_000),
+  detailContentTimeoutMs: Number(process.env.COLLECT_TIKTOK_DETAIL_CONTENT_TIMEOUT_MS ?? 12_000),
   dumpDir: process.env.COLLECT_TIKTOK_DUMP_DIR ?? "/tmp",
 };
 
@@ -234,13 +238,43 @@ export async function searchTikTok(ctx, q, { dumpHtml = true } = {}) {
   }
 }
 
+// TikTok answers a BURST of detail requests with an error status rather than the
+// page, which surfaces as `page.goto: net::ERR_HTTP_RESPONSE_CODE_FAILURE` and
+// killed 20 of 22 candidates on the 2026-08-14 run. The same URLs return HTTP 200
+// to curl, and a single browser request also gets 200 — followed by a
+// "Please wait..." interstitial that resolves into the real video in ~3s. So this
+// is throttling, not a block, and it is worth backing off rather than giving up:
+// each lost detail fetch discards a candidate that already passed search.
+async function gotoDetailWithRetry(page, videoUrl) {
+  let lastError = null;
+  for (let attempt = 0; attempt < config.detailRetryAttempts; attempt += 1) {
+    if (attempt > 0) await sleep(config.detailRetryBackoffMs * attempt);
+    try {
+      await page.goto(videoUrl, { waitUntil: "domcontentloaded", timeout: config.navTimeoutMs });
+      return attempt;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError;
+}
+
 export async function fetchVideoDetail(ctx, videoUrl, { dumpHtml = false } = {}) {
   const page = await ctx.newPage();
   await page.bringToFront().catch(() => {});
 
   try {
-    await page.goto(videoUrl, { waitUntil: "domcontentloaded", timeout: config.navTimeoutMs });
+    await gotoDetailWithRetry(page, videoUrl);
     await page.bringToFront().catch(() => {});
+    // Wait for the real page rather than a fixed sleep: the challenge interstitial
+    // renders first and the SSR blob/video only appear once it clears. Falls back to
+    // the old fixed wait if neither selector shows up, so a layout change degrades
+    // to previous behaviour instead of failing outright.
+    await page
+      .waitForSelector('script#__UNIVERSAL_DATA_FOR_REHYDRATION__, video, [data-e2e="browse-video-desc"]', {
+        timeout: config.detailContentTimeoutMs,
+      })
+      .catch(() => undefined);
     await sleep(config.detailWaitMs);
 
     if (dumpHtml) {
