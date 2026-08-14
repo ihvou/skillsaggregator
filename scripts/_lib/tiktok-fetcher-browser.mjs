@@ -12,7 +12,11 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const config = {
   chromePath: process.env.COLLECT_BROWSER_CHROME_PATH
     ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-  cdpPort: Number(process.env.COLLECT_BROWSER_CDP_PORT ?? 9222),
+  // Dedicated port, deliberately NOT Chrome's conventional 9222: a normal Chrome
+  // launched by the human can occupy that port, and the collector then either
+  // fails to bind (2026-08-15: an entire nightly pass produced zero transcripts)
+  // or, worse, attaches to the personal browser and opens tabs in it.
+  cdpPort: Number(process.env.COLLECT_BROWSER_CDP_PORT ?? 9223),
   cdpProfileDir: process.env.COLLECT_BROWSER_CDP_PROFILE_DIR
     ?? resolve(root, ".collection", "cdp-chrome-profile"),
   navTimeoutMs: Number(process.env.COLLECT_TIKTOK_NAV_TIMEOUT_MS ?? 25_000),
@@ -35,10 +39,16 @@ let firstProfileDumped = false;
 // CDP port/profile as transcript-fetcher-browser.mjs. That shares the logged-in
 // Chrome session without changing the proven YouTube transcript path.
 
+// Must agree with transcript-fetcher-browser.mjs: require a REAL CDP payload, not
+// just a 200. A browser the human launched can occupy the port and answer without
+// being a debug endpoint, which on 2026-08-15 made the collector spawn Chrome after
+// Chrome and open blank tabs in the user's own browser.
 async function cdpEndpointUp(port) {
   try {
     const res = await fetch(`http://127.0.0.1:${port}/json/version`);
-    return res.ok;
+    if (!res.ok) return false;
+    const info = await res.json().catch(() => null);
+    return Boolean(info && (info.webSocketDebuggerUrl || info.Browser));
   } catch {
     return false;
   }

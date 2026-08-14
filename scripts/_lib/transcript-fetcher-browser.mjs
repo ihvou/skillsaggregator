@@ -26,7 +26,11 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const config = {
   chromePath: process.env.COLLECT_BROWSER_CHROME_PATH
     ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-  cdpPort: Number(process.env.COLLECT_BROWSER_CDP_PORT ?? 9222),
+  // Dedicated port, deliberately NOT Chrome's conventional 9222: a normal Chrome
+  // launched by the human can occupy that port, and the collector then either
+  // fails to bind (2026-08-15: an entire nightly pass produced zero transcripts)
+  // or, worse, attaches to the personal browser and opens tabs in it.
+  cdpPort: Number(process.env.COLLECT_BROWSER_CDP_PORT ?? 9223),
   // Dedicated, logged-in Chrome profile (non-default dir). Sign into YouTube here
   // once; the session persists across runs. See docs/collection-tuning.md.
   cdpProfileDir: process.env.COLLECT_BROWSER_CDP_PROFILE_DIR
@@ -144,10 +148,26 @@ let cdpBrowser = null;
 let context = null;
 let contextPromise = null;
 
+// Verifies the port is answering with a REAL CDP endpoint, not merely answering.
+//
+// On 2026-08-15 the nightly produced zero transcripts for its whole first pass with
+// `cdp_endpoint_not_ready_after_20000ms`. Cause: the user's everyday Chrome was
+// squatting IPv4 127.0.0.1:9222 while the collection Chrome — spawned correctly with
+// its own --user-data-dir — could only bind IPv6 [::1]:9222. This probe resolves to
+// IPv4, so it reached the personal browser, got a 404, concluded "endpoint down",
+// spawned yet another Chrome, and never saw it. The visible symptom was blank tabs
+// appearing in the user's own browser.
+//
+// `res.ok` alone could not tell the two apart, so we now require the payload to look
+// like Chrome's /json/version (it carries webSocketDebuggerUrl / Browser). Combined
+// with the dedicated default port below, the collector no longer contends with — or
+// attaches to — whatever browser the human happens to be using.
 async function cdpEndpointUp(port) {
   try {
     const res = await fetch(`http://127.0.0.1:${port}/json/version`);
-    return res.ok;
+    if (!res.ok) return false;
+    const info = await res.json().catch(() => null);
+    return Boolean(info && (info.webSocketDebuggerUrl || info.Browser));
   } catch {
     return false;
   }
