@@ -85,7 +85,29 @@ MISTAKES — 0 to 3 points.
   * Same rules: one idea, one sentence, multiple videos behind it, no padding.
 
 For EVERY point, give "support" — how many of the videos you used actually make that
-point. Be honest; do not inflate. A point supported by one video should usually be cut.
+point. Be honest; do not inflate.
+
+=== THREE RULES THE FIRST LIVE RUN BROKE ===
+These are not style preferences. The first two skills this routine generated broke all
+three, so check your output against them before storing.
+
+1. 4 AND 3 ARE CEILINGS, NOT TARGETS. The first run produced 4 consensus + 3 mistakes for
+   BOTH skills. That is the padding failure. Most skills should come in under the maximum.
+   If you find yourself reaching for a fourth point, you have already finished at three.
+
+2. A MISTAKE MAY NOT RESTATE A CONSENSUS POINT. The first run wrote consensus "aim for the
+   corners rather than blasting for power" AND mistake "trying to smash the ball as hard as
+   possible" — one idea billed twice, which is also how a padded fourth point gets
+   manufactured. Before storing, read the two lists together and delete either half of any
+   pair that says the same thing.
+
+3. DROP THINLY-SUPPORTED POINTS. Cut anything supported by fewer than 3 videos OR fewer
+   than 15% of the videos you used, whichever is larger. The first run stored a mistake
+   backed by 2 of 40 videos; that is one coach's opinion, not a consensus.
+
+Also: consensus points must be positive statements. If a point contains "rather than",
+"instead of", "not", or explains itself by describing what goes wrong, it is a mistake
+wearing a consensus costume — either rewrite it as a plain instruction or move it.
 
 Judge only from the transcripts. Do not add technique advice from your own knowledge, even
 if you believe it is correct — this text is presented to learners as what these coaches
