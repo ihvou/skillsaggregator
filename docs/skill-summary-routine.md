@@ -143,6 +143,17 @@ used_count was far below published_count — that page needs curation attention.
 
 ## Reading the output
 
-`used_count` well below `source_count` is the useful signal: it means the page collected
-videos that do not teach the skill. That is a curation problem worth looking at, and the
-routine surfaces it for free.
+`used_count` below `source_count` is a curation signal — the page collected videos that do
+not teach the skill — but **only compare it against the cap, not against `source_count`.**
+
+`source_count` is the whole page; the model is handed at most `p_max_videos` (40) of it.
+So on a page above 40 the ratio is squeezed under ~51% no matter how clean the curation is.
+Serve Technique stored 40 of 78 and looks like half the page is off-topic; it used
+everything it was given. Forehand Technique stored 14 of 81 — that one is real.
+
+    used_count < least(source_count, 40)   →   worth looking at
+    used_count = 40 on a bigger page       →   says nothing
+
+`source_count` stays uncapped on purpose even though it overstates what was read: it is the
+regeneration trigger (`published_count > source_count * 1.3`), and storing the capped 40
+instead would make any page over ~52 videos satisfy its own trigger forever.
