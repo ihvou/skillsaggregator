@@ -6,6 +6,7 @@ import {
 } from "@skillsaggregator/shared";
 import { JsonLd } from "@/components/JsonLd";
 import { SkillResourceBrowser } from "@/components/SkillResourceBrowser";
+import { SkillTechniqueSummary } from "@/components/SkillTechniqueSummary";
 import { getAllCatalogs, getSkillPage, isPublishedSkill } from "@/lib/data";
 import { getBaseUrl } from "@/lib/env";
 
@@ -85,7 +86,7 @@ export default async function SkillPage({
   params: Promise<{ category: string; skill: string }>;
 }) {
   const { category: categorySlug, skill: skillSlug } = await params;
-  const { category, skill, resources } = await getSkillPage(categorySlug, skillSlug);
+  const { category, skill, resources, summary } = await getSkillPage(categorySlug, skillSlug);
   if (!category || !skill) notFound();
 
   const pageUrl = makeCanonical(getBaseUrl(), category.slug, skill.slug);
@@ -109,7 +110,12 @@ export default async function SkillPage({
           ],
         }}
       />
-      <SkillResourceBrowser category={category} skill={skill} resources={resources} />
+      <SkillResourceBrowser
+        category={category}
+        skill={skill}
+        resources={resources}
+        summarySlot={summary ? <SkillTechniqueSummary summary={summary} skillName={skill.name} /> : null}
+      />
     </>
   );
 }

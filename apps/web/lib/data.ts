@@ -34,6 +34,16 @@ interface ResolvedCatalogData extends CatalogData {
 }
 
 export type ResourceSort = "newest" | "popular";
+
+/** One point of a skill summary. `support` = how many of the page's videos back it. */
+export type SkillSummaryPoint = { point: string; support: number };
+export type SkillTechniqueSummary = {
+  consensus: SkillSummaryPoint[];
+  mistakes: SkillSummaryPoint[];
+  source_count: number;
+  used_count: number;
+  generated_at: string;
+};
 export interface CatalogOptions {
   publicOnly?: boolean;
 }
@@ -171,6 +181,9 @@ export async function getSkillPage(categorySlug: string, skillSlug: string) {
             },
           }))
         : [],
+      // The offline fallback has no summaries — it exists for when Supabase is
+      // unreachable, and a stale hard-coded summary would be worse than none.
+      summary: null as SkillTechniqueSummary | null,
       relatedSkills: skill
         ? filterPublicSkills(withFallbackResourceCounts(skills), true)
             .filter((item) => item.slug !== skillSlug)
@@ -187,9 +200,9 @@ export async function getSkillPage(categorySlug: string, skillSlug: string) {
     .eq("is_active", true)
     .single();
 
-  if (!skillRow) return { category: null, skill: null, resources: [], relatedSkills: [] };
+  if (!skillRow) return { category: null, skill: null, resources: [], summary: null, relatedSkills: [] };
   const category = Array.isArray(skillRow.categories) ? skillRow.categories[0] : skillRow.categories;
-  if (!category) return { category: null, skill: null, resources: [], relatedSkills: [] };
+  if (!category) return { category: null, skill: null, resources: [], summary: null, relatedSkills: [] };
 
   const { data: resources } = await supabase
     .from("link_skill_relations")
@@ -204,6 +217,15 @@ export async function getSkillPage(categorySlug: string, skillSlug: string) {
     .order("value_score", { ascending: false, nullsFirst: false })
     .order("vote_score", { ascending: false })
     .order("created_at", { ascending: false });
+
+  // Synthesised from the transcripts of the videos on this page (see
+  // docs/skill-summary-routine.md). Absent until a page has >= 6 videos, so every
+  // consumer must treat it as optional.
+  const { data: summaryRow } = await supabase
+    .from("skill_summaries")
+    .select("consensus, mistakes, source_count, used_count, generated_at")
+    .eq("skill_id", skillRow.id)
+    .maybeSingle();
 
   const { data: siblings } = await supabase
     .from("skills")
@@ -242,6 +264,15 @@ export async function getSkillPage(categorySlug: string, skillSlug: string) {
       updated_at: skillRow.updated_at,
     } satisfies SkillSummary,
     resources: shapedResources,
+    summary: (summaryRow
+      ? {
+          consensus: Array.isArray(summaryRow.consensus) ? summaryRow.consensus : [],
+          mistakes: Array.isArray(summaryRow.mistakes) ? summaryRow.mistakes : [],
+          source_count: summaryRow.source_count ?? 0,
+          used_count: summaryRow.used_count ?? 0,
+          generated_at: summaryRow.generated_at,
+        }
+      : null) as SkillTechniqueSummary | null,
     relatedSkills: (siblings ?? []).map((skill) => ({
       ...skill,
       category_slug: category.slug,

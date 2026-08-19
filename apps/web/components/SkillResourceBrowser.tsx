@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import {
   resourcePassesFilters,
   sortResources,
@@ -20,6 +20,8 @@ interface SkillResourceBrowserProps {
   category: CategorySummary;
   skill: SkillSummary;
   resources: SkillResource[];
+  /** Rendered between the skill description and the video list. */
+  summarySlot?: ReactNode;
 }
 
 const LEVEL_LABELS = {
@@ -31,7 +33,7 @@ const LEVEL_LABELS = {
 const SORT_LABELS = { popular: "Popular", newest: "Newest" } as const;
 const SOURCE_LABELS = { all: "All sources", youtube: "YouTube", tiktok: "TikTok" } as const;
 
-export function SkillResourceBrowser({ category, skill, resources }: SkillResourceBrowserProps) {
+export function SkillResourceBrowser({ category, skill, resources, summarySlot }: SkillResourceBrowserProps) {
   const [level, setLevel] = useState<SkillLevel | null>(null);
   const [sort, setSort] = useState<ResourceSort>("popular");
   const [source, setSource] = useState<ResourceSourceFilter>("all");
@@ -72,6 +74,10 @@ export function SkillResourceBrowser({ category, skill, resources }: SkillResour
             {skill.description}
           </p>
         </section>
+      ) : null}
+
+      {summarySlot ? (
+        <section className="mx-auto mt-6 max-w-5xl px-4">{summarySlot}</section>
       ) : null}
 
       <section className="mx-auto mt-10 max-w-5xl px-4">

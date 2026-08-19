@@ -55,3 +55,9 @@ verify_jwt = false
 # clients cannot execute directly.
 [functions.coach-curation]
 verify_jwt = false
+
+# skill-summary is internal-only: the function validates x-internal-token and runs
+# its RPCs as the service role, so the gateway JWT check would only reject the
+# routine's own calls. Same posture as coach-curation.
+[functions.skill-summary]
+verify_jwt = false
