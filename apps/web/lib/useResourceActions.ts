@@ -14,13 +14,19 @@ export function signInHref() {
   return `/sign-in?next=${encodeURIComponent(nextPath())}`;
 }
 
-export function useResourceActions(relationId: string) {
+// initialUserScore is the server-rendered net vote count. The card shows it so a
+// vote produces visible feedback: before this, voting changed only an icon colour
+// and the item never moved (user weight is damped and combined_score rarely ties),
+// so the app asked for engagement and appeared to ignore it — 5 votes across 6,109
+// published items.
+export function useResourceActions(relationId: string, initialUserScore: number = 0) {
   const supabase = useMemo(() => getBrowserSupabase(), []);
   const [userId, setUserId] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
   const [isWatched, setIsWatched] = useState(false);
   const [vote, setVote] = useState<UserVoteState>(0);
+  const [userScore, setUserScore] = useState<number>(initialUserScore);
   const [prompt, setPrompt] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -146,7 +152,11 @@ export function useResourceActions(relationId: string) {
   const setUserVote = useCallback(async (nextVote: UserVoteState) => {
     if (!requireSignedIn("vote on resources")) return;
     const previousVote = vote;
+    const previousScore = userScore;
     setVote(nextVote);
+    // Optimistic: move the count immediately by the delta, then reconcile with the
+    // authoritative value the RPC returns.
+    setUserScore(previousScore - previousVote + nextVote);
     const { data, error: mutationError } = await supabase!
       .rpc("set_user_vote", {
         p_relation_id: relationId,
@@ -155,13 +165,16 @@ export function useResourceActions(relationId: string) {
       .single();
     if (mutationError) {
       setVote(previousVote);
+      setUserScore(previousScore);
       setError(mutationError.message);
       console.warn("resource_vote_write_failed", { relationId, vote: nextVote, message: mutationError.message });
       return;
     }
-    const returnedVote = (data as { vote?: number | null } | null)?.vote;
+    const row = data as { vote?: number | null; user_score?: number | null } | null;
+    const returnedVote = row?.vote;
     setVote(returnedVote === -1 ? -1 : returnedVote === 1 ? 1 : 0);
-  }, [relationId, requireSignedIn, supabase, vote]);
+    if (typeof row?.user_score === "number") setUserScore(row.user_score);
+  }, [relationId, requireSignedIn, supabase, userScore, vote]);
 
   return {
     loaded,
@@ -169,6 +182,7 @@ export function useResourceActions(relationId: string) {
     isSaved,
     isWatched,
     vote,
+    userScore,
     prompt,
     error,
     signInHref: signInHref(),

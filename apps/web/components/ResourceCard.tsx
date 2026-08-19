@@ -53,8 +53,9 @@ export function ResourceCard({ resource }: ResourceCardProps) {
     signInHref,
     toggleSaved,
     toggleWatched,
+    userScore,
     setUserVote,
-  } = useResourceActions(relationId);
+  } = useResourceActions(relationId, resource.user_score ?? 0);
 
   const thumbnail = resource.link.thumbnail_url;
   const portrait = isPortraitResource(resource);
@@ -189,6 +190,20 @@ export function ResourceCard({ resource }: ResourceCardProps) {
                   strokeWidth={2}
                 />
               </button>
+              {/* Rendered only when non-zero: a "0" beside every card reads as
+                  "nobody is here", which is worse than showing nothing. Once a
+                  resource has any signal, the number appears and moves as you vote. */}
+              {userScore !== 0 ? (
+                <span
+                  aria-live="polite"
+                  aria-label={`${userScore} net ${Math.abs(userScore) === 1 ? "vote" : "votes"}`}
+                  className={`min-w-[1.25rem] text-center text-sm font-semibold tabular-nums transition-colors ${
+                    vote === 1 ? "text-accent" : vote === -1 ? "text-ink" : "text-muted"
+                  }`}
+                >
+                  {userScore > 0 ? `+${userScore}` : userScore}
+                </span>
+              ) : null}
               <button
                 type="button"
                 onClick={onDownvote}
