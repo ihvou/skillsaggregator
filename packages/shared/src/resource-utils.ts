@@ -162,37 +162,47 @@ export function compareResourcesByValue(a: SkillResource, b: SkillResource) {
   return sortTime(b.created_at) - sortTime(a.created_at);
 }
 
-export interface ResourceQualityRating {
-  label: "Excellent" | "Strong" | "Useful" | "Mixed" | "Low";
-  percent: number;
+/**
+ * The number shown between the vote arrows: coach curation plus community votes,
+ * the same `combined_score` the list is ordered by.
+ *
+ * This replaced a percent badge ("Excellent 87%") that mapped combined_score onto
+ * the full -4..+4 range the column can theoretically hold. Published rows only
+ * span 1.30 to 4.10, because the publish gate drops anything under 1.3 — so that
+ * badge put 54% of the catalogue in one bucket, never printed below 66%, and could
+ * not reach its own "Mixed" or "Low" labels at all. It was dead code by the time
+ * this landed.
+ *
+ * Shown to ONE decimal, not as an integer. Rounded to whole numbers the entire
+ * catalogue collapses onto 1, 2, 3 and 4, with more than half reading "3"; one
+ * decimal keeps ~29 distinct values and — since a vote is worth exactly 0.5 —
+ * makes a vote visibly move the number (3.0 -> 3.5).
+ */
+export const AGGREGATE_SCORE_DECIMALS = 1;
+
+/** Mirrors bounded_user_vote_weight() in migration 0041. Keep the two in step. */
+export const USER_VOTE_WEIGHT_PER_VOTE = 0.5;
+export const USER_VOTE_WEIGHT_CAP = 1.5;
+
+export function boundedUserVoteWeight(userScore: number | null | undefined): number {
+  const raw = typeof userScore === "number" && Number.isFinite(userScore) ? userScore : 0;
+  return Math.max(-USER_VOTE_WEIGHT_CAP, Math.min(USER_VOTE_WEIGHT_CAP, raw * USER_VOTE_WEIGHT_PER_VOTE));
 }
 
-export function resourceQualityRating(
-  resource: Pick<SkillResource, "combined_score" | "curator_score" | "value_score">,
-): ResourceQualityRating | null {
-  let percent: number | null = null;
-  const combinedScore = typeof resource.combined_score === "number" && Number.isFinite(resource.combined_score)
-    ? resource.combined_score
-    : typeof resource.curator_score === "number" && Number.isFinite(resource.curator_score)
-      ? resource.curator_score
-      : null;
+/**
+ * The coach half of combined_score — relevance + value, with the damped user vote
+ * contribution removed. Invariant while the viewer votes, so the client can
+ * recompute the displayed total locally without a round trip.
+ */
+export function coachScoreComponent(
+  resource: Pick<SkillResource, "combined_score" | "user_score">,
+): number | null {
+  if (typeof resource.combined_score !== "number" || !Number.isFinite(resource.combined_score)) return null;
+  return resource.combined_score - boundedUserVoteWeight(resource.user_score);
+}
 
-  if (combinedScore !== null) {
-    percent = Math.round(clamp01((combinedScore + 4) / 8) * 100);
-  } else if (typeof resource.value_score === "number" && Number.isFinite(resource.value_score)) {
-    percent = Math.round(clamp01(resource.value_score) * 100);
-  }
-
-  if (percent === null) return null;
-
-  const label =
-    percent >= 88 ? "Excellent"
-      : percent >= 76 ? "Strong"
-        : percent >= 62 ? "Useful"
-          : percent >= 45 ? "Mixed"
-            : "Low";
-
-  return { label, percent };
+export function formatAggregateScore(score: number): string {
+  return score.toFixed(AGGREGATE_SCORE_DECIMALS);
 }
 
 export function sortResources(resources: SkillResource[], sort: ResourceSort) {

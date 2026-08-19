@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { boundedUserVoteWeight } from "@skillsaggregator/shared";
 import { getBrowserSupabase } from "./browserSupabase";
 
 export type UserVoteState = -1 | 0 | 1;
@@ -14,12 +15,25 @@ export function signInHref() {
   return `/sign-in?next=${encodeURIComponent(nextPath())}`;
 }
 
-// initialUserScore is the server-rendered net vote count. The card shows it so a
-// vote produces visible feedback: before this, voting changed only an icon colour
-// and the item never moved (user weight is damped and combined_score rarely ties),
-// so the app asked for engagement and appeared to ignore it — 5 votes across 6,109
-// published items.
-export function useResourceActions(relationId: string, initialUserScore: number = 0) {
+// The card shows the aggregate score between the vote arrows, so a vote produces
+// visible feedback: before this, voting changed only an icon colour and the item
+// never moved (user weight is damped and combined_score rarely ties), so the app
+// asked for engagement and appeared to ignore it — 5 votes across 6,109 published
+// items.
+//
+// The number shown is combined_score, NOT the net vote count. Every published
+// resource has one (7,166 of 7,166, no nulls), whereas net votes are zero almost
+// everywhere, so a vote-count display is blank on essentially every card.
+//
+// It is held as coach base + bounded vote weight rather than as a single figure so
+// the viewer's own vote can move it locally, at the same 0.5-per-vote/±1.5-cap the
+// database applies. The RPC returns the authoritative combined_score anyway; the
+// local arithmetic only covers the moment before it answers.
+export function useResourceActions(
+  relationId: string,
+  initialUserScore: number = 0,
+  initialCombinedScore: number | null = null,
+) {
   const supabase = useMemo(() => getBrowserSupabase(), []);
   const [userId, setUserId] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -27,8 +41,13 @@ export function useResourceActions(relationId: string, initialUserScore: number 
   const [isWatched, setIsWatched] = useState(false);
   const [vote, setVote] = useState<UserVoteState>(0);
   const [userScore, setUserScore] = useState<number>(initialUserScore);
+  const [baseScore, setBaseScore] = useState<number | null>(
+    initialCombinedScore === null ? null : initialCombinedScore - boundedUserVoteWeight(initialUserScore),
+  );
   const [prompt, setPrompt] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const combinedScore = baseScore === null ? null : baseScore + boundedUserVoteWeight(userScore);
 
   const refresh = useCallback(async () => {
     if (!supabase) {
@@ -170,10 +189,20 @@ export function useResourceActions(relationId: string, initialUserScore: number 
       console.warn("resource_vote_write_failed", { relationId, vote: nextVote, message: mutationError.message });
       return;
     }
-    const row = data as { vote?: number | null; user_score?: number | null } | null;
+    const row = data as {
+      vote?: number | null;
+      user_score?: number | null;
+      combined_score?: number | null;
+    } | null;
     const returnedVote = row?.vote;
     setVote(returnedVote === -1 ? -1 : returnedVote === 1 ? 1 : 0);
     if (typeof row?.user_score === "number") setUserScore(row.user_score);
+    // Re-derive the coach half from the authoritative pair rather than storing the
+    // total, so a coach re-score that landed since page render is picked up here
+    // instead of being overwritten by stale local arithmetic.
+    if (typeof row?.combined_score === "number" && typeof row?.user_score === "number") {
+      setBaseScore(row.combined_score - boundedUserVoteWeight(row.user_score));
+    }
   }, [relationId, requireSignedIn, supabase, userScore, vote]);
 
   return {
@@ -183,6 +212,7 @@ export function useResourceActions(relationId: string, initialUserScore: number 
     isWatched,
     vote,
     userScore,
+    combinedScore,
     prompt,
     error,
     signInHref: signInHref(),
