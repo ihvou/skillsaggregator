@@ -6,8 +6,16 @@ agree on, plus what they say people get wrong.
 
 Set it up the same way as the others (see [cloud-routines.md](cloud-routines.md)):
 repository `ihvou/skillsaggregator`, network access **Custom** allowing
-`vqxsaabskkkjdljxiyqi.supabase.co`, environment variable `INTERNAL_TOKEN`, schedule
-**hourly**.
+`vqxsaabskkkjdljxiyqi.supabase.co`, environment variables `INTERNAL_TOKEN` and
+`CLAUDE_CODE_EFFORT_LEVEL=max`, schedule **hourly**.
+
+This is the routine that most needs the effort setting — see
+[Effort](cloud-routines.md#effort). Selecting a strong model in the routine form does
+not raise effort; the form has no effort control, so a run defaults to `high` while an
+interactive session can be at `max`. Every fault in the first live run was a self-review
+failure, which is exactly what the difference costs. The prompt also carries the
+`ultrathink` keyword in step 2 as belt-and-braces: it asks for deeper reasoning on that
+turn regardless of the session's effort level.
 
 ## Why it looks the way it does
 
@@ -61,7 +69,7 @@ title and transcript.
 If "skill" is null, nothing needs generating. Log "nothing to summarise" and stop; once
 the backlog is cleared this is the normal state.
 
-=== STEP 2 — read EVERY transcript, then judge ===
+=== STEP 2 — read EVERY transcript, then judge (ultrathink) ===
 First decide which videos actually teach {skill_name}. Pages are collected automatically
 and usually contain a few near misses — a general class that only touches the skill, or a
 video about a neighbouring technique. Ignore those completely. Count how many you actually

@@ -39,9 +39,11 @@ new one) from there.
      (tick "also include default list…" to keep package registries). Default **Trusted** blocks this
      host, so without this the curls fail with `403 host_not_allowed`. (**Full** also works.)
    - **Environment variables** (`.env` format, one per line, **no quotes**):
-     `INTERNAL_TOKEN=<the coach-curation internal token>` — the same literal in
-     `~/.claude/scheduled-tasks/combined-coach/SKILL.md`. ⚠️ Plaintext, visible to anyone who can edit
-     the environment — fine for a personal account.
+     - `INTERNAL_TOKEN=<the coach-curation internal token>` — the same literal in
+       `~/.claude/scheduled-tasks/combined-coach/SKILL.md`. ⚠️ Plaintext, visible to anyone who can
+       edit the environment — fine for a personal account.
+     - `CLAUDE_CODE_EFFORT_LEVEL=max` — see [Effort](#effort) below. The routine form has a model
+       selector but **no effort selector**, so a run would otherwise take the model default (`high`).
    - **Save changes.**
 6. **Select a trigger → Schedule → Hourly.**
 7. *(Optional)* **Connectors** tab → remove any the routine doesn't need (it only uses `curl`).
@@ -51,6 +53,40 @@ new one) from there.
 9. **Repeat for Routine B** (`difficulty-backfill`) — same repo, same environment, hourly.
 10. Leave the **local** scheduled tasks paused (they already are). Don't re-enable them — both would
     pull the same queue and double-process.
+
+---
+
+## Effort
+
+The routine form has a **model** selector and no **effort** selector, so a run takes the model
+default — `high` on every model that supports effort. An interactive session set to `max` is
+therefore reasoning harder than the routine on the identical model and prompt, which is enough to
+explain why the same model produces flabbier output unattended. It showed up first in the summary
+routine: both of its first two skills came in at the 4-consensus + 3-mistakes ceiling, one of them
+storing a point backed by 2 of 40 videos. Those are self-review failures (rank the candidates, drop
+the weak ones, notice the duplicate) rather than knowledge failures, and self-review is what effort
+buys.
+
+Set it per environment, not per routine:
+
+```
+CLAUDE_CODE_EFFORT_LEVEL=max
+```
+
+Three things make this the right lever rather than the `effortLevel` settings key:
+
+- The env var takes **precedence over every other method** (settings, `--effort`, `/effort`).
+- `max` is **session-only** everywhere else. `effortLevel` in a settings file accepts only
+  `low`/`medium`/`high`/`xhigh` — this variable is the one path that makes `max` stick.
+- Repo `.claude/settings.json` is only documented to carry **hooks** into a cloud session, so
+  committing an effort key there is not a reliable substitute.
+
+**Verify it applied** rather than assuming: open a run's session and read the header next to the
+model name — it states the active effort ("with max effort"). Env vars set here are shared by every
+routine on the environment, so this raises effort for the coach routines too, which is intended.
+
+Costs more per run, and `max` on a 234k-character summary payload is the expensive end of that. If
+usage becomes the binding constraint, drop to `xhigh` before dropping the transcript cap.
 
 ---
 
