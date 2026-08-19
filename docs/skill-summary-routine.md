@@ -106,8 +106,18 @@ three, so check your output against them before storing.
 2. A MISTAKE MAY NOT RESTATE A CONSENSUS POINT. The first run wrote consensus "aim for the
    corners rather than blasting for power" AND mistake "trying to smash the ball as hard as
    possible" — one idea billed twice, which is also how a padded fourth point gets
-   manufactured. Before storing, read the two lists together and delete either half of any
-   pair that says the same thing.
+   manufactured. Before storing, read the two lists together and find any pair that says the
+   same thing.
+
+   WHEN YOU FIND ONE, KEEP THE MISTAKE AND DELETE THE CONSENSUS POINT. Not the other way
+   round. The mistakes half is the more valuable one — a learner can find "do X" in any
+   single video, but only reading twenty of them tells you what people actually get wrong.
+   A run that obeyed this rule backwards stored consensus "slip by the width of a glove,
+   which keeps you balanced" and NO mistakes at all on a 65-video slipping page, silently
+   deleting "over-slipping and losing your balance". Same idea, weaker half kept.
+
+   Deleting the consensus point may leave you with 2 consensus and 1 mistake. That is a
+   correct outcome, not a shortfall to make up — do not replace it with a new point.
 
 3. DROP THINLY-SUPPORTED POINTS. Cut anything supported by fewer than 3 videos OR fewer
    than 15% of the videos you used, whichever is larger. The first run stored a mistake
