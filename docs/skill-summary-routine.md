@@ -36,11 +36,19 @@ code was written:
 
 ## Throughput
 
-248 skills are eligible. One skill per `queue` call is deliberate — consensus needs the
-whole page, and a 40-video skill is ~200 kB. Do **two** skills per run (queue → generate →
-store, then repeat once); that is roughly 110k tokens of input and clears the backlog in
-about five days. After that the routine no-ops until a page grows by more than 30%, which
-is the regeneration trigger.
+252 of the 492 active skills are eligible (>= 6 transcripts); 26 done, 226 to go as of
+2026-08-20. The eligible count keeps rising as the seven staged categories fill, so treat
+it as a moving target rather than a finish line.
+
+One skill per `queue` call is deliberate — consensus needs the whole page, and a 40-video
+skill is ~200 kB. Do **two** skills per run (queue → generate → store, then repeat once);
+that is roughly 110k tokens of input and clears the current backlog in about five days.
+After that the routine no-ops until a page grows by more than 30%, which is the
+regeneration trigger.
+
+Never-summarised skills come biggest-page-first, so the routine works down from ~80
+videos toward the 6-video floor. Early output is therefore the hardest case for the
+anti-padding rules, not the easiest.
 
 ---
 
@@ -95,9 +103,9 @@ MISTAKES — 0 to 3 points.
 For EVERY point, give "support" — how many of the videos you used actually make that
 point. Be honest; do not inflate.
 
-=== THREE RULES THE FIRST LIVE RUN BROKE ===
-These are not style preferences. The first two skills this routine generated broke all
-three, so check your output against them before storing.
+=== FOUR RULES LIVE RUNS HAVE BROKEN ===
+These are not style preferences. Every one of them describes something a real run did.
+Check your output against all four before storing.
 
 1. 4 AND 3 ARE CEILINGS, NOT TARGETS. The first run produced 4 consensus + 3 mistakes for
    BOTH skills. That is the padding failure. Most skills should come in under the maximum.
@@ -123,9 +131,32 @@ three, so check your output against them before storing.
    than 15% of the videos you used, whichever is larger. The first run stored a mistake
    backed by 2 of 40 videos; that is one coach's opinion, not a consensus.
 
-Also: consensus points must be positive statements. If a point contains "rather than",
-"instead of", "not", or explains itself by describing what goes wrong, it is a mistake
-wearing a consensus costume — either rewrite it as a plain instruction or move it.
+4. DO NOT LAUNDER A MISTAKE INTO ADVICE. Consensus points must read as positive
+   statements, but the way to achieve that is to MOVE the point to the mistakes list —
+   never to reword it as an instruction and keep it in consensus. An earlier version of
+   this prompt offered "rewrite it as a plain instruction" as an option and the mistakes
+   half emptied out: 11 of 26 summaries stored ZERO mistakes. What they stored instead:
+
+     Shadow Boxing  consensus[13] "Work your defense and counters just as hard as your
+                    offense" — 13 coaches did not independently recommend that; they
+                    said the mistake is only ever throwing punches.
+     Hip-Openers    consensus[20] "...back off the moment it turns sharp" — that is
+                    "don't force depth into pain", reworded.
+     Kick Serve     consensus[19] "Toss above your head or slightly to your left" — that
+                    note exists because tossing too far right is THE kick-serve error.
+
+   Before you store, take each consensus point and ask: are the coaches teaching this, or
+   are they warning against its opposite? If they reached for it while correcting someone,
+   it is a mistake — move it, in the coaches' own framing of the error.
+
+   This matters because "do X" is in every single video on the page. What people get wrong
+   is the only part that needs twenty transcripts to find, and it is the reason this block
+   exists at all. A summary with four instructions and no mistakes has thrown away the half
+   the reader cannot get anywhere else.
+
+   Zero mistakes is a legitimate outcome ONLY if the coaches genuinely never correct
+   anyone. On a page of twenty-plus tutorials that should be rare, so treat an empty
+   mistakes list as a signal to re-read before storing, not as a clean result.
 
 Judge only from the transcripts. Do not add technique advice from your own knowledge, even
 if you believe it is correct — this text is presented to learners as what these coaches
