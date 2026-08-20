@@ -4,9 +4,9 @@ import { JsonLd } from "@/components/JsonLd";
 import { getDiscoverSections } from "@/lib/data";
 import { getBaseUrl } from "@/lib/env";
 
-// Daily content cadence — revalidate every 24h; on-demand revalidation
-// refreshes sooner when the nightly adds content (see tasks.md MI23).
-export const revalidate = 86400;
+// One hour. The previous 24h assumed on-demand revalidation would cover the gap,
+// but nothing calls /api/revalidate — see the note in [category]/[skill]/page.tsx.
+export const revalidate = 3600;
 
 const homeDescription =
   "Free sport and training tutorials organized by sub-skill, level, and source.";

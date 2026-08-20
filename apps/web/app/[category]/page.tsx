@@ -12,9 +12,10 @@ import { getBaseUrl } from "@/lib/env";
 
 // Content publishes once daily (nightly collection), so revalidate every 24h
 // instead of hourly — the base pages serve from edge cache the rest of the
-// time (near-zero compute). On-demand revalidation refreshes sooner when the
-// nightly actually adds content (see tasks.md MI23).
-export const revalidate = 86400;
+// time (near-zero compute). One hour, not 24h: the old value assumed on-demand
+// revalidation would cover the gap, but nothing calls /api/revalidate — see the
+// note in [category]/[skill]/page.tsx.
+export const revalidate = 3600;
 
 export async function generateStaticParams() {
   const catalogs = await getAllCatalogs({ publicOnly: true });

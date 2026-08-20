@@ -10,8 +10,14 @@ import { SkillTechniqueSummary } from "@/components/SkillTechniqueSummary";
 import { getAllCatalogs, getSkillPage, isPublishedSkill } from "@/lib/data";
 import { getBaseUrl } from "@/lib/env";
 
-// Daily content cadence — revalidate every 24h (see tasks.md MI23).
-export const revalidate = 86400;
+// One hour, not the 24h this used to be. The old value was chosen on the premise
+// that /api/revalidate would refresh a page as soon as its content changed — but
+// nothing has ever called that endpoint (not the collector, not any edge function),
+// so 24h was the ONLY refresh path. Technique summaries generate roughly two an
+// hour and were invisible for most of a day: on 2026-08-20, summaries written at
+// 22:59 and 04:07 were absent from their pages while ones written at 20:12 and
+// earlier rendered. Cloudflare adds up to 4h on top of whatever this value is.
+export const revalidate = 3600;
 
 export async function generateStaticParams() {
   const catalogs = await getAllCatalogs({ publicOnly: true });
