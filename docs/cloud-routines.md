@@ -158,10 +158,20 @@ isn't landing and the prompt needs another pass. Pause the routine once it repor
 
 - **Throughput:** coach inflow is ~317–525/day; at 30 rows/run hourly = 720/day, which keeps up and
   drains the ~641 coach backlog over a couple of days.
-- **difficulty-recheck is NOT drained** (checked 2026-08-20), despite what this note used to claim:
-  47 published rows carry no `skill_level` at all and 841 more were tagged under the old rubric and
-  never re-reviewed (`skill_level_reviewed_at is null`) — 888 rows of real work. Keep it running and
-  re-check before pausing, rather than assuming it finished.
+- **difficulty-recheck IS drained** (verified 2026-08-20 by calling `difficulty_queue`, which returned
+  `{"ok":true,"items":[]}`). Safe to pause. Do not re-open it on raw column counts: 841 published rows
+  have `skill_level_reviewed_at is null`, which looks like a backlog and is not one. `beginner` (578)
+  and `advanced` (263) are deliberately out of scope — `get_untagged_for_difficulty` re-judges only
+  `intermediate`, because over-applying that one level is the specific failure of the old rubric.
+  A further 69 rows are eligible on every other condition but have **no transcript**, and the queue
+  inner-joins `link_transcripts` because the difficulty judgement is made from the transcript. They
+  become queueable if and when the nightly fetches captions for them; nothing else will clear them.
+  **Check the endpoint, not the columns.**
+- **Latent: `get_untagged_for_difficulty` still filters `c.is_active = true`** — the same filter that
+  broke `set_curator_vote` and was removed from it in `0050`. It hides nothing today (0 rows), because
+  no staged-category row has reached `curator_reviews >= 2` or been published yet. It will start hiding
+  work as BJJ, Climbing and Golf fill, and the symptom will be silent: the queue simply returns fewer
+  rows. Fix it the same way `0050` did before switching those categories on.
 - **Daily run cap:** two routines × hourly = 48 runs/day. If you hit the account run cap, drop
   difficulty-backfill to every few hours (or run it manually until drained) and keep coach hourly.
 - **Edge-function drift (separate cleanup):** the hosted `coach-curation` function supports

@@ -7,7 +7,7 @@ run, so this directory is the live source of truth, not documentation about it.
 | File | Routine | Notes |
 | --- | --- | --- |
 | `combined-coach.txt` | `combined-coach` | relevance + value + difficulty, hourly |
-| `difficulty-recheck.txt` | `difficulty-recheck` | difficulty only; 888 rows outstanding as of 2026-08-20 |
+| `difficulty-recheck.txt` | `difficulty-recheck` | difficulty only; **drained** as of 2026-08-20, safe to pause |
 | `skill-summary.txt` | skill summaries | one page's transcripts → consensus + mistakes, hourly |
 
 Wiring, the pointer text to paste, and the trade-off are in
