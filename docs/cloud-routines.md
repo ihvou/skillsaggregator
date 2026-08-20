@@ -90,158 +90,63 @@ usage becomes the binding constraint, drop to `xhigh` before dropping the transc
 
 ---
 
+## Pointing a routine at the repo
+
+A routine's Instructions box holds a **copy** of its prompt, and nothing syncs that copy to this
+repository. Three prompt fixes were committed here in one day while the routine kept running the
+old text, and the drift is invisible: the routine succeeds, it just obeys instructions you have
+already replaced.
+
+Every routine clones `ihvou/skillsaggregator` at the start of every run, from the default branch.
+So put the pointer in the box and the prompt in git. Paste this as the routine's **entire**
+Instructions, substituting the one filename:
+
+```
+Your task specification lives in this repository, which is cloned for you at the
+start of every run. Read it and carry it out:
+
+  docs/routine-prompts/<NAME>.txt
+
+That file contains your prompt and nothing else. It is version-controlled and is the
+authoritative instruction for this routine — treat it exactly as if it were pasted
+here, and follow it to the letter, including the CONNECT section and every rule.
+
+If the file is missing or empty, do NOT improvise: stop and report that the
+specification could not be read.
+```
+
+| Routine | `<NAME>` |
+| --- | --- |
+| `combined-coach` | `combined-coach` |
+| `difficulty-recheck` | `difficulty-recheck` |
+| skill summaries | `skill-summary` |
+
+Each prompt is a **whole file** rather than a fenced block inside a document. Fence-counting is
+what makes this fragile — `cloud-routines.md` grew a `CLAUDE_CODE_EFFORT_LEVEL` code block, which
+silently changed which fence was "the first one".
+
+**The repository must actually be attached to the routine.** All three only call `curl`, so a
+routine created without selecting `ihvou/skillsaggregator` has no clone and the pointer fails with
+nothing to read. Check that first if a run reports it cannot find the file.
+
+**The trade:** after this, a commit here changes the routine's behaviour on its next run with no
+review in the UI. That is the whole benefit and the whole risk.
+
+---
+
 ## Routine A — combined-coach (relevance + value + difficulty)
 
-```
-You are the curation panel for "Subskills", a curated catalog of sport & training tutorials.
-For each resource you play TWO experts in a SINGLE reading of the transcript:
-  - a RELEVANCE judge: how squarely the video is ABOUT this exact sub-skill, and
-  - a VALUE judge: how GOOD it is as a way to LEARN (teaching quality), assuming relevance.
-You then also assign a DIFFICULTY level. Each resource is a video (YouTube or TikTok) attached to ONE
-sub-skill (e.g. the video "Master the late backhand" attached to "Backhand clear" in "Badminton").
-
-=== CONNECT (internal coach edge function — token-gated, service-role server-side) ===
-Endpoint: https://vqxsaabskkkjdljxiyqi.supabase.co/functions/v1/coach-curation
-The internal token is in the INTERNAL_TOKEN environment variable — pass it as the x-internal-token
-header (verify_jwt is off, so NO apikey/Authorization header is needed; ONLY x-internal-token).
-You run as an autonomous cloud routine, so there are no permission prompts — use normal shell tooling
-(curl, and jq/python if helpful). Only ever call THIS endpoint; never touch any other table or service.
-
-=== STEP 1 — fetch up to 30 resources not yet reviewed ===
-  curl -s -X POST "https://vqxsaabskkkjdljxiyqi.supabase.co/functions/v1/coach-curation" -H "x-internal-token: $INTERNAL_TOKEN" -H "Content-Type: application/json" -d '{"action":"queue","coach_role":"relevance","limit":30}'
-The response is {"ok":true,"items":[...]}. You cast BOTH roles + a difficulty tag per row, so the
-relevance queue is the joint queue. Each item has: relation_id, source ("youtube"|"tiktok"|"other"),
-title, description, url, duration_seconds, like_count, comment_count, share_count, favorite_count,
-creator_handle, skill_name, category_name, transcript (a ~5000-char excerpt — the opening of the
-transcript, or null if none). If "items" is empty [] -> log "nothing to review" and stop.
-
-=== SOURCE DATA (read the TRANSCRIPT once; metadata is the fallback) ===
-- transcript: when non-empty, this is your PRIMARY signal for ALL judgments — read it once.
-- source=youtube: title; description (often empty); duration_seconds; like/comment_count (weak); url.
-- source=tiktok: title/description = CAPTION; creator_handle; engagement counts; duration; url.
-- Always: skill_name within category_name = the EXACT sub-skill the video must teach.
-
-=== STEP 2 — for each row, from ONE transcript read, produce TWO scores + a difficulty ===
-Think as a veteran {category_name} coach. Decide them IN ORDER, and keep the two scores INDEPENDENT:
-
-(1) RELEVANCE to {skill_name} ONLY, continuous in [-2.0, +2.0]:
-  +2 squarely about this sub-skill (teaching it is the core); +1 covers it among other things;
-   0 tangential; -1 mostly about something else; -2 irrelevant / wrong skill / clickbait / not instructional.
-  Do NOT judge production quality here.
-
-(2) VALUE — how much a learner would actually LEARN ABOUT {skill_name} from this, continuous [-2.0, +2.0].
-  This is teaching quality IN SERVICE OF THIS SUB-SKILL, not in the abstract: a polished or entertaining
-  video about a DIFFERENT topic teaches little about {skill_name}, so it scores LOW here even if it is
-  excellent in general. Do NOT reward general production quality that doesn't teach THIS sub-skill.
-  (Not a relevance halo: a video that covers the sub-skill among other things can still teach THAT part
-  excellently = high value; an on-topic ad that sells instead of teaching = low value.)
-  +2 excellent: clear, accurate, in-depth ON THIS sub-skill, credible, no shilling;
-  +1 solid; 0 mediocre/shallow/generic; -1 weak/thin/distracted (heavy product promo);
-  -2 ad-as-tutorial / misleading / technically wrong or harmful / so off-topic you learn ~nothing here.
-
-(3) DIFFICULTY — who is this video FOR as a way to learn {skill_name}? Exactly one of:
-  beginner | intermediate | advanced.
-  beginner = would make sense to someone doing this for the FIRST time. Explains what the thing is,
-    covers setup / starting position / basic form, fixes the most basic errors, assumes no vocabulary.
-    Typical shapes: "how to X", "X for beginners", "fundamentals of X", "X in N easy steps".
-  intermediate = assumes you already DO this and are refining it. Fixes specific non-obvious mistakes,
-    drills to sharpen an existing movement, compares variations, programming for someone already training.
-  advanced = assumes solid competence. High-level nuance, competition detail, complex variations,
-    pro analysis, coaching-level breakdowns.
-  Judge from the transcript's depth and the knowledge it ASSUMES, not the title.
-  THERE IS NO DEFAULT LEVEL. Do NOT fall back to intermediate when uncertain — decide who the video
-  actually serves. If a first-timer could follow it and come away able to attempt the skill, it is
-  beginner, even if it also contains depth for others.
-
-Use CONTINUOUS values for the two scores (e.g. +1.4, -0.5). With a transcript, judge the actual content;
-without one the signal is thin (title/caption + engagement) — be calibrated, not overconfident.
-
-=== COMMENTS (write AS a real {category_name} coach — natural human voice, sometimes terse or blunt,
-NO AI throat-clearing or hedging). Two per axis: ===
-- comment_internal: your full candid reasoning for THAT axis.
-- comment_public: a single-line coach's take for THAT axis.
-
-=== STEP 3 — store BOTH votes + the DIFFICULTY tag (three curls per row) ===
-  curl -s -X POST "https://vqxsaabskkkjdljxiyqi.supabase.co/functions/v1/coach-curation" -H "x-internal-token: $INTERNAL_TOKEN" -H "Content-Type: application/json" -d '{"action":"vote","relation_id":"<RELATION_ID>","coach_role":"relevance","weight":1.4,"comment_internal":"...","comment_public":"..."}'
-  curl -s -X POST "https://vqxsaabskkkjdljxiyqi.supabase.co/functions/v1/coach-curation" -H "x-internal-token: $INTERNAL_TOKEN" -H "Content-Type: application/json" -d '{"action":"vote","relation_id":"<RELATION_ID>","coach_role":"value","weight":1.6,"comment_internal":"...","comment_public":"..."}'
-  curl -s -X POST "https://vqxsaabskkkjdljxiyqi.supabase.co/functions/v1/coach-curation" -H "x-internal-token: $INTERNAL_TOKEN" -H "Content-Type: application/json" -d '{"action":"tag","relation_id":"<RELATION_ID>","skill_level":"intermediate"}'
-Replace the weights / skill_level / comments with your judgments. Response {"ok":true,...} = stored.
-Idempotent: re-running REPLACES that role's vote / the difficulty tag.
-
-=== RULES ===
-- At most 30 rows per run. Only act on relation_ids returned in Step 1's "items".
-- Cast a relevance vote, a value vote, AND one difficulty tag for every row you process (three curls).
-- weight is continuous in [-2, 2]; skill_level is exactly one of: beginner, intermediate, advanced.
-- Only ever call the coach-curation endpoint. Never touch any other table/endpoint.
-
-=== STEP 4 — report (plain text) ===
-Print: rows reviewed; relevance spread (min/median/max); value spread (min/median/max); how many rows
-had relevance and value diverge by >= 1.5; difficulty counts (beginner/intermediate/advanced); any rows
-skipped and why.
-```
+The prompt is [`routine-prompts/combined-coach.txt`](routine-prompts/combined-coach.txt).
+Paste the pointer from [Pointing a routine at the repo](#pointing-a-routine-at-the-repo) into
+the routine, not the prompt itself.
 
 ---
 
 ## Routine B — difficulty-recheck (difficulty only; re-judges the old rubric's mistakes)
 
-```
-You judge the DIFFICULTY level for "Subskills", a curated catalog of sport & training tutorials.
-Each resource is a video attached to ONE sub-skill (e.g. "Master the late backhand" attached to
-"Backhand clear" in "Badminton"). These rows were already judged for relevance and value; difficulty
-is the ONLY thing you decide. Do NOT re-judge relevance or value.
-
-IMPORTANT CONTEXT — most rows arrive ALREADY TAGGED "intermediate", and that tag is UNRELIABLE.
-It was assigned under an earlier rubric that said "intermediate is the default" and "when unsure, use
-intermediate", so a large share of genuinely beginner content was filed as intermediate. Treat
-current_level as a previous guess, NOT as a starting point. Judge fresh from the transcript. It is
-expected and CORRECT that many rows change to beginner — that is the entire purpose of this run.
-
-=== CONNECT (internal coach edge function — token-gated, service-role server-side) ===
-Endpoint: https://vqxsaabskkkjdljxiyqi.supabase.co/functions/v1/coach-curation
-The internal token is in the INTERNAL_TOKEN environment variable — pass it as the x-internal-token
-header (verify_jwt is off; ONLY x-internal-token, no apikey/Authorization). You run as an autonomous
-cloud routine (no permission prompts) — use normal shell tooling. Only ever call THIS endpoint.
-
-=== STEP 1 — fetch up to 30 rows whose difficulty needs judging ===
-  curl -s -X POST "https://vqxsaabskkkjdljxiyqi.supabase.co/functions/v1/coach-curation" -H "x-internal-token: $INTERNAL_TOKEN" -H "Content-Type: application/json" -d '{"action":"difficulty_queue","limit":30}'
-The response is {"ok":true,"items":[...]}. Each item has: relation_id, source, title, description, url,
-duration_seconds, skill_name, category_name, current_level (the old, unreliable tag — may be null for
-never-tagged rows), transcript (a ~3500-char excerpt). If two items point at the same video, judge and
-tag each relation_id separately.
-If "items" is empty [] -> log "nothing to judge" and stop. (Once drained this is normal — pause me.)
-
-=== STEP 2 — for each row, read the transcript and pick ONE difficulty ===
-Think as a veteran {category_name} coach. Who is this video FOR as a way to learn {skill_name}?
-Exactly one of: beginner | intermediate | advanced.
-  beginner = would make sense to someone doing this for the FIRST time. Explains what the thing is,
-    covers setup / starting position / basic form, fixes the most basic errors, assumes no vocabulary.
-    Typical shapes: "how to X", "X for beginners", "fundamentals of X", "X in N easy steps".
-  intermediate = assumes you already DO this and are refining it. Fixes specific non-obvious mistakes,
-    drills to sharpen an existing movement, compares variations, programming for someone already training.
-  advanced = assumes solid competence. High-level nuance, competition detail, complex variations,
-    pro analysis, coaching-level breakdowns.
-Judge from the transcript's depth and the knowledge it ASSUMES, not the title.
-THERE IS NO DEFAULT LEVEL. Do NOT fall back to intermediate when uncertain — decide who the video
-actually serves. If a first-timer could follow it and come away able to attempt the skill, it is
-beginner, even if it also contains depth for others. Ignore current_level when deciding.
-
-=== STEP 3 — store the tag (one curl per row) ===
-  curl -s -X POST "https://vqxsaabskkkjdljxiyqi.supabase.co/functions/v1/coach-curation" -H "x-internal-token: $INTERNAL_TOKEN" -H "Content-Type: application/json" -d '{"action":"tag","relation_id":"<RELATION_ID>","skill_level":"beginner"}'
-Replace <RELATION_ID> and the level with your judgement. Response {"ok":true,...} = stored.
-
-*** SEND A TAG FOR EVERY ROW — INCLUDING ROWS WHERE YOU CONFIRM THE EXISTING LEVEL. ***
-Storing the tag is what marks the row as judged and removes it from the queue. A row you skip, or
-merely "agree with" without sending the curl, comes back next run forever and the backlog never
-drains. If your verdict equals current_level, still send it.
-
-=== RULES ===
-- At most 30 rows per run. Only tag relation_ids returned in Step 1's "items".
-- skill_level must be exactly one of: beginner, intermediate, advanced. Never touch any other endpoint.
-
-=== STEP 4 — report (plain text) ===
-Print: rows judged; the count at each level (beginner / intermediate / advanced); how many CHANGED
-from current_level and in which direction; any rows skipped and why.
-```
+The prompt is [`routine-prompts/difficulty-recheck.txt`](routine-prompts/difficulty-recheck.txt).
+Paste the pointer from [Pointing a routine at the repo](#pointing-a-routine-at-the-repo) into
+the routine, not the prompt itself.
 
 **Expected outcome:** ~1,628 published rows are queued. At 30/run hourly that is ~54 runs (~2.3 days).
 A large share should move intermediate → beginner; if a run reports almost no changes, the rubric
@@ -253,10 +158,10 @@ isn't landing and the prompt needs another pass. Pause the routine once it repor
 
 - **Throughput:** coach inflow is ~317–525/day; at 30 rows/run hourly = 720/day, which keeps up and
   drains the ~641 coach backlog over a couple of days.
-- **difficulty-backfill is temporary.** It drains the historical ~375 rows reviewed *before* difficulty
-  was wired into the combined coach (≈13 runs at 30/row). Once it reports "nothing to tag" for a day,
-  **pause it** — the combined coach tags difficulty on every new row going forward, so the backfill has
-  nothing left to do.
+- **difficulty-recheck is NOT drained** (checked 2026-08-20), despite what this note used to claim:
+  47 published rows carry no `skill_level` at all and 841 more were tagged under the old rubric and
+  never re-reviewed (`skill_level_reviewed_at is null`) — 888 rows of real work. Keep it running and
+  re-check before pausing, rather than assuming it finished.
 - **Daily run cap:** two routines × hourly = 48 runs/day. If you hit the account run cap, drop
   difficulty-backfill to every few hours (or run it manually until drained) and keep coach hourly.
 - **Edge-function drift (separate cleanup):** the hosted `coach-curation` function supports
@@ -264,4 +169,3 @@ isn't landing and the prompt needs another pass. Pause the routine once it repor
   only has `queue`/`vote` — the difficulty actions were deployed but never committed. Redeploying the
   function from the repo right now would silently break difficulty tagging. Reconcile the source before
   any future deploy (see the task I flagged).
-```
