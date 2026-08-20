@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { useState } from "react";
 import {
   Bookmark,
   BookmarkCheck,
@@ -57,7 +58,17 @@ export function ResourceCard({ resource }: ResourceCardProps) {
     setUserVote,
   } = useResourceActions(relationId, resource.user_score ?? 0, resource.combined_score ?? null);
 
-  const thumbnail = resource.link.thumbnail_url;
+  // TikTok serves thumbnails from a SIGNED CDN URL carrying an `x-expires` stamp,
+  // good for roughly 3-7 days; after that the host returns 403 and the card renders
+  // a broken image. 117 of 120 stored TikTok thumbnails had expired when this was
+  // added. YouTube is immune because the collector CONSTRUCTS a stable
+  // i.ytimg.com/vi/<id>/hqdefault.jpg rather than storing a scraped URL.
+  //
+  // The real fix is mirroring into the link-thumbnails bucket at collection time.
+  // This is the seatbelt: any image that fails to load falls back to the empty
+  // state, which is a plain bgGroup rectangle and reads as deliberate.
+  const [thumbnailFailed, setThumbnailFailed] = useState(false);
+  const thumbnail = thumbnailFailed ? null : resource.link.thumbnail_url;
   const portrait = isPortraitResource(resource);
   const url = resource.link.url;
   const contributor = resource.link.contributor_profile;
@@ -100,6 +111,9 @@ export function ResourceCard({ resource }: ResourceCardProps) {
               fill
               sizes="(max-width: 639px) 100vw, 240px"
               className={portrait ? "object-contain" : "object-cover"}
+              // Only the foreground image reports failure; the blurred backdrop above
+              // uses the same src, so one handler covers both.
+              onError={() => setThumbnailFailed(true)}
             />
           </>
         ) : null}
