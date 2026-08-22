@@ -21,6 +21,12 @@ export default function robots(): MetadataRoute.Robots {
       allow: "/",
       disallow: ["/*?*skills=", "/*?*level=", "/*?*sort=", "/suggest?"],
     }],
-    sitemap: `${getBaseUrl()}/sitemap.xml`,
+    // Both formats, same URL set. The plain-text one is listed because Search
+    // Console has reported "Sitemap could not be read" for the XML since
+    // 2026-08-15 despite it validating everywhere we can measure; robots.txt is
+    // a discovery path independent of the Search Console submission, and a
+    // crawler that chokes on one file can still take the other. See the header
+    // comment in app/sitemap.txt/route.ts.
+    sitemap: [`${getBaseUrl()}/sitemap.xml`, `${getBaseUrl()}/sitemap.txt`],
   };
 }
