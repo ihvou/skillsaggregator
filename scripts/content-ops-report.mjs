@@ -76,6 +76,10 @@ const config = {
   // How many recent dates the transposed markdown keeps. The CSV always holds
   // the full history.
   mdDays: Number(arg("md-days", 14)),
+  // Must track the defaults skill-summary/index.ts passes to get_skill_for_summary,
+  // or the Summary column stops predicting what the routine will do.
+  summaryMinVideos: Number(arg("summary-min-videos", 6)),
+  summaryGrowth: Number(arg("summary-growth", 1.3)),
   days: Number(arg("days", 0)),
 };
 
@@ -165,7 +169,43 @@ const skillsSql = `
   select c.slug || '/' || s.slug, c.name, s.name
   from public.skills s
   join public.categories c on c.id = s.category_id
-  where s.is_active and c.is_active
+  where s.is_active -- c.is_active NOT filtered: staged categories are collecting and must stay visible in ops reporting
+  order by 1`;
+
+// Per-skill technique-summary state, mirroring get_skill_for_summary (migration
+// 0042) so the column predicts what the summary routine will actually do:
+//   * eligibility counts only published videos that HAVE a transcript, not all
+//     published videos — the summary is synthesised from transcripts.
+//   * an existing summary goes stale once the page grows past growth_factor.
+//   * that RPC still filters c.is_active, so skills in staged categories are
+//     silently unreachable by the routine even when they qualify on every other
+//     count. They are reported as `staged` rather than `queued` because nothing
+//     will pick them up while the category is staged. The coach-vote and
+//     difficulty queues were unblocked for staged categories (0050 / 0051); this
+//     queue was not.
+const summarySql = `
+  select c.slug || '/' || s.slug,
+         case
+           when ss.skill_id is not null
+                and cnt.n > greatest(ss.source_count, 1) * $1 then 'stale'
+           when ss.skill_id is not null then 'done'
+           when not c.is_active then 'staged'
+           when cnt.n >= $2 then 'queued'
+           else 'few'
+         end,
+         cnt.n::text,
+         coalesce(ss.source_count, 0)::text
+  from public.skills s
+  join public.categories c on c.id = s.category_id
+  join lateral (
+    select count(*)::integer as n
+    from public.link_skill_relations lsr
+    join public.links l on l.id = lsr.link_id
+    join public.link_transcripts lt on lt.link_id = l.id
+    where lsr.skill_id = s.id and lsr.is_active and lsr.published and l.is_active
+  ) cnt on true
+  left join public.skill_summaries ss on ss.skill_id = s.id
+  where s.is_active
   order by 1`;
 
 // Each metric has to be dated by its own event. Bucketing published relations by
@@ -181,7 +221,7 @@ const perSkillSql = (metric) => {
   from public.link_skill_relations lsr
   join public.skills s on s.id = lsr.skill_id
   join public.categories c on c.id = s.category_id
-  where s.is_active and c.is_active and ${filter}
+  where s.is_active and ${filter} -- c.is_active NOT filtered: staged categories are collecting and must stay visible in ops reporting
   group by 1, 2 order by 1, 2`;
 };
 
@@ -380,7 +420,7 @@ function renderReport2Csv({ dates, skillKeys, cumulative }) {
   return `${lines.join("\n")}\n`;
 }
 
-function renderReport2Md({ dates, skills, cumulative, generatedAt }) {
+function renderReport2Md({ dates, skills, cumulative, summaries, generatedAt }) {
   const window = config.mdDays > 0 ? dates.slice(-config.mdDays) : dates;
   const latest = dates.at(-1);
   const first = window[0];
@@ -407,14 +447,36 @@ function renderReport2Md({ dates, skills, cumulative, generatedAt }) {
     cells: window.map((_, index) => rows.reduce((sum, row) => sum + row.cells[index], 0)),
   };
 
-  const headers = ["Category / sub-skill", "Total", `+${config.mdDays}d`, ...window.map((d) => d.slice(5))];
-  const aligns = ["l", "r", "r", ...window.map(() => "r")];
+  const SUMMARY_LABEL = { done: "done", stale: "stale", queued: "queued", staged: "staged", few: "–" };
+  const summaryOf = (key) => SUMMARY_LABEL[summaries[key]?.status] ?? "–";
+  const tally = (status) => rows.filter((row) => summaries[row.skill.key]?.status === status).length;
+  const counts = {
+    done: tally("done"), stale: tally("stale"), queued: tally("queued"), staged: tally("staged"),
+  };
+  // The actionable half of `staged`: these clear the video bar already, so staging
+  // is the only thing keeping them un-summarised.
+  counts.stagedEligible = rows.filter((row) => {
+    const entry = summaries[row.skill.key];
+    return entry?.status === "staged" && entry.videos >= config.summaryMinVideos;
+  }).length;
+
+  const headers = [
+    "Category / sub-skill", "Total", `+${config.mdDays}d`, "Summary", ...window.map((d) => d.slice(5)),
+  ];
+  const aligns = ["l", "r", "r", "l", ...window.map(() => "r")];
   const body = [
-    [`**All ${skills.length} sub-skills**`, totals.now, totals.delta ? `+${totals.delta}` : "0", ...totals.cells],
+    [
+      `**All ${skills.length} sub-skills**`,
+      totals.now,
+      totals.delta ? `+${totals.delta}` : "0",
+      `${counts.done} done`,
+      ...totals.cells,
+    ],
     ...rows.map((row) => [
       row.skill.key,
       row.now,
       row.delta ? `+${row.delta}` : "0",
+      summaryOf(row.skill.key),
       ...row.cells,
     ]),
   ];
@@ -436,6 +498,25 @@ function renderReport2Md({ dates, skills, cumulative, generatedAt }) {
     "",
     mdTable(headers, body, aligns),
     "",
+    "## Summary column",
+    "",
+    `State of each sub-skill's technique summary, predicting what the summary routine will do next.`,
+    `Eligibility counts only published videos that **have a transcript**, since the summary is`,
+    `synthesised from them — so it is usually lower than Total.`,
+    "",
+    `- **done** (${counts.done}) — summary generated and still current.`,
+    `- **stale** (${counts.stale}) — page has grown past ${config.summaryGrowth}× the video count it was built`,
+    "  from, so the routine will regenerate it.",
+    `- **queued** (${counts.queued}) — eligible (≥ ${config.summaryMinVideos} videos with transcripts) but never generated.`,
+    `- **staged** (${counts.staged}, of which **${counts.stagedEligible} already clear the ${config.summaryMinVideos}-video bar**) — blocked.`,
+    "  `get_skill_for_summary` still filters `c.is_active`, so skills in staged categories are",
+    "  unreachable by the routine no matter how many videos they have. The coach-vote and difficulty",
+    "  queues were unblocked for staged categories (migrations `0050`, `0051`); this queue was not.",
+    `- **–** — fewer than ${config.summaryMinVideos} videos with transcripts, so there is no consensus to find yet.`,
+    "",
+    "The status is current state only and is not in `skill-coverage.csv`, which stays a purely",
+    "numeric time series so it can be pivoted without type-mixing.",
+    "",
     `## Sub-skills with no ${config.metric} content (${empty.length})`,
     "",
     empty.length ? empty.map((row) => `- ${row.skill.key}`).join("\n") : "None.",
@@ -447,7 +528,7 @@ function renderReport2Md({ dates, skills, cumulative, generatedAt }) {
 
 async function main() {
   const tz = config.reportTz;
-  const [collectedRows, ingestedRows, scoredRows, publishedRows, skillRows, perSkillRows, logStats] =
+  const [collectedRows, ingestedRows, scoredRows, publishedRows, skillRows, perSkillRows, summaryRows, logStats] =
     await Promise.all([
       dbRows(collectedSql, [tz]),
       dbRows(ingestedSql, [tz]),
@@ -455,6 +536,7 @@ async function main() {
       dbRows(publishedSql, [tz]),
       dbRows(skillsSql),
       dbRows(perSkillSql(config.metric), [tz]),
+      dbRows(summarySql, [config.summaryGrowth, config.summaryMinVideos]),
       loadNoTranscriptCounts(),
     ]);
 
@@ -469,6 +551,10 @@ async function main() {
 
   const skills = skillRows.map(([key, categoryName, skillName]) => ({ key, categoryName, skillName }));
   const skillKeys = skills.map((skill) => skill.key);
+  const summaries = Object.fromEntries(summaryRows.map(([key, status, videos, sourceCount]) => [
+    key,
+    { status, videos: num(videos), source_count: num(sourceCount) },
+  ]));
 
   // Every date any stage saw activity, then filled in so the series has no holes.
   const seen = new Set([
@@ -514,7 +600,7 @@ async function main() {
     noTranscript: logStats.counts, logInfo: logStats, generatedAt,
   });
   const csv = renderReport2Csv({ dates, skillKeys, cumulative });
-  const report2 = renderReport2Md({ dates, skills, cumulative, generatedAt });
+  const report2 = renderReport2Md({ dates, skills, cumulative, summaries, generatedAt });
 
   const paths = {
     ops: join(config.reportsDir, "content-ops.md"),

@@ -264,9 +264,16 @@ npm run report:content-ops
   and trimmed to a recent window so it stays readable; its `All sub-skills` row reconciles exactly
   with the Published total in `content-ops.md`.
 
+`skill-coverage.md` also carries a **Summary** column — the state of each sub-skill's technique
+summary (`done` / `stale` / `queued` / `staged` / `–`), mirroring `get_skill_for_summary` so it
+predicts what the summary routine will do next. It is current state rather than a time series, so
+it stays out of the CSV.
+
 Flags: `--metric active` counts the whole collected catalog dated by `created_at` instead of only
 what the publish gate has made visible, `--days N` limits the report-1 window, `--md-days N` sets
-the transposed markdown width. `COLLECT_SKIP_REPORT=1` skips the nightly post-step.
+the transposed markdown width, `--summary-min-videos N` / `--summary-growth N` must track the
+defaults `skill-summary/index.ts` passes to the queue RPC. `COLLECT_SKIP_REPORT=1` skips the
+nightly post-step.
 
 The channel-vs-open-search split reads `evidence_json.discovery_source`, which the collector only
 began persisting on 2026-08-13. Earlier nights show `-` there — the split was never recorded and is
