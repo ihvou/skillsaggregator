@@ -460,26 +460,64 @@ function renderReport2Md({ dates, skills, cumulative, summaries, generatedAt }) 
     return entry?.status === "staged" && entry.videos >= config.summaryMinVideos;
   }).length;
 
-  const headers = [
-    "Category / sub-skill", "Total", `+${config.mdDays}d`, "Summary", ...window.map((d) => d.slice(5)),
-  ];
-  const aligns = ["l", "r", "r", "l", ...window.map(() => "r")];
-  const body = [
+  // One table per category rather than a single 490-row one. Renderers degrade
+  // badly past a few hundred rows in one table — the viewer gives up formatting
+  // and falls back to plain text — and per-category tables are easier to scan
+  // anyway. The CSV keeps the flat shape for machine use.
+  const byCategory = new Map();
+  for (const row of rows) {
+    const category = row.skill.key.split("/")[0];
+    if (!byCategory.has(category)) byCategory.set(category, []);
+    byCategory.get(category).push(row);
+  }
+
+  const dateHeaders = window.map((d) => d.slice(5));
+  const sumCells = (group) => window.map((_, index) => group.reduce((sum, row) => sum + row.cells[index], 0));
+  const delta = (value) => (value ? `+${value}` : "0");
+  const stateCount = (group) => {
+    const done = group.filter((row) => summaries[row.skill.key]?.status === "done").length;
+    return `${done}/${group.length}`;
+  };
+
+  const overviewHeaders = ["Category", "Sub-skills", "Total", `+${config.mdDays}d`, "Summarised", ...dateHeaders];
+  const overviewAligns = ["l", "r", "r", "r", "r", ...window.map(() => "r")];
+  const overviewBody = [
     [
-      `**All ${skills.length} sub-skills**`,
+      `**All ${byCategory.size} categories**`,
+      skills.length,
       totals.now,
-      totals.delta ? `+${totals.delta}` : "0",
-      `${counts.done} done`,
+      delta(totals.delta),
+      `${counts.done}/${skills.length}`,
       ...totals.cells,
     ],
-    ...rows.map((row) => [
-      row.skill.key,
-      row.now,
-      row.delta ? `+${row.delta}` : "0",
-      summaryOf(row.skill.key),
-      ...row.cells,
+    ...[...byCategory.entries()].map(([category, group]) => [
+      category,
+      group.length,
+      group.reduce((sum, row) => sum + row.now, 0),
+      delta(group.reduce((sum, row) => sum + row.delta, 0)),
+      stateCount(group),
+      ...sumCells(group),
     ]),
   ];
+
+  const detailHeaders = ["Sub-skill", "Total", `+${config.mdDays}d`, "Summary", ...dateHeaders];
+  const detailAligns = ["l", "r", "r", "l", ...window.map(() => "r")];
+  const categorySections = [...byCategory.entries()].flatMap(([category, group]) => [
+    `### ${category} (${group.length})`,
+    "",
+    mdTable(
+      detailHeaders,
+      group.map((row) => [
+        row.skill.key.slice(category.length + 1),
+        row.now,
+        delta(row.delta),
+        summaryOf(row.skill.key),
+        ...row.cells,
+      ]),
+      detailAligns,
+    ),
+    "",
+  ]);
 
   const empty = rows.filter((row) => row.now === 0);
 
@@ -492,11 +530,14 @@ function renderReport2Md({ dates, skills, cumulative, summaries, generatedAt }) 
     config.metric === "published"
       ? "`published_at` — when the gate made each one visible, not when it was collected."
       : "`created_at` — when each one was collected, regardless of whether it is visible.",
-    `Rows are sorted A–Z by category and sub-skill. Transposed and trimmed to the last`,
-    `${config.mdDays} days so it stays readable; the full history in the specified orientation`,
-    "(dates as rows, one column per sub-skill) is in `skill-coverage.csv`.",
+    `Sorted A–Z by category and sub-skill, transposed, and trimmed to the last ${config.mdDays} days.`,
+    "Broken into one table per category — a single table of every sub-skill is large enough that",
+    "viewers stop formatting it and fall back to plain text. The full history in the specified",
+    "orientation (dates as rows, one column per sub-skill) is in `skill-coverage.csv`.",
     "",
-    mdTable(headers, body, aligns),
+    "## Overview by category",
+    "",
+    mdTable(overviewHeaders, overviewBody, overviewAligns),
     "",
     "## Summary column",
     "",
@@ -508,15 +549,24 @@ function renderReport2Md({ dates, skills, cumulative, summaries, generatedAt }) 
     `- **stale** (${counts.stale}) — page has grown past ${config.summaryGrowth}× the video count it was built`,
     "  from, so the routine will regenerate it.",
     `- **queued** (${counts.queued}) — eligible (≥ ${config.summaryMinVideos} videos with transcripts) but never generated.`,
-    `- **staged** (${counts.staged}, of which **${counts.stagedEligible} already clear the ${config.summaryMinVideos}-video bar**) — blocked.`,
-    "  `get_skill_for_summary` still filters `c.is_active`, so skills in staged categories are",
-    "  unreachable by the routine no matter how many videos they have. The coach-vote and difficulty",
-    "  queues were unblocked for staged categories (migrations `0050`, `0051`); this queue was not.",
+    // Only worth explaining while it is actually biting. get_skill_for_summary
+    // filters c.is_active, so this reappears the moment a category is staged again.
+    ...(counts.staged
+      ? [
+          `- **staged** (${counts.staged}, of which **${counts.stagedEligible} already clear the ${config.summaryMinVideos}-video bar**) — blocked.`,
+          "  `get_skill_for_summary` filters `c.is_active`, so skills in staged categories are",
+          "  unreachable by the routine no matter how many videos they have, unlike the coach-vote",
+          "  and difficulty queues which were unblocked for staged categories.",
+        ]
+      : []),
     `- **–** — fewer than ${config.summaryMinVideos} videos with transcripts, so there is no consensus to find yet.`,
     "",
     "The status is current state only and is not in `skill-coverage.csv`, which stays a purely",
     "numeric time series so it can be pivoted without type-mixing.",
     "",
+    "## By category",
+    "",
+    ...categorySections,
     `## Sub-skills with no ${config.metric} content (${empty.length})`,
     "",
     empty.length ? empty.map((row) => `- ${row.skill.key}`).join("\n") : "None.",
