@@ -183,6 +183,46 @@ const skillsSql = `
 //     will pick them up while the category is staged. The coach-vote and
 //     difficulty queues were unblocked for staged categories (0050 / 0051); this
 //     queue was not.
+// --- Report 3: trusted source / channel breakdown -------------------------
+//
+// Reach is joined through suggestions.evidence_json->>'channel_id' because it is
+// the ONLY link back to a channel: links.creator_handle/creator_url/creator_id are
+// all unpopulated for YouTube (0 of 15,306 rows).
+//
+// `subscribers` and `last_upload` live in discovery_evidence_json and exist only
+// for channels added by the discovery sweep, not for hand-seeded ones. The channel's
+// own video count, contact details and bio are stored NOWHERE — see the report's
+// "Not stored" note. creators.bio/bio_link exist but describe TikTok creators, which
+// are not trusted_sources rows (those are search queries).
+const channelsSql = `
+  with reach as (
+    select s.evidence_json->>'channel_id' as channel_id,
+           count(distinct s.link_id) as collected,
+           count(distinct lsr.id) filter (where lsr.published and lsr.is_active) as published,
+           string_agg(distinct c.slug, ' ') filter (where lsr.published and lsr.is_active) as categories
+    from public.suggestions s
+    left join public.link_skill_relations lsr on lsr.link_id = s.link_id
+    left join public.skills sk on sk.id = lsr.skill_id
+    left join public.categories c on c.id = sk.category_id
+    where s.evidence_json->>'channel_id' is not null
+    group by 1
+  )
+  select ts.source_type,
+         coalesce(ts.display_name, ts.identifier),
+         ts.identifier,
+         coalesce(cat.slug, '(none)'),
+         ts.is_active::text,
+         coalesce(ts.origin_type, ''),
+         coalesce(ts.discovery_evidence_json->>'subscribers', ''),
+         coalesce(ts.discovery_evidence_json->>'last_upload', ''),
+         coalesce(r.collected, 0)::text,
+         coalesce(r.published, 0)::text,
+         coalesce(r.categories, '')
+  from public.trusted_sources ts
+  left join public.categories cat on cat.id = ts.category_id
+  left join reach r on r.channel_id = ts.identifier
+  order by coalesce(cat.slug, '(none)'), lower(coalesce(ts.display_name, ts.identifier))`;
+
 const summarySql = `
   select c.slug || '/' || s.slug,
          case
@@ -408,6 +448,134 @@ function renderReport1({ dates, collected, ingested, scored, published, noTransc
   ].join("\n");
 }
 
+function channelUrl(sourceType, identifier) {
+  if (sourceType === "youtube_channel") return `https://www.youtube.com/channel/${identifier}`;
+  if (sourceType === "domain") return `https://${identifier}`;
+  return ""; // tiktok_search identifiers are query strings, not addressable pages
+}
+
+function compactCount(value) {
+  if (!Number.isFinite(value) || value <= 0) return "";
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(value < 10_000_000 ? 1 : 0)}M`;
+  if (value >= 1_000) return `${(value / 1_000).toFixed(value < 10_000 ? 1 : 0)}k`;
+  return String(value);
+}
+
+function renderChannelsCsv(channels) {
+  const headers = [
+    "source_type", "channel", "identifier", "url", "assigned_category", "is_active",
+    "origin", "subscribers", "last_upload", "links_collected", "relations_published",
+    "categories_reached",
+  ];
+  const lines = [headers.join(",")];
+  for (const ch of channels) {
+    lines.push([
+      ch.sourceType, ch.name, ch.identifier, channelUrl(ch.sourceType, ch.identifier),
+      ch.assigned, ch.isActive, ch.origin, ch.subscribers ?? "", ch.lastUpload,
+      ch.collected, ch.published, ch.categories.join(" "),
+    ].map(csvCell).join(","));
+  }
+  return `${lines.join("\n")}\n`;
+}
+
+function renderChannelsMd(channels, generatedAt) {
+  const byCategory = new Map();
+  for (const ch of channels) {
+    if (!byCategory.has(ch.assigned)) byCategory.set(ch.assigned, []);
+    byCategory.get(ch.assigned).push(ch);
+  }
+
+  const sum = (list, key) => list.reduce((acc, ch) => acc + ch[key], 0);
+  const withSubs = channels.filter((ch) => ch.subscribers !== null);
+  const dormant = channels.filter((ch) => ch.isActive === "true" && ch.published === 0);
+
+  const overview = [...byCategory.entries()].map(([category, list]) => [
+    category,
+    list.length,
+    list.filter((ch) => ch.isActive !== "true").length || "",
+    sum(list, "collected"),
+    sum(list, "published"),
+    list.filter((ch) => ch.published === 0).length || "",
+  ]);
+
+  const detail = [...byCategory.entries()].flatMap(([category, list]) => [
+    `### ${category} (${list.length})`,
+    "",
+    mdTable(
+      ["Channel", "Subs", "Collected", "Published", "Categories reached", "Last upload"],
+      list.map((ch) => {
+        const url = channelUrl(ch.sourceType, ch.identifier);
+        const name = url ? `[${ch.name}](${url})` : ch.name;
+        return [
+          ch.isActive === "true" ? name : `~~${name}~~`,
+          compactCount(ch.subscribers) || "–",
+          ch.collected || "0",
+          ch.published || "0",
+          // Where its published content actually landed, which is often wider than
+          // the single category the source row assigns it to.
+          ch.categories.length ? ch.categories.join(" ") : "–",
+          ch.lastUpload ? ch.lastUpload.slice(0, 10) : "–",
+        ];
+      }),
+      ["l", "r", "r", "r", "l", "l"],
+    ),
+    "",
+  ]);
+
+  return [
+    "# Trusted Source Breakdown",
+    "",
+    `Generated ${generatedAt} · timezone \`${config.reportTz}\` · ${channels.length} sources`,
+    "",
+    "Every row in `trusted_sources`, grouped by its assigned category. Struck-through names are",
+    "inactive sources. The flat version with full URLs and identifiers is in `channels.csv`.",
+    "",
+    "## Overview by category",
+    "",
+    mdTable(
+      ["Category", "Sources", "Inactive", "Collected", "Published", "No output"],
+      [
+        [
+          `**All ${byCategory.size}**`, channels.length,
+          channels.filter((ch) => ch.isActive !== "true").length || "",
+          sum(channels, "collected"), sum(channels, "published"), dormant.length || "",
+        ],
+        ...overview,
+      ],
+      ["l", "r", "r", "r", "r", "r"],
+    ),
+    "",
+    "## Column notes",
+    "",
+    "- **Subs** — from `discovery_evidence_json.subscribers`, recorded only for channels the",
+    `  discovery sweep added. Present for ${withSubs.length} of ${channels.length}; hand-seeded sources have none.`,
+    "- **Collected / Published** — distinct links we have taken from that channel, and how many",
+    "  link–sub-skill *relations* from them cleared the publish gate. These are *our* counts, not",
+    "  the channel's own totals. Published can exceed Collected: one video attached to three",
+    "  sub-skills is one link but three relations.",
+    "- **Categories reached** — where that channel's published content actually landed, derived",
+    "  from its links. Often wider than the single category the source row assigns it to.",
+    "- **No output** — active sources that have produced no published relation at all.",
+    "",
+    "## Not stored",
+    "",
+    "Three of the requested fields have no home in the database today:",
+    "",
+    "- **Video count** — the channel's own total is never fetched. Collected/Published above are",
+    "  what we took from it, which is a different number.",
+    "- **Contacts** — not stored anywhere.",
+    "- **Bio** — not stored for YouTube channels. `creators.bio` exists but describes TikTok",
+    "  creators, and those are not `trusted_sources` rows (the TikTok sources are search queries).",
+    "",
+    "All three are retrievable per channel with `yt-dlp` (`channel_follower_count`, video counts,",
+    "and the About-tab description), which would need a probe script plus columns to store them.",
+    "",
+    "## By category",
+    "",
+    ...detail,
+  ].join("\n");
+}
+
 function renderReport2Csv({ dates, skillKeys, cumulative }) {
   // `total` sits up front so the catalog-wide curve is readable without building
   // a formula across 249 columns. Sub-skill columns are already sorted A-Z.
@@ -578,7 +746,7 @@ function renderReport2Md({ dates, skills, cumulative, summaries, generatedAt }) 
 
 async function main() {
   const tz = config.reportTz;
-  const [collectedRows, ingestedRows, scoredRows, publishedRows, skillRows, perSkillRows, summaryRows, logStats] =
+  const [collectedRows, ingestedRows, scoredRows, publishedRows, skillRows, perSkillRows, summaryRows, channelRows, logStats] =
     await Promise.all([
       dbRows(collectedSql, [tz]),
       dbRows(ingestedSql, [tz]),
@@ -587,6 +755,7 @@ async function main() {
       dbRows(skillsSql),
       dbRows(perSkillSql(config.metric), [tz]),
       dbRows(summarySql, [config.summaryGrowth, config.summaryMinVideos]),
+      dbRows(channelsSql),
       loadNoTranscriptCounts(),
     ]);
 
@@ -605,6 +774,23 @@ async function main() {
     key,
     { status, videos: num(videos), source_count: num(sourceCount) },
   ]));
+
+  const channels = channelRows.map((
+    [sourceType, name, identifier, assigned, isActive, origin, subscribers, lastUpload, collected, published, categories],
+  ) => ({
+    sourceType,
+    name,
+    identifier,
+    assigned,
+    isActive,
+    origin,
+    // Absent for hand-seeded sources — distinguish "no data" from a real zero.
+    subscribers: subscribers === "" ? null : num(subscribers),
+    lastUpload,
+    collected: num(collected),
+    published: num(published),
+    categories: categories ? categories.split(" ").filter(Boolean).sort() : [],
+  }));
 
   // Every date any stage saw activity, then filled in so the series has no holes.
   const seen = new Set([
@@ -656,14 +842,20 @@ async function main() {
     ops: join(config.reportsDir, "content-ops.md"),
     csv: join(config.reportsDir, "skill-coverage.csv"),
     coverage: join(config.reportsDir, "skill-coverage.md"),
+    channels: join(config.reportsDir, "channels.md"),
+    channelsCsv: join(config.reportsDir, "channels.csv"),
   };
   await Promise.all([
     writeFile(paths.ops, report1),
     writeFile(paths.csv, csv),
     writeFile(paths.coverage, report2),
+    writeFile(paths.channels, renderChannelsMd(channels, generatedAt)),
+    writeFile(paths.channelsCsv, renderChannelsCsv(channels)),
   ]);
 
-  console.log(`content-ops report: ${windowed.length} dates, ${skills.length} sub-skills`);
+  console.log(
+    `content-ops report: ${windowed.length} dates, ${skills.length} sub-skills, ${channels.length} sources`,
+  );
   for (const path of Object.values(paths)) console.log(`  wrote ${path}`);
 }
 

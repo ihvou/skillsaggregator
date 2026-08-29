@@ -264,6 +264,10 @@ npm run report:content-ops
   and trimmed to a recent window so it stays readable; its `All sub-skills` row reconciles exactly
   with the Published total in `content-ops.md`.
 
+- `.collection/reports/channels.md` — every `trusted_sources` row grouped by assigned category,
+  with subscribers, how many links we collected and published from it, and which categories its
+  content actually reached. `channels.csv` is the flat version with full URLs and identifiers.
+
 `skill-coverage.md` also carries a **Summary** column — the state of each sub-skill's technique
 summary (`done` / `stale` / `queued` / `staged` / `–`), mirroring `get_skill_for_summary` so it
 predicts what the summary routine will do next. It is current state rather than a time series, so
