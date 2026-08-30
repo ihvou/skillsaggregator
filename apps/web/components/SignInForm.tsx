@@ -30,19 +30,34 @@ export function SignInForm({ nextPath = "/contributors/me" }: SignInFormProps) {
       return;
     }
     setIsSubmitting(true);
-    const { error: signInError } = await supabase.auth.signInWithOtp({
-      email,
-      options: {
-        emailRedirectTo: callbackUrl(nextPath),
-        shouldCreateUser: true,
-      },
-    });
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    const { error: signInError } = session?.user.is_anonymous
+      ? await supabase.auth.updateUser(
+          { email },
+          { emailRedirectTo: callbackUrl(nextPath) },
+        )
+      : await supabase.auth.signInWithOtp({
+          email,
+          options: {
+            emailRedirectTo: callbackUrl(nextPath),
+            shouldCreateUser: true,
+          },
+        });
     setIsSubmitting(false);
     if (signInError) {
       setError(signInError.message);
       return;
     }
-    setStatus("Check your email for a magic link.");
+    console.info("web_magic_link_flow_requested", {
+      upgrading_anonymous: Boolean(session?.user.is_anonymous),
+    });
+    setStatus(
+      session?.user.is_anonymous
+        ? "Check your email to finish saving this account."
+        : "Check your email for a magic link.",
+    );
   }
 
   async function signInWithGoogle() {
@@ -51,11 +66,31 @@ export function SignInForm({ nextPath = "/contributors/me" }: SignInFormProps) {
       setError("Supabase is not configured for this environment.");
       return;
     }
-    const { error: signInError } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: { redirectTo: callbackUrl(nextPath) },
-    });
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    const { data, error: signInError } = session?.user.is_anonymous
+      ? await supabase.auth.linkIdentity({
+          provider: "google",
+          options: {
+            redirectTo: callbackUrl(nextPath),
+            skipBrowserRedirect: true,
+          },
+        })
+      : await supabase.auth.signInWithOAuth({
+          provider: "google",
+          options: {
+            redirectTo: callbackUrl(nextPath),
+            skipBrowserRedirect: true,
+          },
+        });
     if (signInError) setError(signInError.message);
+    else {
+      console.info("web_google_auth_flow_started", {
+        upgrading_anonymous: Boolean(session?.user.is_anonymous),
+      });
+      if (data.url) window.location.assign(data.url);
+    }
   }
 
   return (

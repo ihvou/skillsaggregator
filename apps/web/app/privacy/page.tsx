@@ -8,11 +8,11 @@ export const metadata = {
 const sections = [
   {
     title: "Data We Store On Your Device",
-    body: "The mobile app stores app settings such as onboarding preferences and authentication session data on your device. Saved resources, watched state, and resource votes require sign-in and are stored in your private account state.",
+    body: "The mobile app stores app settings such as onboarding preferences and authentication session data on your device. Saving, marking watched, voting, or suggesting creates a private Supabase anonymous account automatically; adding email, Google, or Apple later keeps that same private state across devices.",
   },
   {
     title: "Account And Contribution Data",
-    body: "Subskills uses Supabase authentication to identify signed-in users and may store email addresses, auth identifiers, saved resources, watched state, votes, submitted links, public notes, display names, profile slugs, and contribution history.",
+    body: "Subskills uses Supabase authentication to identify anonymous and signed-in users. It may store auth identifiers, saved resources, watched state, votes, submitted links, and public notes. If you upgrade the account with email, Google, or Apple, it may also store email addresses, display names, profile slugs, and contribution history.",
   },
   {
     title: "Network Data",
@@ -32,7 +32,7 @@ const sections = [
   },
   {
     title: "Data Deletion",
-    body: "Signed-in users can delete their account from the mobile Account tab or from /account/delete on the web. Deletion removes the auth account, private saved/watched/vote state, and contributor profile. Public resources previously submitted by the account may remain in the catalog without the deleted profile attached, so learners do not lose reviewed resources.",
+    body: "Users can delete their account from the mobile Account tab or from /account/delete on the web after opening their anonymous or upgraded account. Deletion removes the auth account, private saved/watched/vote state, and contributor profile. Public resources previously submitted by the account may remain in the catalog without the deleted profile attached, so learners do not lose reviewed resources.",
   },
   {
     title: "Changes",
@@ -43,7 +43,7 @@ const sections = [
 export default function PrivacyPage() {
   return (
     <div className="mx-auto max-w-3xl px-4 pb-20 pt-10">
-      <p className="text-sm font-semibold uppercase tracking-wide text-muted">Last updated August 14, 2026</p>
+      <p className="text-sm font-semibold uppercase tracking-wide text-muted">Last updated August 29, 2026</p>
       <h1 className="mt-4 text-4xl font-extrabold tracking-tight text-ink md:text-5xl">
         Privacy Policy
       </h1>

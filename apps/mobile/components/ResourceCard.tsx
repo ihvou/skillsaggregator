@@ -67,7 +67,7 @@ function isPortraitResource(resource: SkillResource) {
  */
 export function ResourceCard({ resource }: ResourceCardProps) {
   const relationId = resource.id;
-  const { user, actionSyncRevision } = useAuth();
+  const { user, ensureSession } = useAuth();
   const [isSaved, setIsSaved] = useState(false);
   const [isCompleted, setIsCompleted] = useState(false);
   const [vote, setVote] = useState<-1 | 0 | 1>(0);
@@ -118,16 +118,25 @@ export function ResourceCard({ resource }: ResourceCardProps) {
     return () => {
       cancelled = true;
     };
-  }, [actionSyncRevision, relationId, user]);
+  }, [relationId, user]);
 
-  function requireSignedIn(action: string) {
-    if (user) return true;
-    Alert.alert("Sign in to continue", `Sign in from the Account tab to ${action}.`);
-    return false;
+  async function ensureActionSession(action: string) {
+    try {
+      return await ensureSession(action);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn("[resource-actions] Anonymous session creation failed", {
+        relationId,
+        action,
+        error: message,
+      });
+      Alert.alert("Action unavailable", message);
+      return null;
+    }
   }
 
   async function toggleSaved() {
-    if (!requireSignedIn("save resources")) return;
+    if (!(await ensureActionSession("save_resource"))) return;
     const supabase = getSupabase();
     if (!supabase) return;
     const next = !isSaved;
@@ -146,7 +155,7 @@ export function ResourceCard({ resource }: ResourceCardProps) {
   }
 
   async function toggleCompleted() {
-    if (!requireSignedIn("mark resources watched")) return;
+    if (!(await ensureActionSession("mark_watched"))) return;
     const supabase = getSupabase();
     if (!supabase) return;
     const next = !isCompleted;
@@ -165,7 +174,7 @@ export function ResourceCard({ resource }: ResourceCardProps) {
   }
 
   async function writeVote(nextVote: -1 | 0 | 1) {
-    if (!requireSignedIn("vote on resources")) return;
+    if (!(await ensureActionSession("vote_resource"))) return;
     const supabase = getSupabase();
     if (!supabase) return;
     const previousVote = vote;

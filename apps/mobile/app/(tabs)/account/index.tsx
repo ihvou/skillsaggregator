@@ -30,6 +30,7 @@ export default function AccountScreen() {
   const {
     profile,
     user,
+    isAnonymous,
     signInWithMagicLink,
     signInWithGoogle,
     signInWithApple,
@@ -41,6 +42,7 @@ export default function AccountScreen() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isAppleAvailable, setIsAppleAvailable] = useState(false);
+  const permanentUser = user && !isAnonymous ? user : null;
 
   useEffect(() => {
     let cancelled = false;
@@ -134,13 +136,19 @@ export default function AccountScreen() {
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <PageHeader
           title={user ? "Account" : "Sign in"}
-          subtitle={user ? "Contributor profile and suggestion credit." : "Get credit for accepted suggestions."}
+          subtitle={
+            permanentUser
+              ? "Contributor profile and suggestion credit."
+              : isAnonymous
+                ? "Add email or social sign-in to keep this library."
+                : "Start with an account when you want one."
+          }
         />
 
-        {user ? (
+        {permanentUser ? (
           <View style={styles.card}>
-            <Text style={styles.name}>{profile?.display_name ?? user.email ?? "Contributor"}</Text>
-            <Text style={styles.meta}>{profile ? `@${profile.slug}` : user.email}</Text>
+            <Text style={styles.name}>{profile?.display_name ?? permanentUser.email ?? "Contributor"}</Text>
+            <Text style={styles.meta}>{profile ? `@${profile.slug}` : permanentUser.email}</Text>
             <Text style={styles.accepted}>{profile?.accepted_count ?? 0} accepted suggestions</Text>
             <View style={styles.buttonRow}>
               <Pressable
@@ -171,6 +179,14 @@ export default function AccountScreen() {
           </View>
         ) : (
           <View style={styles.card}>
+            {isAnonymous ? (
+              <View style={styles.upgradeIntro}>
+                <Text style={styles.name}>Temporary library</Text>
+                <Text style={styles.meta}>
+                  Your saves, watched items, votes, and suggestions are tied to this install. Add a login to keep them across devices.
+                </Text>
+              </View>
+            ) : null}
             <Text style={styles.label}>Email</Text>
             <TextInput
               value={email}
@@ -190,12 +206,16 @@ export default function AccountScreen() {
             >
               <Mail size={17} color={colors.surface} />
               <Text style={styles.primaryButtonText}>
-                {isSubmitting ? "Sending..." : "Send magic link"}
+                {isSubmitting ? "Sending..." : isAnonymous ? "Add email" : "Send magic link"}
               </Text>
             </Pressable>
             {isAppleAvailable ? (
               <AppleAuthentication.AppleAuthenticationButton
-                buttonType={AppleAuthentication.AppleAuthenticationButtonType.CONTINUE}
+                buttonType={
+                  isAnonymous
+                    ? AppleAuthentication.AppleAuthenticationButtonType.SIGN_UP
+                    : AppleAuthentication.AppleAuthenticationButtonType.CONTINUE
+                }
                 buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
                 cornerRadius={6}
                 style={styles.appleButton}
@@ -208,8 +228,17 @@ export default function AccountScreen() {
               style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed, isLoading && styles.disabled]}
               accessibilityRole="button"
             >
-              <Text style={styles.secondaryButtonText}>Continue with Google</Text>
+              <Text style={styles.secondaryButtonText}>{isAnonymous ? "Add Google" : "Continue with Google"}</Text>
             </Pressable>
+            {isAnonymous ? (
+              <Pressable
+                onPress={signOut}
+                style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed]}
+                accessibilityRole="button"
+              >
+                <Text style={styles.secondaryButtonText}>Sign out</Text>
+              </Pressable>
+            ) : null}
           </View>
         )}
 
@@ -258,6 +287,9 @@ const styles = StyleSheet.create({
   },
   secondaryCard: {
     marginTop: spacing.md,
+  },
+  upgradeIntro: {
+    gap: spacing.xs,
   },
   label: {
     fontSize: 13,

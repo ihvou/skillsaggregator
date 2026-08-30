@@ -40,8 +40,8 @@ export default function SupportPage() {
           <section>
             <h2 className="text-xl font-extrabold text-ink">Account Deletion</h2>
             <p className="mt-3 text-base leading-7 text-muted">
-              Signed-in users can delete their account from the mobile Account tab or the
-              dedicated web deletion page.
+              Anonymous and upgraded users can delete their account from the mobile Account tab
+              or the dedicated web deletion page after opening that account on the device.
             </p>
           </section>
         </div>

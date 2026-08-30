@@ -19,7 +19,7 @@ export default async function SignInPage({
     <div className="pb-20">
       <PageHeader
         title="Sign in"
-        subtitle="Use a magic link or Google to get credit for accepted resource suggestions."
+        subtitle="Use a magic link or Google to keep your library across devices and get credit for accepted suggestions."
         backHref="/"
       />
       <section className="mx-auto max-w-5xl px-4">

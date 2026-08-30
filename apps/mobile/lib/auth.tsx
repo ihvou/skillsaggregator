@@ -1,16 +1,8 @@
-import { createContext, PropsWithChildren, useContext, useEffect, useState } from "react";
+import { createContext, PropsWithChildren, useContext, useEffect, useRef, useState } from "react";
 import { Linking } from "react-native";
 import * as AppleAuthentication from "expo-apple-authentication";
 import * as ExpoLinking from "expo-linking";
 import type { Session, User } from "@supabase/supabase-js";
-import {
-  earliestIsoTimestamp,
-  clearAccountLocalState,
-  getCompletedAt,
-  getKeys,
-  setCompletedAt,
-  setFlag,
-} from "./localState";
 import { getSupabase } from "./supabase";
 import { webUrl } from "./webLinks";
 
@@ -26,35 +18,22 @@ interface AuthContextValue {
   session: Session | null;
   user: User | null;
   profile: ContributorProfile | null;
+  isAnonymous: boolean;
   isLoading: boolean;
+  ensureSession: (reason?: string) => Promise<Session>;
   signInWithMagicLink: (email: string) => Promise<string>;
   signInWithGoogle: () => Promise<void>;
   signInWithApple: () => Promise<void>;
   signOut: () => Promise<void>;
   deleteAccount: () => Promise<void>;
   refreshProfile: () => Promise<void>;
-  actionSyncRevision: number;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
-const ACTION_PREFIXES = ["saved", "completed"] as const;
 const supabase = getSupabase();
-type ActionType = (typeof ACTION_PREFIXES)[number];
-
-interface UserActionRow {
-  user_id: string;
-  link_id: string;
-  action_type: ActionType;
-  link_skill_relation_id: string | null;
-  created_at?: string;
-}
-
-interface ServerActionRow {
-  link_id: string | null;
-  action_type: string | null;
-  link_skill_relation_id: string | null;
-  created_at: string | null;
-}
+type ConfiguredSupabaseClient = NonNullable<ReturnType<typeof getSupabase>>;
+type IdTokenCredentials = Parameters<ConfiguredSupabaseClient["auth"]["signInWithIdToken"]>[0];
+type IdTokenResponse = ReturnType<ConfiguredSupabaseClient["auth"]["signInWithIdToken"]>;
 
 function redirectTo() {
   return ExpoLinking.createURL("auth/callback");
@@ -69,69 +48,11 @@ function appleFullName(fullName: AppleAuthentication.AppleAuthenticationFullName
   return name.length > 0 ? name : null;
 }
 
-function parseActionKey(key: string): { actionType: ActionType; linkId: string; linkSkillRelationId: string | null } | null {
-  const [actionType, linkId, linkSkillRelationId] = key.split(":");
-  if (!actionType || !linkId) return null;
-  if (!ACTION_PREFIXES.includes(actionType as ActionType)) return null;
-  return { actionType: actionType as ActionType, linkId, linkSkillRelationId: linkSkillRelationId ?? null };
-}
-
-function isActionType(value: string | null | undefined): value is ActionType {
-  return ACTION_PREFIXES.includes(value as ActionType);
-}
-
-function actionKey(actionType: ActionType, linkId: string, linkSkillRelationId: string | null) {
-  return linkSkillRelationId ? `${actionType}:${linkId}:${linkSkillRelationId}` : `${actionType}:${linkId}`;
-}
-
-function actionRowForUser(
-  userId: string,
-  parsed: { actionType: ActionType; linkId: string; linkSkillRelationId: string | null },
-): UserActionRow {
-  return {
-    user_id: userId,
-    link_id: parsed.linkId,
-    action_type: parsed.actionType,
-    link_skill_relation_id: parsed.linkSkillRelationId,
-  };
-}
-
-function actionRowsForUser(userId: string, nowIso = new Date().toISOString()) {
-  return ACTION_PREFIXES.flatMap((prefix) =>
-    getKeys(`${prefix}:`).flatMap((key) => {
-      const parsed = parseActionKey(key);
-      if (!parsed) return [];
-      const row = actionRowForUser(userId, parsed);
-      if (parsed.actionType === "completed") {
-        row.created_at = getCompletedAt(parsed.linkId) ?? setCompletedAt(parsed.linkId, nowIso);
-      }
-      return [row];
-    }),
-  );
-}
-
-function mergeActionRow(rows: Map<string, UserActionRow>, row: UserActionRow) {
-  const key = actionKey(row.action_type, row.link_id, row.link_skill_relation_id);
-  const existing = rows.get(key);
-  if (!existing) {
-    rows.set(key, row);
-    return;
-  }
-  if (row.action_type === "completed") {
-    const createdAt = earliestIsoTimestamp(existing.created_at, row.created_at);
-    rows.set(key, {
-      ...existing,
-      ...row,
-      ...(createdAt ? { created_at: createdAt } : {}),
-    });
-  }
-}
-
 export function AuthProvider({ children }: PropsWithChildren) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<ContributorProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [actionSyncRevision, setActionSyncRevision] = useState(0);
+  const anonymousSessionPromiseRef = useRef<Promise<Session> | null>(null);
 
   async function refreshProfileForSession(nextSession: Session | null) {
     if (!supabase || !nextSession?.user) {
@@ -151,107 +72,6 @@ export function AuthProvider({ children }: PropsWithChildren) {
     setProfile(data ?? null);
   }
 
-  async function syncLocalActions(nextSession: Session | null) {
-    if (!supabase || !nextSession?.user) return false;
-    const userId = nextSession.user.id;
-    const nowIso = new Date().toISOString();
-    const localRows = actionRowsForUser(userId, nowIso);
-    const mergedRows = new Map<string, UserActionRow>();
-    const serverCompletedAtByKey = new Map<string, string>();
-
-    console.info("[mobile-actions] Starting local/server action sync", {
-      localCount: localRows.length,
-      userId,
-    });
-
-    const { data: serverRows, error: pullError } = await supabase
-      .from("user_actions")
-      .select("link_id, action_type, link_skill_relation_id, created_at")
-      .eq("user_id", userId);
-
-    if (pullError) {
-      console.warn("[mobile-actions] Pull failed; pushing local actions only", pullError.message);
-    } else {
-      for (const row of (serverRows ?? []) as ServerActionRow[]) {
-        if (!row.link_id || !isActionType(row.action_type)) continue;
-
-        const key = actionKey(row.action_type, row.link_id, row.link_skill_relation_id);
-        setFlag(key, true);
-
-        const merged = actionRowForUser(userId, {
-          actionType: row.action_type,
-          linkId: row.link_id,
-          linkSkillRelationId: row.link_skill_relation_id,
-        });
-        if (row.action_type === "completed") {
-          merged.created_at = setCompletedAt(row.link_id, row.created_at ?? nowIso);
-          if (row.created_at) serverCompletedAtByKey.set(key, row.created_at);
-        }
-        mergeActionRow(mergedRows, merged);
-      }
-    }
-
-    for (const row of localRows) mergeActionRow(mergedRows, row);
-
-    const rows = [...mergedRows.values()];
-    const completedRows = rows.filter((row) => row.action_type === "completed");
-    const otherRows = rows.filter((row) => row.action_type !== "completed");
-    let timestampUpdates = 0;
-
-    if (otherRows.length > 0) {
-      const { error } = await supabase
-        .from("user_actions")
-        .upsert(otherRows, { onConflict: "user_id,link_id,action_type,action_context_id", ignoreDuplicates: true });
-      if (error) console.warn("[mobile-actions] Non-completed action push failed", error.message);
-    }
-
-    if (completedRows.length > 0) {
-      const { error } = await supabase
-        .from("user_actions")
-        .upsert(completedRows, { onConflict: "user_id,link_id,action_type,action_context_id", ignoreDuplicates: true });
-      if (error) {
-        console.warn("[mobile-actions] Completed action insert failed", error.message);
-      }
-
-      const timestampRepairs = completedRows.filter((row) => {
-        const serverCreatedAt = serverCompletedAtByKey.get(actionKey(row.action_type, row.link_id, row.link_skill_relation_id));
-        return Boolean(
-          row.created_at &&
-            serverCreatedAt &&
-            Date.parse(row.created_at) < Date.parse(serverCreatedAt),
-        );
-      });
-
-      await Promise.all(timestampRepairs.map(async (row) => {
-        if (!row.created_at) return;
-        const { error: updateError } = await supabase
-          .from("user_actions")
-          .update({ created_at: row.created_at })
-          .eq("user_id", userId)
-          .eq("link_id", row.link_id)
-          .eq("action_type", "completed")
-          .is("link_skill_relation_id", null);
-        if (updateError) {
-          console.warn("[mobile-actions] Completed timestamp repair failed", {
-            linkId: row.link_id,
-            error: updateError.message,
-          });
-          return;
-        }
-        timestampUpdates += 1;
-      }));
-    }
-
-    console.info("[mobile-actions] Finished local/server action sync", {
-      serverCount: serverRows?.length ?? 0,
-      localCount: localRows.length,
-      mergedCount: rows.length,
-      completedCount: completedRows.length,
-      timestampUpdates,
-    });
-    return true;
-  }
-
   useEffect(() => {
     if (!supabase) {
       setIsLoading(false);
@@ -265,8 +85,6 @@ export function AuthProvider({ children }: PropsWithChildren) {
       if (cancelled) return;
       setSession(nextSession);
       await refreshProfileForSession(nextSession);
-      const didSync = await syncLocalActions(nextSession);
-      if (didSync && !cancelled) setActionSyncRevision((value) => value + 1);
       if (!cancelled) setIsLoading(false);
     }
 
@@ -296,27 +114,88 @@ export function AuthProvider({ children }: PropsWithChildren) {
     };
   }, []);
 
+  async function activeSession() {
+    if (!supabase) throw new Error("Supabase is not configured.");
+    const { data, error } = await supabase.auth.getSession();
+    if (error) throw error;
+    return data.session;
+  }
+
+  async function ensureSession(reason = "user_action") {
+    if (!supabase) throw new Error("Supabase is not configured.");
+    const existing = await activeSession();
+    if (existing) return existing;
+
+    if (!anonymousSessionPromiseRef.current) {
+      anonymousSessionPromiseRef.current = supabase.auth
+        .signInAnonymously({
+          options: {
+            data: {
+              first_action: reason,
+              first_action_at: new Date().toISOString(),
+              client: "mobile",
+            },
+          },
+        })
+        .then(async ({ data, error }) => {
+          if (error) throw error;
+          if (!data.session) throw new Error("Anonymous sign-in did not return a session.");
+          console.info("[auth] Created lazy anonymous mobile session", {
+            userId: data.session.user.id,
+            reason,
+          });
+          setSession(data.session);
+          await refreshProfileForSession(data.session);
+          return data.session;
+        })
+        .finally(() => {
+          anonymousSessionPromiseRef.current = null;
+        });
+    }
+
+    return anonymousSessionPromiseRef.current;
+  }
+
   const value: AuthContextValue = {
     session,
     user: session?.user ?? null,
     profile,
+    isAnonymous: Boolean(session?.user?.is_anonymous),
     isLoading,
+    ensureSession,
     async signInWithMagicLink(email: string) {
       if (!supabase) throw new Error("Supabase is not configured.");
-      const { error } = await supabase.auth.signInWithOtp({
-        email,
-        options: { emailRedirectTo: redirectTo(), shouldCreateUser: true },
-      });
+      const currentSession = await activeSession().catch(() => null);
+      const { error } = currentSession?.user.is_anonymous
+        ? await supabase.auth.updateUser({ email }, { emailRedirectTo: redirectTo() })
+        : await supabase.auth.signInWithOtp({
+            email,
+            options: { emailRedirectTo: redirectTo(), shouldCreateUser: true },
+          });
       if (error) throw error;
-      return "Check your email for a magic link.";
+      console.info("[auth] Magic-link email flow requested", {
+        upgradingAnonymous: Boolean(currentSession?.user.is_anonymous),
+      });
+      return currentSession?.user.is_anonymous
+        ? "Check your email to finish saving this account."
+        : "Check your email for a magic link.";
     },
     async signInWithGoogle() {
       if (!supabase) throw new Error("Supabase is not configured.");
-      const { data, error } = await supabase.auth.signInWithOAuth({
-        provider: "google",
-        options: { redirectTo: redirectTo(), skipBrowserRedirect: true },
-      });
+      const currentSession = await activeSession().catch(() => null);
+      const { data, error } = currentSession?.user.is_anonymous
+        ? await supabase.auth.linkIdentity({
+            provider: "google",
+            options: { redirectTo: redirectTo(), skipBrowserRedirect: true },
+          })
+        : await supabase.auth.signInWithOAuth({
+            provider: "google",
+            options: { redirectTo: redirectTo(), skipBrowserRedirect: true },
+          });
       if (error) throw error;
+      console.info("[auth] Google auth flow started", {
+        upgradingAnonymous: Boolean(currentSession?.user.is_anonymous),
+      });
       if (data.url) await Linking.openURL(data.url);
     },
     async signInWithApple() {
@@ -335,11 +214,29 @@ export function AuthProvider({ children }: PropsWithChildren) {
         throw new Error("Apple did not return an identity token.");
       }
 
-      const { data, error } = await supabase.auth.signInWithIdToken({
+      const currentSession = await activeSession().catch(() => null);
+      const appleTokenCredentials: IdTokenCredentials = {
         provider: "apple",
         token: credential.identityToken,
+      };
+      const upgradingAnonymous = Boolean(currentSession?.user.is_anonymous);
+      let nextSession: Session | null = null;
+      if (upgradingAnonymous) {
+        const linkIdentityWithIdToken = supabase.auth.linkIdentity as unknown as (
+          credentials: typeof appleTokenCredentials,
+        ) => IdTokenResponse;
+        const { data, error } = await linkIdentityWithIdToken(appleTokenCredentials);
+        if (error) throw error;
+        nextSession = data.session;
+      } else {
+        const { data, error } = await supabase.auth.signInWithIdToken(appleTokenCredentials);
+        if (error) throw error;
+        nextSession = data.session;
+      }
+      console.info("[auth] Apple auth flow completed", {
+        upgradingAnonymous,
+        userId: nextSession?.user.id ?? session?.user.id ?? null,
       });
-      if (error) throw error;
 
       const fullName = appleFullName(credential.fullName);
       if (fullName) {
@@ -353,7 +250,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
         if (updateError) console.warn("mobile_apple_profile_name_update_failed", updateError.message);
       }
 
-      await refreshProfileForSession(data.session ?? session);
+      await refreshProfileForSession(nextSession ?? session);
     },
     async signOut() {
       if (!supabase) return;
@@ -384,15 +281,12 @@ export function AuthProvider({ children }: PropsWithChildren) {
       }
 
       await supabase.auth.signOut();
-      clearAccountLocalState();
       setSession(null);
       setProfile(null);
-      setActionSyncRevision((value) => value + 1);
     },
     refreshProfile() {
       return refreshProfileForSession(session);
     },
-    actionSyncRevision,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

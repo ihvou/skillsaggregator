@@ -1,8 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import Link from "next/link";
 import type { CategorySummary, SkillLevel, SkillSummary } from "@skillsaggregator/shared";
+import type { Session } from "@supabase/supabase-js";
+import { getOrCreateBrowserSession } from "@/lib/anonymousSession";
 import { getBrowserSupabase } from "@/lib/browserSupabase";
 
 interface CatalogOption {
@@ -69,12 +70,12 @@ export function SuggestForm({
     }
 
     setIsSubmitting(true);
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-    if (!session) {
+    let session: Session;
+    try {
+      session = await getOrCreateBrowserSession(supabase, "suggest_resource");
+    } catch (sessionError) {
       setIsSubmitting(false);
-      setError("Sign in to suggest a resource.");
+      setError(sessionError instanceof Error ? sessionError.message : String(sessionError));
       return;
     }
     const bearer = session.access_token;
@@ -88,7 +89,11 @@ export function SuggestForm({
       body: JSON.stringify({
         type: "LINK_ADD",
         origin_type: "human",
-        origin_name: contributorSlug ? `web_${contributorSlug}` : "web_authenticated",
+        origin_name: contributorSlug
+          ? `web_${contributorSlug}`
+          : session.user.is_anonymous
+            ? "web_anonymous"
+            : "web_authenticated",
         category_id: categoryId,
         skill_id: skillId,
         payload_json: {
@@ -217,15 +222,7 @@ export function SuggestForm({
       </button>
 
       {status ? <p className="text-sm font-bold text-accent">{status}</p> : null}
-      {error ? (
-        <p className="text-sm font-bold text-red-600">
-          {error === "Sign in to suggest a resource." ? (
-            <Link className="underline underline-offset-2" href="/sign-in?next=/suggest">
-              {error}
-            </Link>
-          ) : error}
-        </p>
-      ) : null}
+      {error ? <p className="text-sm font-bold text-red-600">{error}</p> : null}
     </form>
   );
 }

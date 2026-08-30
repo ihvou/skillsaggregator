@@ -81,26 +81,19 @@ set is_active = excluded.is_active,
     relevance_vote = excluded.relevance_vote,
     value_vote = excluded.value_vote;
 
+select is(
+  has_table_privilege('authenticated', 'public.user_actions', 'insert'),
+  false,
+  'authenticated users cannot write deprecated user_actions'
+);
+
 reset role;
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"00000000-0000-4000-8000-00000000d501","email":"community-voter@example.com","user_metadata":{}}';
 
-select throws_ok(
-  $$insert into public.user_actions (user_id, link_id, link_skill_relation_id, action_type)
-    values (
-      '00000000-0000-4000-8000-00000000d501'::uuid,
-      '00000000-0000-4000-8000-00000000d511'::uuid,
-      '00000000-0000-4000-8000-00000000d521'::uuid,
-      'upvote'
-    )$$,
-  '42501',
-  'Vote actions must use set_user_vote',
-  'authenticated users cannot bypass set_user_vote through user_actions'
-);
-
 select results_eq(
   $$select vote, user_score, combined_score from public.set_user_vote('00000000-0000-4000-8000-00000000d521'::uuid, 1::smallint)$$,
-  $$values (1::smallint, 1::real, 2.5::real)$$,
+  $$values (1::smallint, 1::real, 2.0::real)$$,
   'set_user_vote records one authenticated vote and returns the combined score'
 );
 
@@ -110,7 +103,7 @@ select results_eq(
   $$select upvote_count, downvote_count, vote_score, user_score, combined_score
       from public.link_skill_relations
      where id = '00000000-0000-4000-8000-00000000d521'::uuid$$,
-  $$values (1, 0, 1, 1::real, 2.5::real)$$,
+  $$values (1, 0, 1, 1::real, 2.0::real)$$,
   'relation counters and combined_score are synchronized from user_relation_votes'
 );
 

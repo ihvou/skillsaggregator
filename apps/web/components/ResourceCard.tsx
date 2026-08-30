@@ -1,7 +1,6 @@
 "use client";
 
 import Image from "next/image";
-import Link from "next/link";
 import { useState } from "react";
 import {
   Bookmark,
@@ -49,9 +48,7 @@ export function ResourceCard({ resource }: ResourceCardProps) {
     isSaved,
     isWatched,
     vote,
-    prompt,
     error,
-    signInHref,
     toggleSaved,
     toggleWatched,
     combinedScore,
@@ -237,11 +234,7 @@ export function ResourceCard({ resource }: ResourceCardProps) {
             </div>
           </div>
         </div>
-        {prompt || error ? (
-          <p className={`text-xs font-bold ${error ? "text-red-600" : "text-muted"}`}>
-            {error ? error : <Link className="focus-ring underline underline-offset-2" href={signInHref}>{prompt}</Link>}
-          </p>
-        ) : null}
+        {error ? <p className="text-xs font-bold text-red-600">{error}</p> : null}
       </div>
     </article>
   );

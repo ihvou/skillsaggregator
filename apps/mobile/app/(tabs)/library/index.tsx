@@ -80,8 +80,8 @@ export default function SavedTab() {
               ) : (
                 <EmptyState
                   icon={Bookmark}
-                  title="Sign in to use your library"
-                  subtitle="Saved and watched resources sync across devices after sign-in."
+                  title="Start your library"
+                  subtitle="Save, watch, vote or suggest to create a private library automatically. Add email later to keep it across devices."
                 />
               )}
             </View>

@@ -117,11 +117,14 @@ async function persistEvent(runId, level, eventType, message, metadata = {}) {
 
 async function loadCategories() {
   const params = config.categorySlug ? [config.categorySlug] : [];
+  // An explicit --category is explicit intent, so it bypasses the is_active
+  // filter: staged categories sit inactive while they fill and would otherwise be
+  // undiscoverable, which is exactly when they most need seed sources. Without an
+  // explicit slug the sweep stays on live categories only.
   const rows = await dbQuery(
     `select id, slug, name, coalesce(description, '')
      from public.categories
-     where is_active
-       ${config.categorySlug ? "and slug = $1" : ""}
+     ${config.categorySlug ? "where slug = $1" : "where is_active"}
      order by name`,
     params,
   );

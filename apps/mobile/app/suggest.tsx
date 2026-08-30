@@ -19,7 +19,7 @@ const LEVELS: Array<{ value: SkillLevel; label: string }> = [
 export default function SuggestScreen() {
   const router = useRouter();
   const { category, skill } = useLocalSearchParams<{ category?: string; skill?: string }>();
-  const { session, profile } = useAuth();
+  const { profile, ensureSession } = useAuth();
   const [categorySlug, setCategorySlug] = useState(category ?? "badminton");
   const [skillId, setSkillId] = useState("");
   const [url, setUrl] = useState("");
@@ -60,24 +60,24 @@ export default function SuggestScreen() {
       Alert.alert("Missing details", "Add a URL and choose the target skill.");
       return;
     }
-    if (!session) {
-      Alert.alert("Sign in to continue", "Sign in from the Account tab to suggest a resource.");
-      return;
-    }
-
     setIsSubmitting(true);
     try {
+      const activeSession = await ensureSession("suggest_resource");
       const response = await fetch(`${supabaseUrl}/functions/v1/submit-suggestion`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           apikey: anonKey,
-          Authorization: `Bearer ${session?.access_token ?? anonKey}`,
+          Authorization: `Bearer ${activeSession.access_token}`,
         },
         body: JSON.stringify({
           type: "LINK_ADD",
           origin_type: "human",
-          origin_name: profile ? `mobile_${profile.slug}` : "mobile_anonymous",
+          origin_name: profile
+            ? `mobile_${profile.slug}`
+            : activeSession.user.is_anonymous
+              ? "mobile_anonymous"
+              : "mobile_authenticated",
           category_id: selectedCategory.id,
           skill_id: skillId,
           payload_json: {
@@ -93,9 +93,9 @@ export default function SuggestScreen() {
       const body = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(body.error ?? "Suggestion failed.");
       Alert.alert(
-          "Thanks",
-          body.duplicate
-            ? "already submitted, thanks"
+        "Thanks",
+        body.duplicate
+          ? "already submitted, thanks"
           : "Your suggestion is queued for coach review.",
         [{ text: "OK", onPress: () => router.back() }],
       );
@@ -119,16 +119,6 @@ export default function SuggestScreen() {
         <SkeletonList count={2} />
       ) : (
         <ScrollView contentContainerStyle={styles.form} showsVerticalScrollIndicator={false}>
-          {!session ? (
-            <Pressable
-              onPress={() => router.push("/account")}
-              style={({ pressed }) => [styles.signInCallout, pressed && styles.pressed]}
-              accessibilityRole="button"
-            >
-              <Text style={styles.signInText}>Sign in to suggest a resource</Text>
-            </Pressable>
-          ) : null}
-
           <Text style={styles.label}>URL</Text>
           <TextInput
             value={url}
@@ -226,21 +216,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "800",
     color: colors.ink,
-  },
-  signInCallout: {
-    minHeight: 42,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: spacing.md,
-    borderRadius: radius.sm,
-    backgroundColor: colors.surface,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.divider,
-  },
-  signInText: {
-    color: colors.ink,
-    fontSize: 13,
-    fontWeight: "800",
   },
   input: {
     minHeight: 46,

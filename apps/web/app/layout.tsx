@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { BrandMark } from "@/components/BrandMark";
-import { LocalActionSync } from "@/components/LocalActionSync";
 import { FooterNavLinks, HeaderNavLinks } from "@/components/NavLinks";
 import { getBaseUrl } from "@/lib/env";
 import "./globals.css";
@@ -50,7 +49,6 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
             </div>
           </nav>
         </header>
-        <LocalActionSync />
         <main className="flex-1">{children}</main>
         <footer className="border-t border-divider">
           <div className="mx-auto flex w-full max-w-5xl flex-wrap items-center justify-between gap-3 px-4 py-6 text-sm text-muted">

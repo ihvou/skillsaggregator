@@ -34,3 +34,12 @@ supabase/.temp
 # runbooks; the composed upload artifacts next to them ARE committed.
 store-assets/ios/
 store-assets/android/
+
+# Android signing material. `eas credentials` can download the release keystore
+# and its passwords to disk (credentials.json + a .jks); committing either would
+# publish the private key that signs the app AND the key registered for Android
+# developer verification. Neither is recoverable once leaked.
+credentials.json
+**/credentials.json
+*.jks
+*.keystore

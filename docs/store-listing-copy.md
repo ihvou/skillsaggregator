@@ -1,6 +1,6 @@
 # Store listing copy
 
-Last updated: 2026-08-09
+Last updated: 2026-08-17
 
 Paste-ready text for both stores. Field limits are the store's own; the counts in
 brackets are what the text below actually uses.
@@ -9,10 +9,18 @@ Assets live in `store-assets/`. The composed upload artifacts are committed; the
 device captures they are built from (`store-assets/ios/`, `store-assets/android/`) are
 gitignored for size. Rebuild with `scripts/make-store-assets.py [graphics|ios|android]`.
 
-Catalogue numbers are from the live database on 2026-08-09: **13 sports, 152
-sub-skills, 2,139 distinct tutorials** across 2,517 sub-skill entries (a tutorial
-filed under two sub-skills counts once here, twice there). Round *down* in copy —
-"2,000+" survives a moderation pass, "2,500+ tutorials" does not.
+**Rule: floors, never exact counts.** The catalogue grows continuously, so any exact number in
+store copy becomes false without anyone touching it — and every number here is a claim a moderator
+can challenge. A floor ("2,000+") stays true forever as the catalogue grows and needs no
+maintenance; an exact count ("13 sports") is a scheduled bug.
+
+The same applies to *enumerating* the sports. Listing all of them by name is a promise to edit the
+listing every time a category launches. Name several as examples instead — the ASO value is in the
+sport words being present, not in the list being exhaustive.
+
+Live numbers on 2026-08-17: **20 categories (13 published, 7 staged — golf, table tennis, climbing,
+pickleball, skiing, snowboarding, BJJ), 298 published sub-skills, 2,000+ distinct tutorials.**
+Copy below uses floors well under these, so it survives growth without edits.
 
 ---
 
@@ -23,12 +31,12 @@ filed under two sub-skills counts once here, twice there). Round *down* in copy 
 Subskills
 ```
 
-**Short description** [79/80]
+**Short description** [74/80]
 ```
-Free, reviewed video tutorials for 13 sports, organised by sub-skill and level.
+Reviewed video tutorials for badminton, tennis, padel, gym, yoga and more.
 ```
 
-**Full description** [1587/4000]
+**Full description** [1646/4000]
 ```
 Getting better at a sport is not a search problem. It is a "what should I work on next, and which video actually teaches it" problem.
 
@@ -37,8 +45,8 @@ Subskills breaks every sport into its sub-skills and gives each one a short, rev
 Badminton is not one topic. It is the backhand clear, the low serve, defence, footwork, net play — separate things to learn, each with its own best explanation. Subskills is organised that way.
 
 WHAT'S INSIDE
-• 13 sports — badminton, boxing, cycling, gym (men), gym (women), padel, pilates, running, soccer skills, surfing, swimming, tennis, yoga
-• 150+ sub-skills, each with its own shortlist
+• Sports including badminton, tennis, padel, boxing, cycling, gym, pilates, running, soccer, surfing, swimming and yoga — with more added regularly
+• 250+ sub-skills, each with its own shortlist
 • 2,000+ free tutorials, every one reviewed before it appears
 
 HOW YOU USE IT
@@ -55,7 +63,7 @@ Nothing is auto-published. Every tutorial is scored for relevance and teaching q
 
 No ads. No third-party trackers. Nothing about you is sold or shared. Everything is free to watch.
 
-Browsing needs no account. Sign in only if you want to save, mark watched, vote or suggest.
+Browsing needs no account. Saving, marking watched, voting or suggesting creates a private library automatically. Add email, Google or Apple later to keep it across devices.
 ```
 
 **Category** Education (alternative: Sports)
@@ -98,8 +106,8 @@ Subskills breaks every sport into its sub-skills and gives each one a short, rev
 Badminton is not one topic. It is the backhand clear, the low serve, defence, footwork, net play — separate things to learn, each with its own best explanation. Subskills is organised that way.
 
 WHAT'S INSIDE
-- 13 sports: badminton, boxing, cycling, gym (men), gym (women), padel, pilates, running, soccer skills, surfing, swimming, tennis, yoga
-- 150+ sub-skills, each with its own shortlist
+- Sports including badminton, tennis, padel, boxing, cycling, gym, pilates, running, soccer, surfing, swimming and yoga - with more added regularly
+- 250+ sub-skills, each with its own shortlist
 - 2,000+ free tutorials, every one reviewed before it appears
 
 HOW YOU USE IT
@@ -116,7 +124,7 @@ Nothing is auto-published. Every tutorial is scored for relevance and teaching q
 
 No ads. No third-party trackers. Nothing about you is sold or shared. Everything is free to watch.
 
-Browsing needs no account. Sign in only if you want to save, mark watched, vote or suggest.
+Browsing needs no account. Saving, marking watched, voting or suggesting creates a private library automatically. Add email, Google or Apple later to keep it across devices.
 ```
 
 **Support URL** https://subskills.xyz/support
@@ -140,8 +148,8 @@ being true if the product changes.
 | "scored for relevance and teaching quality" | those are the literal coach vote dimensions |
 | "No ads. No third-party trackers. Nothing about you is sold or shared." | no ad SDK or third-party tracking SDK in `apps/mobile/package.json`; Apple defines tracking as linking app data with other companies' data for advertising/measurement or sharing with data brokers. First-party product analytics still require disclosure, but do not require ATT and do not make this claim false. |
 | "free to watch" | every resource links out to a free public video |
-| "Browsing needs no account" | catalogue reads are anonymous; only write actions gate on auth |
-| 13 sports / 150+ sub-skills / 2,000+ tutorials | live counts, rounded down |
+| "Browsing needs no account" | catalogue reads are public; write actions lazily create a Supabase anonymous user with a real JWT |
+| "sports including …" / 250+ sub-skills / 2,000+ tutorials | Floors, well under the live figures (20 categories, 298 sub-skills). Deliberately **no exact sport count and no exhaustive list** — both go stale as categories launch. |
 
 ---
 
@@ -203,8 +211,9 @@ Reuse for both stores; App Store Connect calls this "Notes for Review".
 Subskills is a learning-resource discovery app for sport technique. It links out to
 free, publicly available tutorial videos; it does not host or re-stream any video.
 
-Browsing needs no account. Sign-in (magic link, Google, or Sign in with Apple) is
-required only to save a resource, mark it watched, vote, or suggest a link.
+Browsing needs no account. Saving, marking watched, voting or suggesting creates
+a private library automatically. Magic link, Google, and Sign in with Apple are
+optional upgrades for keeping that library across devices.
 
 User-suggested links are not published directly. They enter the same review pipeline
 as collected content and appear only after passing it. Users can report an

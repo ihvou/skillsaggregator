@@ -1,16 +1,16 @@
 # Privacy Policy
 
-Last updated: 2026-08-14
+Last updated: 2026-08-29
 
 Subskills helps people discover and save sport learning resources. This policy explains what data the website and app use and how it is handled.
 
 ## Data We Store On Your Device
 
-The mobile app stores app settings such as onboarding preferences and authentication session data on your device. Saved resources, watched state, and resource votes require sign-in and are stored in your private account state.
+The mobile app stores app settings such as onboarding preferences and authentication session data on your device. Saving, marking watched, voting, or suggesting creates a private Supabase anonymous account automatically; adding email, Google, or Apple later keeps that same private state across devices.
 
 ## Account And Contribution Data
 
-Subskills uses Supabase authentication to identify signed-in users and may store email addresses, auth identifiers, saved resources, watched state, votes, submitted links, public notes, display names, profile slugs, and contribution history.
+Subskills uses Supabase authentication to identify anonymous and signed-in users. It may store auth identifiers, saved resources, watched state, votes, submitted links, and public notes. If you upgrade the account with email, Google, or Apple, it may also store email addresses, display names, profile slugs, and contribution history.
 
 ## Network Data
 
@@ -30,7 +30,7 @@ Subskills is not directed to children under 13. Do not submit personal informati
 
 ## Data Deletion
 
-Signed-in users can delete their account from the mobile Account tab or from `/account/delete` on the web. Deletion removes the auth account, private saved/watched/vote state, and contributor profile. Public resources previously submitted by the account may remain in the catalog without the deleted profile attached, so learners do not lose reviewed resources.
+Users can delete their account from the mobile Account tab or from `/account/delete` on the web after opening their anonymous or upgraded account. Deletion removes the auth account, private saved/watched/vote state, and contributor profile. Public resources previously submitted by the account may remain in the catalog without the deleted profile attached, so learners do not lose reviewed resources.
 
 For deletion support, use https://subskills.xyz/account/delete or open a request at https://github.com/ihvou/skillsaggregator/issues.
 

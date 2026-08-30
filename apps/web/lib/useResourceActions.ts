@@ -2,18 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { boundedUserVoteWeight } from "@skillsaggregator/shared";
+import { getOrCreateBrowserSession } from "./anonymousSession";
 import { getBrowserSupabase } from "./browserSupabase";
 
 export type UserVoteState = -1 | 0 | 1;
-
-function nextPath() {
-  if (typeof window === "undefined") return "/";
-  return `${window.location.pathname}${window.location.search}`;
-}
-
-export function signInHref() {
-  return `/sign-in?next=${encodeURIComponent(nextPath())}`;
-}
 
 // The card shows the aggregate score between the vote arrows, so a vote produces
 // visible feedback: before this, voting changed only an icon colour and the item
@@ -44,7 +36,6 @@ export function useResourceActions(
   const [baseScore, setBaseScore] = useState<number | null>(
     initialCombinedScore === null ? null : initialCombinedScore - boundedUserVoteWeight(initialUserScore),
   );
-  const [prompt, setPrompt] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const combinedScore = baseScore === null ? null : baseScore + boundedUserVoteWeight(userScore);
@@ -56,14 +47,15 @@ export function useResourceActions(
     }
 
     const {
-      data: { user },
-      error: userError,
-    } = await supabase.auth.getUser();
+      data: { session },
+      error: sessionError,
+    } = await supabase.auth.getSession();
 
-    if (userError) {
-      console.warn("resource_action_user_load_failed", userError.message);
+    if (sessionError) {
+      console.warn("resource_action_session_load_failed", sessionError.message);
     }
 
+    const user = session?.user ?? null;
     setUserId(user?.id ?? null);
     if (!user) {
       setIsSaved(false);
@@ -128,18 +120,30 @@ export function useResourceActions(
     };
   }, [refresh, supabase]);
 
-  const requireSignedIn = useCallback((action: string) => {
+  const ensureActionSession = useCallback(async (action: string) => {
     setError(null);
-    if (!supabase || !userId) {
-      setPrompt(`Sign in to ${action}.`);
-      return false;
+    if (!supabase) {
+      setError("Supabase is not configured for resource actions.");
+      return null;
     }
-    setPrompt(null);
-    return true;
-  }, [supabase, userId]);
+    try {
+      const session = await getOrCreateBrowserSession(supabase, action);
+      setUserId(session.user.id);
+      return session;
+    } catch (actionError) {
+      const message = actionError instanceof Error ? actionError.message : String(actionError);
+      console.warn("resource_action_session_create_failed", {
+        relation_id: relationId,
+        action,
+        message,
+      });
+      setError(message);
+      return null;
+    }
+  }, [relationId, supabase]);
 
   const toggleSaved = useCallback(async () => {
-    if (!requireSignedIn("save resources")) return;
+    if (!(await ensureActionSession("save_resource"))) return;
     const next = !isSaved;
     setIsSaved(next);
     const { error: mutationError } = await supabase!.rpc("set_user_bookmark", {
@@ -151,10 +155,10 @@ export function useResourceActions(
       setError(mutationError.message);
       console.warn("resource_bookmark_write_failed", { relationId, message: mutationError.message });
     }
-  }, [isSaved, relationId, requireSignedIn, supabase]);
+  }, [ensureActionSession, isSaved, relationId, supabase]);
 
   const toggleWatched = useCallback(async () => {
-    if (!requireSignedIn("mark resources watched")) return;
+    if (!(await ensureActionSession("mark_watched"))) return;
     const next = !isWatched;
     setIsWatched(next);
     const { error: mutationError } = await supabase!.rpc("set_user_watched", {
@@ -166,10 +170,10 @@ export function useResourceActions(
       setError(mutationError.message);
       console.warn("resource_watched_write_failed", { relationId, message: mutationError.message });
     }
-  }, [isWatched, relationId, requireSignedIn, supabase]);
+  }, [ensureActionSession, isWatched, relationId, supabase]);
 
   const setUserVote = useCallback(async (nextVote: UserVoteState) => {
-    if (!requireSignedIn("vote on resources")) return;
+    if (!(await ensureActionSession("vote_resource"))) return;
     const previousVote = vote;
     const previousScore = userScore;
     setVote(nextVote);
@@ -203,7 +207,7 @@ export function useResourceActions(
     if (typeof row?.combined_score === "number" && typeof row?.user_score === "number") {
       setBaseScore(row.combined_score - boundedUserVoteWeight(row.user_score));
     }
-  }, [relationId, requireSignedIn, supabase, userScore, vote]);
+  }, [ensureActionSession, relationId, supabase, userScore, vote]);
 
   return {
     loaded,
@@ -213,9 +217,7 @@ export function useResourceActions(
     vote,
     userScore,
     combinedScore,
-    prompt,
     error,
-    signInHref: signInHref(),
     toggleSaved,
     toggleWatched,
     setUserVote,

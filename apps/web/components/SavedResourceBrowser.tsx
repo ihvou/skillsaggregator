@@ -18,6 +18,7 @@ type LibraryView = "saved" | "watched";
 export function SavedResourceBrowser() {
   const [view, setView] = useState<LibraryView>("saved");
   const [signedIn, setSignedIn] = useState<boolean | null>(null);
+  const [isAnonymous, setIsAnonymous] = useState(false);
   const [relationIds, setRelationIds] = useState<string[]>([]);
   const [resources, setResources] = useState<SkillResource[]>([]);
   const [loading, setLoading] = useState(true);
@@ -29,6 +30,7 @@ export function SavedResourceBrowser() {
     const supabase = getBrowserSupabase();
     if (!supabase) {
       setSignedIn(false);
+      setIsAnonymous(false);
       setResources([]);
       setRelationIds([]);
       setLoading(false);
@@ -37,15 +39,18 @@ export function SavedResourceBrowser() {
     }
 
     const {
-      data: { user },
-      error: userError,
-    } = await supabase.auth.getUser();
-    if (userError) console.warn("library_user_load_failed", userError.message);
+      data: { session },
+      error: sessionError,
+    } = await supabase.auth.getSession();
+    if (sessionError) console.warn("library_session_load_failed", sessionError.message);
+    const user = session?.user ?? null;
     setSignedIn(Boolean(user));
+    setIsAnonymous(Boolean(user?.is_anonymous));
     setError(null);
 
     if (!user) {
       loadedKeyRef.current = null;
+      setIsAnonymous(false);
       setRelationIds([]);
       setResources([]);
       setLoading(false);
@@ -145,7 +150,7 @@ export function SavedResourceBrowser() {
     <div className="pb-20">
       <PageHeader
         title="Library"
-        subtitle="Saved and watched resources tied to your account."
+        subtitle="Saved and watched resources tied to your private Subskills identity."
         backHref="/"
         rightAccessory={<SuggestLinkButton />}
       />
@@ -172,10 +177,20 @@ export function SavedResourceBrowser() {
         {!loading && error ? <p className="text-sm font-medium text-red-600">{error}</p> : null}
         {!loading && !error && signedIn === false ? (
           <p className="text-sm text-muted">
+            Save a resource, mark one watched, vote, or suggest a link to start a private library automatically.{" "}
             <Link className="focus-ring font-bold text-ink underline underline-offset-2" href="/sign-in?next=/saved">
-              Sign in
+              Add email or Google
             </Link>{" "}
-            to save resources, mark them watched, and keep your library across devices.
+            when you want to keep it across devices.
+          </p>
+        ) : null}
+        {!loading && !error && signedIn && isAnonymous && relationIds.length > 0 ? (
+          <p className="mb-5 rounded-md bg-bgGroup px-3 py-2 text-sm text-muted">
+            This library is saved to this browser.{" "}
+            <Link className="focus-ring font-bold text-ink underline underline-offset-2" href="/sign-in?next=/saved">
+              Add email or Google
+            </Link>{" "}
+            to keep it if you change devices or clear browser data.
           </p>
         ) : null}
         {!loading && !error && signedIn && relationIds.length === 0 ? (
