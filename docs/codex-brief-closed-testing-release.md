@@ -65,9 +65,12 @@ These are not style preferences. Each one has already cost real time on this pro
 ### Verification
 
 9. **"The documentation says so" is not verification.** If a brief says *verify*, run the thing
-   and record the observed result. `docs/anonymous-auth-verification.md` cites the Supabase docs
-   for id preservation on anonymous → permanent upgrade; that assumption is load-bearing for the
-   whole share-in model and still has not been tested.
+   and record the observed result. Batch 1 handed over `docs/anonymous-auth-verification.md`
+   citing the Supabase docs for id preservation on anonymous → permanent upgrade — a
+   load-bearing assumption, asserted rather than tested. Running it afterwards confirmed the
+   claim **and** surfaced two things the docs did not say: the account stays anonymous until the
+   confirmation link is clicked, and upgrading with an email that already has an account fails
+   with `email_exists` (now `M122`). Both were found by running it, neither by reading it.
 10. **Prove behaviour against production, not against the repo.** Deployed edge functions have
     silently lagged their source by seven weeks before, and a stale deploy is invisible in a diff.
 
@@ -92,12 +95,16 @@ also means the personal list needs its **own table keyed on the link, not on
 `link_skill_relation_id`** — `M101` was rewritten for this, and its earlier "no new table
 needed" conclusion is superseded.
 
-## Batch 1 — identity
+## Batch 1 — identity ✅ DELIVERED, REVIEWED AND SHIPPED (`25b3daf`, 2026-08-29)
 
 `M120` · `M115` · `MI27` · `M109`
 
-Hand this over on its own. It is the only part where a mistake is a security bug rather than a
-UI bug.
+Live on hosted: anonymous sign-in and manual linking are enabled, the curation-only publish gate
+is in force (zero published rows fail it), and an anonymous session was confirmed writing through
+`set_user_bookmark` against production after deploy. Migration history repaired to 52/52.
+
+Follow-up that came out of reviewing it: **`M122`**, scheduled into batch 2. Nothing else here
+needs redoing — the notes below are kept only as the record of what was asked for.
 
 - `M120` — enable anonymous sign-in; create the user **lazily on first action**, not on first
   launch. **Verify before building anything on it:** that upgrading anonymous → permanent
@@ -111,6 +118,18 @@ UI bug.
   `app_installs` table, the `track-install` function and the MMKV id.
 
 ## Batch 2 — share-in, client and server together
+
+> **Start with `M101`. It is the keystone of this batch.**
+>
+> The personal-list table is the decision everything else here rests on. Key it on the **link**
+> (`user_id` + `link_id`/`canonical_url`) with a **nullable** `link_skill_relation_id`, and route
+> **every** save through it — including saves from Discover, which today create relation-keyed
+> `user_bookmarks` rows. One table, one Library query, one order column.
+>
+> Get this wrong and three other things get harder rather than just later: `MI35`'s status chip
+> has nowhere to read publication state from, `MI36`'s ordering has no column to live on, and
+> `M122`'s eventual merge has two shapes of saved item to reconcile instead of one. If anything
+> about the shape seems off once you are in the code, raise it before building on top of it.
 
 **Client:** `M100` native share target (iOS Share Extension, Android `ACTION_SEND`) ·
 `M101` the personal list table · `M102` the Suggest UI with the two checkboxes ·
