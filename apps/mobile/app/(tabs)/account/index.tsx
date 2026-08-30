@@ -32,6 +32,7 @@ export default function AccountScreen() {
     user,
     isAnonymous,
     signInWithMagicLink,
+    signInToExistingWithMagicLink,
     signInWithGoogle,
     signInWithApple,
     signOut,
@@ -63,6 +64,41 @@ export default function AccountScreen() {
     setIsSubmitting(true);
     try {
       const message = await signInWithMagicLink(email.trim());
+      Alert.alert("Check your email", message);
+    } catch (error) {
+      if (isAnonymous && isEmailExistsError(error)) {
+        Alert.alert(
+          "Account already exists",
+          "Sign in to that account instead. Items saved on this device's temporary library will not carry over yet.",
+          [
+            { text: "Cancel", style: "cancel" },
+            {
+              text: "Sign in",
+              onPress: () => {
+                void signInExistingAccount();
+              },
+            },
+          ],
+        );
+        return;
+      }
+      Alert.alert("Sign in failed", error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  function isEmailExistsError(error: unknown) {
+    const code = errorCode(error);
+    const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+    return code === "email_exists" || message.includes("email_exists") || message.includes("already registered");
+  }
+
+  async function signInExistingAccount() {
+    if (!email.trim()) return;
+    setIsSubmitting(true);
+    try {
+      const message = await signInToExistingWithMagicLink(email.trim());
       Alert.alert("Check your email", message);
     } catch (error) {
       Alert.alert("Sign in failed", error instanceof Error ? error.message : String(error));
@@ -230,6 +266,20 @@ export default function AccountScreen() {
             >
               <Text style={styles.secondaryButtonText}>{isAnonymous ? "Add Google" : "Continue with Google"}</Text>
             </Pressable>
+            {isAnonymous ? (
+              <Pressable
+                onPress={signInExistingAccount}
+                disabled={isSubmitting || isLoading || !email.trim()}
+                style={({ pressed }) => [
+                  styles.secondaryButton,
+                  pressed && styles.pressed,
+                  (isSubmitting || isLoading || !email.trim()) && styles.disabled,
+                ]}
+                accessibilityRole="button"
+              >
+                <Text style={styles.secondaryButtonText}>Sign in to existing account</Text>
+              </Pressable>
+            ) : null}
             {isAnonymous ? (
               <Pressable
                 onPress={signOut}

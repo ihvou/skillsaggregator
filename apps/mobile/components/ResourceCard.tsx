@@ -5,6 +5,7 @@ import * as Haptics from "expo-haptics";
 import {
   Bookmark,
   BookmarkCheck,
+  Camera,
   CircleCheck,
   Globe,
   Music2,
@@ -50,11 +51,21 @@ function SourceIcon({ link }: { link: SkillResource["link"] }) {
     return <PlaySquare size={15} color="#FF0000" />;
   }
   if (source === "tiktok") return <Music2 size={14} color={colors.ink} />;
+  if (source === "instagram") return <Camera size={14} color="#C13584" />;
   return <Globe size={12} color={colors.faint} />;
 }
 
 function isPortraitResource(resource: SkillResource) {
-  return getLinkSource(resource.link) === "tiktok";
+  const source = getLinkSource(resource.link);
+  return source === "tiktok" || source === "instagram";
+}
+
+function statusLabel(status: SkillResource["catalog_status"]) {
+  if (status === "private") return "Private";
+  if (status === "in_review") return "In review";
+  if (status === "in_catalog") return "In catalogue";
+  if (status === "not_added") return "Reviewed";
+  return null;
 }
 
 /**
@@ -66,7 +77,12 @@ function isPortraitResource(resource: SkillResource) {
  *  - Tap opens the URL; swipe right to save, swipe left to mark complete
  */
 export function ResourceCard({ resource }: ResourceCardProps) {
-  const relationId = resource.id;
+  const resolvedRelationId = resource.link_skill_relation_id ?? (resource.catalog_status ? null : resource.id);
+  const relationId =
+    resource.catalog_status && resource.catalog_status !== "in_catalog"
+      ? null
+      : resolvedRelationId;
+  const linkId = resource.link.id;
   const { user, ensureSession } = useAuth();
   const [isSaved, setIsSaved] = useState(false);
   const [isCompleted, setIsCompleted] = useState(false);
@@ -90,20 +106,24 @@ export function ResourceCard({ resource }: ResourceCardProps) {
           .from("user_bookmarks")
           .select("created_at")
           .eq("user_id", currentUser.id)
-          .eq("link_skill_relation_id", relationId)
+          .eq("link_id", linkId)
           .maybeSingle(),
-        supabaseClient
-          .from("user_watched")
-          .select("watched_at")
-          .eq("user_id", currentUser.id)
-          .eq("link_skill_relation_id", relationId)
-          .maybeSingle(),
-        supabaseClient
-          .from("user_relation_votes")
-          .select("vote")
-          .eq("user_id", currentUser.id)
-          .eq("link_skill_relation_id", relationId)
-          .maybeSingle(),
+        relationId
+          ? supabaseClient
+              .from("user_watched")
+              .select("watched_at")
+              .eq("user_id", currentUser.id)
+              .eq("link_skill_relation_id", relationId)
+              .maybeSingle()
+          : Promise.resolve({ data: null, error: null }),
+        relationId
+          ? supabaseClient
+              .from("user_relation_votes")
+              .select("vote")
+              .eq("user_id", currentUser.id)
+              .eq("link_skill_relation_id", relationId)
+              .maybeSingle()
+          : Promise.resolve({ data: null, error: null }),
       ]);
       if (cancelled) return;
       if (bookmarkResult.error) console.warn("[resource-actions] Bookmark load failed", bookmarkResult.error.message);
@@ -118,7 +138,7 @@ export function ResourceCard({ resource }: ResourceCardProps) {
     return () => {
       cancelled = true;
     };
-  }, [relationId, user]);
+  }, [linkId, relationId, user]);
 
   async function ensureActionSession(action: string) {
     try {
@@ -127,6 +147,7 @@ export function ResourceCard({ resource }: ResourceCardProps) {
       const message = error instanceof Error ? error.message : String(error);
       console.warn("[resource-actions] Anonymous session creation failed", {
         relationId,
+        linkId,
         action,
         error: message,
       });
@@ -141,20 +162,29 @@ export function ResourceCard({ resource }: ResourceCardProps) {
     if (!supabase) return;
     const next = !isSaved;
     setIsSaved(next);
-    const { error } = await supabase.rpc("set_user_bookmark", {
-      p_relation_id: relationId,
-      p_saved: next,
-    });
+    const { error } = relationId
+      ? await supabase.rpc("set_user_bookmark", {
+          p_relation_id: relationId,
+          p_saved: next,
+        })
+      : await supabase.rpc("set_user_link_bookmark", {
+          p_link_id: linkId,
+          p_saved: next,
+        });
     if (error) {
       setIsSaved(!next);
       Alert.alert("Save failed", error.message);
-      console.warn("[resource-actions] Bookmark write failed", { relationId, error: error.message });
+      console.warn("[resource-actions] Bookmark write failed", { relationId, linkId, error: error.message });
       return;
     }
     triggerSelectionHaptic();
   }
 
   async function toggleCompleted() {
+    if (!relationId) {
+      Alert.alert("Still in review", "This link can be marked watched after it joins the catalogue.");
+      return;
+    }
     if (!(await ensureActionSession("mark_watched"))) return;
     const supabase = getSupabase();
     if (!supabase) return;
@@ -174,6 +204,10 @@ export function ResourceCard({ resource }: ResourceCardProps) {
   }
 
   async function writeVote(nextVote: -1 | 0 | 1) {
+    if (!relationId) {
+      Alert.alert("Still in review", "Votes are available after this link joins the catalogue.");
+      return;
+    }
     if (!(await ensureActionSession("vote_resource"))) return;
     const supabase = getSupabase();
     if (!supabase) return;
@@ -229,6 +263,7 @@ export function ResourceCard({ resource }: ResourceCardProps) {
   const SavedIcon = isSaved ? BookmarkCheck : Bookmark;
   const contributor = resource.link.contributor_profile;
   const portrait = isPortraitResource(resource);
+  const catalogueStatus = statusLabel(resource.catalog_status);
 
   return (
     <Swipeable
@@ -274,6 +309,13 @@ export function ResourceCard({ resource }: ResourceCardProps) {
               <SourceIcon link={resource.link} />
             </View>
             <View style={styles.pillGroup}>
+              {catalogueStatus ? (
+                <View style={styles.statusPill}>
+                  <Text style={styles.statusText} numberOfLines={1}>
+                    {catalogueStatus}
+                  </Text>
+                </View>
+              ) : null}
               {resource.skill_level ? (
                 <View style={styles.levelPill}>
                   {/* numberOfLines guards against "Intermedi/ate" wrapping mid-word
@@ -445,6 +487,18 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     borderRadius: radius.pill,
     backgroundColor: colors.muted,
+  },
+  statusPill: {
+    maxWidth: 88,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: radius.pill,
+    backgroundColor: colors.bgGroup,
+  },
+  statusText: {
+    color: colors.muted,
+    fontSize: 11,
+    fontWeight: "800",
   },
   levelText: {
     color: colors.surface,

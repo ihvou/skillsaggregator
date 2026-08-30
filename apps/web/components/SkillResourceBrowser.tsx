@@ -31,7 +31,7 @@ const LEVEL_LABELS = {
   advanced: "Advanced",
 } as const;
 const SORT_LABELS = { popular: "Popular", newest: "Newest" } as const;
-const SOURCE_LABELS = { all: "All sources", youtube: "YouTube", tiktok: "TikTok" } as const;
+const SOURCE_LABELS = { all: "All sources", youtube: "YouTube", tiktok: "TikTok", instagram: "Instagram" } as const;
 
 export function SkillResourceBrowser({ category, skill, resources, summarySlot }: SkillResourceBrowserProps) {
   const [level, setLevel] = useState<SkillLevel | null>(null);

@@ -54,6 +54,15 @@ function getPreview(suggestion: AdminSuggestion) {
   };
 }
 
+function reviewLaneLabel(payload: Record<string, unknown>) {
+  const lane = typeof payload.review_lane === "string" ? payload.review_lane : null;
+  if (lane === "coach") return "Coach lane";
+  if (lane === "founder") return "Founder lane";
+  if (lane === "agent") return "Agent lane";
+  if (lane === "private") return "Private";
+  return null;
+}
+
 export function ModerationQueue({ initialSuggestions }: ModerationQueueProps) {
   const [suggestions, setSuggestions] = useState(initialSuggestions);
   const [isPending, startTransition] = useTransition();
@@ -105,6 +114,7 @@ export function ModerationQueue({ initialSuggestions }: ModerationQueueProps) {
     <div className="grid gap-4">
       {suggestions.map((suggestion) => {
         const preview = getPreview(suggestion);
+        const laneLabel = reviewLaneLabel(suggestion.payload_json);
         return (
           <article key={suggestion.id} className="rounded-lg border border-ink/10 bg-white p-4 shadow-sm">
             <div className="grid gap-4 md:grid-cols-[148px_1fr_auto]">
@@ -127,6 +137,7 @@ export function ModerationQueue({ initialSuggestions }: ModerationQueueProps) {
                 <div className="flex flex-wrap items-center gap-2 text-xs font-medium uppercase tracking-wide text-graphite">
                   <span>{suggestion.type.replaceAll("_", " ")}</span>
                   <span>{suggestion.origin_name ?? suggestion.origin_type}</span>
+                  {laneLabel ? <span>{laneLabel}</span> : null}
                   {suggestion.confidence ? <span>{Math.round(suggestion.confidence * 100)}%</span> : null}
                 </div>
                 <h2 className="mt-2 text-lg font-semibold text-ink">{preview.title}</h2>

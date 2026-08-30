@@ -2,15 +2,15 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { GripVertical } from "lucide-react";
 import type { SkillResource } from "@skillsaggregator/shared";
 import { PageHeader } from "@/components/PageHeader";
 import { ResourceCard } from "@/components/ResourceCard";
 import { SuggestLinkButton } from "@/components/SuggestLinkButton";
 import { getBrowserSupabase } from "@/lib/browserSupabase";
 import {
-  type JoinedRelationRow,
-  SAVED_RELATION_SELECT,
-  shapeJoinedRelationResource,
+  type LibraryResourceRow,
+  shapeLibraryResource,
 } from "@/lib/resourceRows";
 
 type LibraryView = "saved" | "watched";
@@ -19,12 +19,12 @@ export function SavedResourceBrowser() {
   const [view, setView] = useState<LibraryView>("saved");
   const [signedIn, setSignedIn] = useState<boolean | null>(null);
   const [isAnonymous, setIsAnonymous] = useState(false);
-  const [relationIds, setRelationIds] = useState<string[]>([]);
   const [resources, setResources] = useState<SkillResource[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const loadedKeyRef = useRef<string | null>(null);
   const inFlightKeyRef = useRef<string | null>(null);
+  const draggedIdRef = useRef<string | null>(null);
 
   const refresh = useCallback(async () => {
     const supabase = getBrowserSupabase();
@@ -32,9 +32,8 @@ export function SavedResourceBrowser() {
       setSignedIn(false);
       setIsAnonymous(false);
       setResources([]);
-      setRelationIds([]);
       setLoading(false);
-      setError("Saved resources cannot be loaded until Supabase public env vars are available.");
+      setError("Library resources cannot be loaded until Supabase public env vars are available.");
       return;
     }
 
@@ -51,58 +50,23 @@ export function SavedResourceBrowser() {
     if (!user) {
       loadedKeyRef.current = null;
       setIsAnonymous(false);
-      setRelationIds([]);
       setResources([]);
       setLoading(false);
       return;
     }
 
-    const table = view === "saved" ? "user_bookmarks" : "user_watched";
-    const orderColumn = view === "saved" ? "created_at" : "watched_at";
-    const { data: stateRows, error: stateError } = await supabase
-      .from(table)
-      .select(`link_skill_relation_id, ${orderColumn}`)
-      .eq("user_id", user.id)
-      .order(orderColumn, { ascending: false });
-
-    if (stateError) {
-      setError(stateError.message);
-      setResources([]);
-      setRelationIds([]);
-      setLoading(false);
-      return;
-    }
-
-    const ids = (stateRows ?? [])
-      .map((row) => row.link_skill_relation_id)
-      .filter((id): id is string => typeof id === "string" && id.length > 0);
-    const idsKey = `${view}:${ids.join("\u0000")}`;
-    setRelationIds(ids);
+    const idsKey = `${user.id}:${view}`;
     if (loadedKeyRef.current === idsKey) {
       setLoading(false);
       return;
     }
     if (inFlightKeyRef.current === idsKey) return;
-    if (ids.length === 0) {
-      loadedKeyRef.current = idsKey;
-      setResources([]);
-      setLoading(false);
-      return;
-    }
 
     inFlightKeyRef.current = idsKey;
     setLoading(true);
-    const { data, error: queryError } = await supabase
-      .from("link_skill_relations")
-      .select(SAVED_RELATION_SELECT)
-      .in("id", ids)
-      .eq("is_active", true)
-      .eq("published", true)
-      .eq("links.is_active", true)
-      .order("combined_score", { ascending: false, nullsFirst: false })
-      .order("curator_reviews", { ascending: false, nullsFirst: false })
-      .order("value_score", { ascending: false, nullsFirst: false })
-      .order("vote_score", { ascending: false });
+    const { data, error: queryError } = await supabase.rpc("get_user_library_resources", {
+      p_view: view,
+    });
 
     if (inFlightKeyRef.current === idsKey) inFlightKeyRef.current = null;
 
@@ -113,15 +77,10 @@ export function SavedResourceBrowser() {
       return;
     }
 
-    const byRelation = new Map<string, SkillResource>();
-    for (const relation of (data ?? []) as JoinedRelationRow[]) {
-      if (byRelation.has(relation.id)) continue;
-      const resource = shapeJoinedRelationResource(relation);
-      if (!resource) continue;
-      byRelation.set(relation.id, resource);
-    }
-
-    setResources(ids.map((id) => byRelation.get(id)).filter((item): item is SkillResource => Boolean(item)));
+    setResources(((data ?? []) as LibraryResourceRow[]).flatMap((row) => {
+      const resource = shapeLibraryResource(row);
+      return resource ? [resource] : [];
+    }));
     loadedKeyRef.current = idsKey;
     setLoading(false);
   }, [view]);
@@ -146,11 +105,54 @@ export function SavedResourceBrowser() {
     };
   }, [refresh]);
 
+  function bookmarkId(resource: SkillResource) {
+    return resource.personal_list_id ?? null;
+  }
+
+  async function persistSavedOrder(nextResources: SkillResource[], previousResources: SkillResource[]) {
+    const supabase = getBrowserSupabase();
+    const ids = nextResources.map(bookmarkId).filter((id): id is string => Boolean(id));
+    if (!supabase || ids.length !== nextResources.length) return;
+    setResources(nextResources);
+    setError(null);
+    const { error: reorderError } = await supabase.rpc("reorder_user_bookmarks", {
+      p_bookmark_ids: ids,
+    });
+    if (reorderError) {
+      setResources(previousResources);
+      setError(reorderError.message);
+      console.warn("library_reorder_failed", {
+        message: reorderError.message,
+        ids,
+      });
+      return;
+    }
+    console.info("library_reorder_saved", {
+      count: ids.length,
+    });
+  }
+
+  function moveDraggedResource(targetId: string | null) {
+    if (view !== "saved" || !targetId) return;
+    const draggedId = draggedIdRef.current;
+    draggedIdRef.current = null;
+    if (!draggedId || draggedId === targetId) return;
+    const previousResources = resources;
+    const from = previousResources.findIndex((resource) => bookmarkId(resource) === draggedId);
+    const to = previousResources.findIndex((resource) => bookmarkId(resource) === targetId);
+    if (from < 0 || to < 0) return;
+    const nextResources = [...previousResources];
+    const [moved] = nextResources.splice(from, 1);
+    if (!moved) return;
+    nextResources.splice(to, 0, moved);
+    void persistSavedOrder(nextResources, previousResources);
+  }
+
   return (
     <div className="pb-20">
       <PageHeader
         title="Library"
-        subtitle="Saved and watched resources tied to your private Subskills identity."
+        subtitle="Watch later and watched resources tied to your private Subskills identity."
         backHref="/"
         rightAccessory={<SuggestLinkButton />}
       />
@@ -169,11 +171,11 @@ export function SavedResourceBrowser() {
                 view === item ? "bg-surface text-ink shadow-sm" : "text-muted hover:text-ink"
               }`}
             >
-              {item}
+              {item === "saved" ? "Watch later" : "Watched"}
             </button>
           ))}
         </div>
-        {loading ? <p className="text-sm text-muted">Loading {view} resources...</p> : null}
+        {loading ? <p className="text-sm text-muted">Loading {view === "saved" ? "Watch later" : view} resources...</p> : null}
         {!loading && error ? <p className="text-sm font-medium text-red-600">{error}</p> : null}
         {!loading && !error && signedIn === false ? (
           <p className="text-sm text-muted">
@@ -184,7 +186,7 @@ export function SavedResourceBrowser() {
             when you want to keep it across devices.
           </p>
         ) : null}
-        {!loading && !error && signedIn && isAnonymous && relationIds.length > 0 ? (
+        {!loading && !error && signedIn && isAnonymous && resources.length > 0 ? (
           <p className="mb-5 rounded-md bg-bgGroup px-3 py-2 text-sm text-muted">
             This library is saved to this browser.{" "}
             <Link className="focus-ring font-bold text-ink underline underline-offset-2" href="/sign-in?next=/saved">
@@ -193,23 +195,48 @@ export function SavedResourceBrowser() {
             to keep it if you change devices or clear browser data.
           </p>
         ) : null}
-        {!loading && !error && signedIn && relationIds.length === 0 ? (
+        {!loading && !error && signedIn && resources.length === 0 ? (
           <p className="text-sm text-muted">
             {view === "saved"
-              ? "Nothing saved yet. Use the bookmark button on any resource to keep it here."
+              ? "Your Watch later is empty. Use the bookmark button on any resource to keep it here."
               : "Nothing watched yet. Use the check button on a resource after you watch it."}
           </p>
         ) : null}
-        {!loading && !error && relationIds.length > 0 && resources.length === 0 ? (
-          <p className="text-sm text-muted">Library resources were not found in the active catalog.</p>
-        ) : null}
         {resources.length > 0 ? (
           <div className="divide-y divide-divider">
-            {resources.map((resource) => (
-              <div key={resource.id} className="py-5">
-                <ResourceCard resource={resource} />
-              </div>
-            ))}
+            {resources.map((resource) => {
+              const id = bookmarkId(resource);
+              const canReorder = view === "saved" && Boolean(id);
+              return (
+                <div
+                  key={resource.id}
+                  className="py-5"
+                  draggable={canReorder}
+                  onDragStart={() => {
+                    draggedIdRef.current = id;
+                  }}
+                  onDragOver={(event) => {
+                    if (canReorder) event.preventDefault();
+                  }}
+                  onDrop={() => moveDraggedResource(id)}
+                >
+                  <div className="flex gap-3">
+                    {canReorder ? (
+                      <span
+                        className="mt-9 hidden cursor-grab text-faint sm:inline-flex"
+                        aria-label="Drag to reorder"
+                        title="Drag to reorder"
+                      >
+                        <GripVertical className="h-5 w-5" />
+                      </span>
+                    ) : null}
+                    <div className="min-w-0 flex-1">
+                      <ResourceCard resource={resource} />
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         ) : null}
       </section>

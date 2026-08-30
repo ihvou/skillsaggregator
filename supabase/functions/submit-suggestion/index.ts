@@ -30,6 +30,9 @@ const STATIC_SPAM_DOMAINS = new Set([
   "trafficmonsoon.com",
 ]);
 
+type HumanLinkSource = "youtube" | "tiktok" | "instagram";
+type ReviewLane = "coach" | "founder";
+
 function clientIp(request: Request) {
   const forwardedFor = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
   return (
@@ -53,6 +56,24 @@ function isPrivateHostname(hostname: string) {
   return false;
 }
 
+function supportedHumanLinkSource(value: string): HumanLinkSource | null {
+  try {
+    const hostname = new URL(value).hostname.replace(/^www\./, "").toLowerCase();
+    if (hostname === "youtu.be" || hostname === "youtube.com" || hostname.endsWith(".youtube.com")) {
+      return "youtube";
+    }
+    if (hostname === "tiktok.com" || hostname.endsWith(".tiktok.com")) return "tiktok";
+    if (hostname === "instagram.com" || hostname.endsWith(".instagram.com")) return "instagram";
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+function reviewLaneForSource(source: HumanLinkSource): ReviewLane {
+  return source === "youtube" ? "coach" : "founder";
+}
+
 function validateHumanLinkUrl(value: string) {
   let parsed: URL;
   try {
@@ -72,13 +93,18 @@ function validateHumanLinkUrl(value: string) {
   if (STATIC_SPAM_DOMAINS.has(hostname)) {
     throw new Error("That domain is not accepted for public suggestions.");
   }
+
+  if (!supportedHumanLinkSource(parsed.toString())) {
+    throw Object.assign(
+      new Error("Subskills currently accepts YouTube, TikTok, and Instagram links."),
+      { status: 400 },
+    );
+  }
 }
 
-async function cacheInternalTikTokThumbnailIfNeeded(
+async function cacheTikTokThumbnailIfNeeded(
   payload: Record<string, unknown>,
-  internalRequest: boolean,
 ) {
-  if (!internalRequest) return;
   if (payload.scoring_strategy !== "engagement_authority") return;
   if (typeof payload.thumbnail_storage_path === "string" && payload.thumbnail_storage_path) return;
   if (typeof payload.thumbnail_url !== "string" || !payload.thumbnail_url) return;
@@ -108,6 +134,161 @@ async function cacheInternalTikTokThumbnailIfNeeded(
       message,
     });
   }
+}
+
+async function saveHumanLinkToWatchLater(
+  supabase: ReturnType<typeof getServiceClient>,
+  {
+    submittedByUserId,
+    payload,
+    targetSkillId,
+    relationId = null,
+    suggestionId = null,
+  }: {
+    submittedByUserId: string;
+    payload: Record<string, unknown>;
+    targetSkillId: string | null;
+    relationId?: string | null;
+    suggestionId?: string | null;
+  },
+) {
+  const canonicalUrl = String(payload.canonical_url ?? payload.url ?? "").trim();
+  if (!canonicalUrl) throw new Error("canonical_url is required to save a link.");
+
+  const { data: existingLink, error: existingLinkError } = await supabase
+    .from("links")
+    .select("id")
+    .eq("canonical_url", canonicalUrl)
+    .maybeSingle();
+  if (existingLinkError) throw existingLinkError;
+
+  let linkId = existingLink?.id as string | undefined;
+  if (!linkId) {
+    const hasThumbnail =
+      typeof payload.thumbnail_storage_path === "string" && payload.thumbnail_storage_path.trim()
+        ? true
+        : typeof payload.thumbnail_url === "string" && payload.thumbnail_url.trim()
+          ? true
+          : false;
+    const { data: insertedLink, error: insertLinkError } = await supabase
+      .from("links")
+      .insert({
+        url: String(payload.url ?? canonicalUrl),
+        canonical_url: canonicalUrl,
+        domain: String(payload.domain ?? getDomain(canonicalUrl)),
+        title: typeof payload.title === "string" && payload.title.trim() ? payload.title.trim() : null,
+        description: typeof payload.description === "string" && payload.description.trim()
+          ? payload.description.trim()
+          : null,
+        thumbnail_url: typeof payload.thumbnail_url === "string" && payload.thumbnail_url.trim()
+          ? payload.thumbnail_url.trim()
+          : null,
+        thumbnail_storage_path:
+          typeof payload.thumbnail_storage_path === "string" && payload.thumbnail_storage_path.trim()
+            ? payload.thumbnail_storage_path.trim()
+            : null,
+        content_type: typeof payload.content_type === "string" && payload.content_type.trim()
+          ? payload.content_type.trim()
+          : "video",
+        language: typeof payload.language === "string" && payload.language.trim() ? payload.language.trim() : "en",
+        preview_status: hasThumbnail ? "fetched" : "pending",
+        fetched_at: hasThumbnail ? new Date().toISOString() : null,
+        is_active: true,
+      })
+      .select("id")
+      .single();
+    if (insertLinkError) {
+      const { data: racedLink, error: racedLinkError } = await supabase
+        .from("links")
+        .select("id")
+        .eq("canonical_url", canonicalUrl)
+        .maybeSingle();
+      if (racedLinkError || !racedLink) throw insertLinkError;
+      linkId = racedLink.id;
+    } else {
+      if (!insertedLink) throw new Error("Link insert returned no row.");
+      linkId = insertedLink.id;
+    }
+  }
+  if (!linkId) throw new Error("Could not resolve link for Watch later save.");
+
+  const { data: bookmarkId, error: bookmarkError } = await supabase.rpc(
+    "upsert_user_bookmark_for_link",
+    {
+      p_user_id: submittedByUserId,
+      p_link_id: linkId,
+      p_skill_id: targetSkillId,
+      p_relation_id: relationId,
+      p_source_suggestion_id: suggestionId,
+    },
+  );
+  if (bookmarkError) throw bookmarkError;
+
+  console.info("submit_suggestion_watch_later_saved", {
+    submitted_by_user_id: submittedByUserId,
+    link_id: linkId,
+    bookmark_id: bookmarkId,
+    relation_id: relationId,
+    suggestion_id: suggestionId,
+    target_skill_id: targetSkillId,
+  });
+
+  return { link_id: linkId, bookmark_id: bookmarkId as string };
+}
+
+async function saveKnownHumanLinkToWatchLater(
+  supabase: ReturnType<typeof getServiceClient>,
+  {
+    submittedByUserId,
+    canonicalUrl,
+    targetSkillId,
+    suggestionId,
+    relationId,
+    fallbackPayload,
+  }: {
+    submittedByUserId: string;
+    canonicalUrl: string;
+    targetSkillId: string | null;
+    suggestionId: string | null;
+    relationId?: string | null;
+    fallbackPayload: Record<string, unknown>;
+  },
+) {
+  const { data: link, error: linkError } = await supabase
+    .from("links")
+    .select("id, url, canonical_url, domain, title, description, content_type")
+    .eq("canonical_url", canonicalUrl)
+    .maybeSingle();
+  if (linkError) throw linkError;
+  if (!link) {
+    console.info("submit_suggestion_duplicate_bookmark_creating_private_link", {
+      submitted_by_user_id: submittedByUserId,
+      suggestion_id: suggestionId,
+      canonical_url: canonicalUrl,
+    });
+    return saveHumanLinkToWatchLater(supabase, {
+      submittedByUserId,
+      payload: fallbackPayload,
+      targetSkillId,
+      relationId,
+      suggestionId,
+    });
+  }
+
+  return saveHumanLinkToWatchLater(supabase, {
+    submittedByUserId,
+    payload: {
+      url: link.url,
+      canonical_url: link.canonical_url,
+      domain: link.domain,
+      title: link.title,
+      description: link.description,
+      content_type: link.content_type ?? "video",
+    },
+    targetSkillId,
+    relationId,
+    suggestionId,
+  });
 }
 
 async function verifyTurnstileIfConfigured(token: string | null | undefined, ip: string) {
@@ -190,6 +371,9 @@ Deno.serve(async (request) => {
     const finalStatus = finalSuggestionStatus(internalRequest, requestedStatus);
     const payload = suggestionPayloadByType[input.type].parse(input.payload_json) as Record<string, unknown>;
     const isHuman = input.origin_type === "human";
+    const humanLinkIntent = isHuman && input.type === "LINK_ADD";
+    const addToWatchLater = humanLinkIntent ? input.add_to_watch_later ?? true : false;
+    const suggestToCatalog = humanLinkIntent ? input.suggest_to_catalog ?? true : true;
     const bearerUserId = await submittedUserIdFromAuthorization(supabase, request);
     const submittedByUserId = resolveSubmittedByUserId({
       bearerUserId,
@@ -205,6 +389,8 @@ Deno.serve(async (request) => {
       final_status: finalStatus,
       internal_request: internalRequest,
       submitted_by_user_id: submittedByUserId,
+      add_to_watch_later: addToWatchLater,
+      suggest_to_catalog: suggestToCatalog,
       ip,
     });
 
@@ -217,10 +403,25 @@ Deno.serve(async (request) => {
     }
 
     if (input.type === "LINK_ADD") {
+      if (humanLinkIntent && !addToWatchLater && !suggestToCatalog) {
+        throw Object.assign(
+          new Error("Choose Watch later, catalogue review, or both before submitting."),
+          { status: 400 },
+        );
+      }
       if (isHuman) validateHumanLinkUrl(String(payload.url));
       payload.canonical_url = normalizeCanonicalUrl(String(payload.canonical_url));
       payload.domain = getDomain(String(payload.canonical_url));
-      await cacheInternalTikTokThumbnailIfNeeded(payload, internalRequest);
+      const humanSource = humanLinkIntent
+        ? supportedHumanLinkSource(String(payload.canonical_url))
+        : null;
+      if (humanSource) {
+        payload.creator_platform = humanSource;
+        payload.content_type = payload.content_type ?? "video";
+        payload.scoring_strategy = humanSource === "youtube" ? "transcript_llm" : "engagement_authority";
+        payload.review_lane = reviewLaneForSource(humanSource);
+      }
+      await cacheTikTokThumbnailIfNeeded(payload);
     }
 
     const targetSkillId = "target_skill_id" in payload ? String(payload.target_skill_id) : input.skill_id;
@@ -235,6 +436,23 @@ Deno.serve(async (request) => {
       categoryId = data.category_id;
     }
 
+    if (humanLinkIntent && submittedByUserId && !suggestToCatalog) {
+      const saved = await saveHumanLinkToWatchLater(supabase, {
+        submittedByUserId,
+        payload,
+        targetSkillId: targetSkillId ?? null,
+      });
+      return jsonResponse({
+        status: "saved",
+        requested_status: requestedStatus,
+        saved: true,
+        suggested: false,
+        duplicate: false,
+        link_id: saved.link_id,
+        bookmark_id: saved.bookmark_id,
+      }, 200, request);
+    }
+
     const authorInternalUserId =
       input.author_internal_user_id ?? (await chooseInternalAuthor(supabase, categoryId));
     let dedupeKey: string;
@@ -246,7 +464,7 @@ Deno.serve(async (request) => {
 
     const { data: existing, error: existingError } = await supabase
       .from("suggestions")
-      .select("id, status")
+      .select("id, status, link_id")
       .eq("dedupe_key", dedupeKey)
       .in("status", ["pending", "approved", "auto_approved"])
       .maybeSingle();
@@ -257,10 +475,23 @@ Deno.serve(async (request) => {
         status: existing.status,
         dedupe_key: dedupeKey,
       });
+      const saved = humanLinkIntent && submittedByUserId && addToWatchLater
+        ? await saveKnownHumanLinkToWatchLater(supabase, {
+            submittedByUserId,
+            canonicalUrl: String(payload.canonical_url),
+            targetSkillId: targetSkillId ?? null,
+            suggestionId: existing.id,
+            relationId: null,
+            fallbackPayload: payload,
+          })
+        : null;
       return jsonResponse({
         suggestion_id: existing.id,
         status: existing.status,
         duplicate: true,
+        saved: Boolean(saved),
+        link_id: existing.link_id ?? saved?.link_id ?? null,
+        bookmark_id: saved?.bookmark_id ?? null,
       }, 200, request);
     }
 
@@ -268,7 +499,7 @@ Deno.serve(async (request) => {
       const since = new Date(Date.now() - RECENT_DUPLICATE_WINDOW_MS).toISOString();
       let recentQuery = supabase
         .from("suggestions")
-        .select("id, status")
+        .select("id, status, link_id")
         .eq("type", "LINK_ADD")
         .eq("payload_json->>canonical_url", String(payload.canonical_url))
         .gte("created_at", since);
@@ -291,10 +522,23 @@ Deno.serve(async (request) => {
           canonical_url: payload.canonical_url,
           target_skill_id: internalRequest ? targetSkillId : undefined,
         });
+        const saved = humanLinkIntent && submittedByUserId && addToWatchLater
+          ? await saveKnownHumanLinkToWatchLater(supabase, {
+              submittedByUserId,
+              canonicalUrl: String(payload.canonical_url),
+              targetSkillId: targetSkillId ?? null,
+              suggestionId: recent.id,
+              relationId: null,
+              fallbackPayload: payload,
+            })
+          : null;
         return jsonResponse({
           suggestion_id: recent.id,
           status: recent.status,
           duplicate: true,
+          saved: Boolean(saved),
+          link_id: recent.link_id ?? saved?.link_id ?? null,
+          bookmark_id: saved?.bookmark_id ?? null,
           message: "already submitted, thanks",
         }, 200, request);
       }
@@ -362,20 +606,50 @@ Deno.serve(async (request) => {
       console.info("submit_suggestion_community_apply_started", {
         suggestion_id: inserted.id,
         submitted_by_user_id: submittedByUserId,
+        add_to_watch_later: addToWatchLater,
+        review_lane: payload.review_lane,
       });
-      const applied = await callFunction("apply-suggestion", {
+      const applied = await callFunction<{
+        ok?: boolean;
+        link_id?: string;
+        relation_id?: string;
+        status?: string;
+        review_lane?: string;
+      }>("apply-suggestion", {
         suggestion_id: inserted.id,
         moderator_user_id: null,
+        keep_pending: true,
       });
+      const saved = addToWatchLater && applied.link_id
+        ? await saveHumanLinkToWatchLater(supabase, {
+            submittedByUserId,
+            payload: {
+              ...payload,
+              canonical_url: String(payload.canonical_url),
+              url: String(payload.url),
+            },
+            targetSkillId: targetSkillId ?? null,
+            relationId: applied.relation_id ?? null,
+            suggestionId: inserted.id,
+          })
+        : null;
       console.info("submit_suggestion_community_apply_completed", {
         suggestion_id: inserted.id,
         submitted_by_user_id: submittedByUserId,
+        applied_status: applied.status,
+        applied_review_lane: applied.review_lane,
+        saved_to_watch_later: Boolean(saved),
       });
       return jsonResponse({
         suggestion_id: inserted.id,
-        status: "approved",
+        status: applied.status ?? inserted.status,
         requested_status: requestedStatus,
         applied,
+        saved: Boolean(saved),
+        link_id: applied.link_id ?? saved?.link_id ?? null,
+        relation_id: applied.relation_id ?? null,
+        bookmark_id: saved?.bookmark_id ?? null,
+        review_lane: applied.review_lane ?? payload.review_lane ?? null,
       }, 200, request);
     }
 

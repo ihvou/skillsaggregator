@@ -1,9 +1,9 @@
 import { useState } from "react";
-import { Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
+import { Alert, Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
 import { FlashList } from "@shopify/flash-list";
 import { useRouter } from "expo-router";
-import { useQuery } from "@tanstack/react-query";
-import { Bookmark, CheckCircle, PlusCircle } from "lucide-react-native";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { ArrowDown, ArrowUp, Bookmark, CheckCircle, PlusCircle } from "lucide-react-native";
 import type { SkillResource } from "@skillsaggregator/shared";
 import { EmptyState } from "@/components/EmptyState";
 import { PageHeader } from "@/components/PageHeader";
@@ -12,17 +12,20 @@ import { Screen } from "@/components/Screen";
 import { SkeletonList } from "@/components/SkeletonList";
 import { getUserLibraryResources, type UserLibraryView } from "@/lib/data";
 import { useAuth } from "@/lib/auth";
+import { getSupabase } from "@/lib/supabase";
 import { useOnboardingGate } from "@/lib/useOnboardingGate";
 import { colors, radius, spacing } from "@/lib/theme";
 
 export default function SavedTab() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   useOnboardingGate();
   const { user } = useAuth();
   const [view, setView] = useState<UserLibraryView>("saved");
+  const queryKey = ["user-library", user?.id, view] as const;
 
   const query = useQuery({
-    queryKey: ["user-library", user?.id, view],
+    queryKey,
     queryFn: () => getUserLibraryResources(user!.id, view),
     enabled: Boolean(user),
     staleTime: 600000,
@@ -32,10 +35,40 @@ export default function SavedTab() {
   const showSkeleton = Boolean(user) && displayResources.length === 0 && query.isLoading;
   const emptyIcon = view === "saved" ? Bookmark : CheckCircle;
 
+  async function moveResource(resourceId: string, direction: -1 | 1) {
+    if (view !== "saved" || !user) return;
+    const current = query.data ?? [];
+    const from = current.findIndex((resource) => resource.id === resourceId);
+    const to = from + direction;
+    if (from < 0 || to < 0 || to >= current.length) return;
+    const next = [...current];
+    const [moved] = next.splice(from, 1);
+    if (!moved) return;
+    next.splice(to, 0, moved);
+    const ids = next
+      .map((resource) => resource.personal_list_id)
+      .filter((id): id is string => Boolean(id));
+    if (ids.length !== next.length) return;
+
+    queryClient.setQueryData(queryKey, next);
+    const supabase = getSupabase();
+    if (!supabase) return;
+    const { error } = await supabase.rpc("reorder_user_bookmarks", {
+      p_bookmark_ids: ids,
+    });
+    if (error) {
+      queryClient.setQueryData(queryKey, current);
+      console.warn("[library] Reorder failed", { error: error.message, ids });
+      Alert.alert("Reorder failed", error.message);
+      return;
+    }
+    console.info("[library] Watch later order saved", { count: ids.length });
+  }
+
   return (
     <Screen edges={["top"]} padded={false}>
       <View style={styles.headerWrap}>
-        <PageHeader title="Library" subtitle="Saved and watched resources" />
+        <PageHeader title="Library" subtitle="Watch later and watched resources" />
         <View style={styles.tabs}>
           {(["saved", "watched"] as const).map((item) => (
             <Pressable
@@ -45,7 +78,7 @@ export default function SavedTab() {
               accessibilityRole="button"
             >
               <Text style={[styles.tabText, view === item && styles.tabTextActive]}>
-                {item === "saved" ? "Saved" : "Watched"}
+                {item === "saved" ? "Watch later" : "Watched"}
               </Text>
             </Pressable>
           ))}
@@ -70,7 +103,7 @@ export default function SavedTab() {
               {user ? (
                 <EmptyState
                   icon={emptyIcon}
-                  title={view === "saved" ? "Nothing saved yet" : "Nothing watched yet"}
+                  title={view === "saved" ? "Nothing in Watch later" : "Nothing watched yet"}
                   subtitle={
                     view === "saved"
                       ? "Tap the bookmark on any resource to keep it for later."
@@ -95,9 +128,47 @@ export default function SavedTab() {
               </View>
             </View>
           }
-          renderItem={({ item }) => (
+          renderItem={({ item, index }) => (
             <View style={styles.rowWrap}>
-              <ResourceCard resource={item} />
+              <View style={styles.resourceRow}>
+                {view === "saved" && displayResources.length > 1 ? (
+                  <View style={styles.reorderControls}>
+                    <Pressable
+                      onPress={() => {
+                        void moveResource(item.id, -1);
+                      }}
+                      disabled={index === 0}
+                      style={({ pressed }) => [
+                        styles.reorderButton,
+                        pressed && styles.pressed,
+                        index === 0 && styles.disabled,
+                      ]}
+                      accessibilityRole="button"
+                      accessibilityLabel="Move earlier"
+                    >
+                      <ArrowUp size={16} color={colors.muted} />
+                    </Pressable>
+                    <Pressable
+                      onPress={() => {
+                        void moveResource(item.id, 1);
+                      }}
+                      disabled={index === displayResources.length - 1}
+                      style={({ pressed }) => [
+                        styles.reorderButton,
+                        pressed && styles.pressed,
+                        index === displayResources.length - 1 && styles.disabled,
+                      ]}
+                      accessibilityRole="button"
+                      accessibilityLabel="Move later"
+                    >
+                      <ArrowDown size={16} color={colors.muted} />
+                    </Pressable>
+                  </View>
+                ) : null}
+                <View style={styles.resourceCardWrap}>
+                  <ResourceCard resource={item} />
+                </View>
+              </View>
             </View>
           )}
           contentContainerStyle={{ paddingBottom: spacing.xxl }}
@@ -169,6 +240,29 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.page,
     paddingVertical: spacing.lg,
   },
+  resourceRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+  },
+  resourceCardWrap: {
+    flex: 1,
+    minWidth: 0,
+  },
+  reorderControls: {
+    width: 32,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+  },
+  reorderButton: {
+    width: 28,
+    height: 28,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 14,
+    backgroundColor: colors.bgGroup,
+  },
   divider: {
     height: StyleSheet.hairlineWidth,
     marginHorizontal: spacing.page,
@@ -205,5 +299,8 @@ const styles = StyleSheet.create({
   },
   pressed: {
     opacity: 0.7,
+  },
+  disabled: {
+    opacity: 0.35,
   },
 });

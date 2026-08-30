@@ -1,4 +1,4 @@
-import { Redirect } from "expo-router";
+import { Redirect, useLocalSearchParams } from "expo-router";
 
 /**
  * Auth deep-link landing for `subskills://auth/callback?code=...`.
@@ -8,9 +8,11 @@ import { Redirect } from "expo-router";
  * and renders an empty "Skill" / "No matches for this filter" screen after sign-in.
  *
  * The OAuth / magic-link code exchange itself is handled by AuthProvider's
- * Linking listener (see lib/auth.tsx); this route just sends the signed-in user
- * to the home tab instead of the broken skill screen.
+ * Linking listener (see lib/auth.tsx); this route sends the signed-in user
+ * back to a safe `next` path instead of the broken skill screen.
  */
 export default function AuthCallback() {
-  return <Redirect href="/" />;
+  const { next } = useLocalSearchParams<{ next?: string }>();
+  const nextPath = typeof next === "string" && next.startsWith("/") ? next : "/account";
+  return <Redirect href={nextPath} />;
 }

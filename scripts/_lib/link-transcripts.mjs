@@ -115,9 +115,21 @@ function hasTranscriptRelation(value) {
   return Boolean(value);
 }
 
+function relationArray(value) {
+  if (Array.isArray(value)) return value;
+  return value ? [value] : [];
+}
+
 function toActiveYoutubeLink(row) {
   const videoId = youtubeVideoIdFromUrl(row?.canonical_url) ?? youtubeVideoIdFromUrl(row?.url);
   if (!videoId) return null;
+  const relations = relationArray(row.link_skill_relations);
+  const humanRelation =
+    relations.find((relation) => relation?.submitted_by_user_id)
+    ?? null;
+  const oldestRelation = relations
+    .flatMap((relation) => relation?.created_at ? [relation.created_at] : [])
+    .sort()[0] ?? null;
   return {
     id: row.id,
     url: row.url,
@@ -125,7 +137,57 @@ function toActiveYoutubeLink(row) {
     title: row.title ?? null,
     domain: row.domain ?? null,
     video_id: videoId,
+    human_submitted: Boolean(humanRelation),
+    human_relation_created_at: humanRelation?.created_at ?? null,
+    relation_created_at: oldestRelation,
   };
+}
+
+async function collectActiveYoutubeLinksMissingTranscripts(supabase, {
+  limit,
+  pageSize,
+  humanOnly = false,
+  excludeIds = new Set(),
+}) {
+  const max = limit === Infinity ? Infinity : Math.max(0, Number(limit ?? 25));
+  const rows = [];
+  let from = 0;
+
+  while (max === Infinity || rows.length < max) {
+    const to = from + pageSize - 1;
+    let query = supabase
+      .from("links")
+      .select("id, url, canonical_url, title, domain, link_skill_relations!inner(id, created_at, submitted_by_user_id), link_transcripts(link_id)")
+      .eq("is_active", true)
+      .eq("link_skill_relations.is_active", true);
+    if (humanOnly) {
+      query = query.not("link_skill_relations.submitted_by_user_id", "is", null);
+    }
+
+    const { data, error } = await query.range(from, to);
+    if (error) throw error;
+    if (!data?.length) break;
+
+    for (const row of data) {
+      if (hasTranscriptRelation(row.link_transcripts)) continue;
+      const link = toActiveYoutubeLink(row);
+      if (!link || excludeIds.has(link.id)) continue;
+      rows.push(link);
+      excludeIds.add(link.id);
+      if (max !== Infinity && rows.length >= max) break;
+    }
+
+    if (data.length < pageSize) break;
+    from += pageSize;
+  }
+
+  return rows.sort((a, b) => {
+    const humanDiff = Number(b.human_submitted) - Number(a.human_submitted);
+    if (humanDiff !== 0) return humanDiff;
+    const timeA = Date.parse(a.human_relation_created_at ?? a.relation_created_at ?? "");
+    const timeB = Date.parse(b.human_relation_created_at ?? b.relation_created_at ?? "");
+    return (Number.isNaN(timeA) ? 0 : timeA) - (Number.isNaN(timeB) ? 0 : timeB);
+  });
 }
 
 export async function findActiveYoutubeLinkByVideoId(supabase, videoId) {
@@ -153,33 +215,25 @@ export async function listActiveYoutubeLinksMissingTranscripts(supabase, {
   pageSize = 1000,
 } = {}) {
   const max = limit === Infinity ? Infinity : Math.max(0, Number(limit ?? 25));
-  const rows = [];
-  let from = 0;
+  if (max === 0) return [];
 
-  while (max === Infinity || rows.length < max) {
-    const to = from + pageSize - 1;
-    const { data, error } = await supabase
-      .from("links")
-      .select("id, url, canonical_url, title, domain, link_skill_relations!inner(id), link_transcripts(link_id)")
-      .eq("is_active", true)
-      .eq("link_skill_relations.is_active", true)
-      .range(from, to);
-    if (error) throw error;
-    if (!data?.length) break;
+  const seen = new Set();
+  const humanRows = await collectActiveYoutubeLinksMissingTranscripts(supabase, {
+    limit: max,
+    pageSize,
+    humanOnly: true,
+    excludeIds: seen,
+  });
+  if (max !== Infinity && humanRows.length >= max) return humanRows.slice(0, max);
 
-    for (const row of data) {
-      if (hasTranscriptRelation(row.link_transcripts)) continue;
-      const link = toActiveYoutubeLink(row);
-      if (!link) continue;
-      rows.push(link);
-      if (max !== Infinity && rows.length >= max) break;
-    }
+  const backlogRows = await collectActiveYoutubeLinksMissingTranscripts(supabase, {
+    limit: max === Infinity ? Infinity : max - humanRows.length,
+    pageSize,
+    humanOnly: false,
+    excludeIds: seen,
+  });
 
-    if (data.length < pageSize) break;
-    from += pageSize;
-  }
-
-  return rows;
+  return [...humanRows, ...backlogRows].slice(0, max === Infinity ? undefined : max);
 }
 
 export async function readTranscriptCacheEntries(dir, { vttToText }) {

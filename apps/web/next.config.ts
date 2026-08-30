@@ -25,6 +25,8 @@ const nextConfig: NextConfig = {
       { protocol: "https", hostname: "*.tiktokcdn-us.com" },
       { protocol: "https", hostname: "*.tiktokcdn-eu.com" },
       { protocol: "https", hostname: "*.muscdn.com" },
+      { protocol: "https", hostname: "*.cdninstagram.com" },
+      { protocol: "https", hostname: "*.fbcdn.net" },
       { protocol: "http", hostname: "127.0.0.1", port: "54321" },
       { protocol: "http", hostname: "localhost", port: "54321" },
       { protocol: "http", hostname: "192.168.10.108", port: "54321" },

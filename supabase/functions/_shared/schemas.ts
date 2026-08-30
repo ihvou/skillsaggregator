@@ -47,9 +47,10 @@ export const linkAddPayloadSchema = z.object({
   favorite_count: z.number().int().min(0).nullable().optional(),
   creator_handle: z.string().min(1).max(120).nullable().optional(),
   creator_url: z.string().url().nullable().optional(),
-  creator_platform: z.enum(["youtube", "tiktok"]).nullable().optional(),
+  creator_platform: z.enum(["youtube", "tiktok", "instagram"]).nullable().optional(),
   creator_profile: z.record(z.unknown()).nullable().optional(),
   scoring_strategy: z.enum(["transcript_llm", "engagement_authority"]).default("transcript_llm").optional(),
+  review_lane: z.enum(["coach", "founder", "agent", "private"]).optional(),
 });
 
 export const linkAttachSkillPayloadSchema = z.object({
@@ -112,6 +113,8 @@ export const submitSuggestionSchema = z.object({
   link_id: uuidish.nullable().optional(),
   author_internal_user_id: uuidish.nullable().optional(),
   submitted_by_user_id: uuidish.nullable().optional(),
+  add_to_watch_later: z.boolean().optional(),
+  suggest_to_catalog: z.boolean().optional(),
   turnstile_token: z.string().min(1).max(2048).nullable().optional(),
   payload_json: z.unknown(),
   evidence_json: z.record(z.unknown()).nullable().optional(),

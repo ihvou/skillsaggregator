@@ -45,6 +45,7 @@
     "plugins": [
       "expo-router",
       "expo-apple-authentication",
+      "./plugins/withShareTargets",
       [
         "expo-build-properties",
         {

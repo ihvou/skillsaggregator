@@ -36,6 +36,7 @@ const SOURCE_LABELS: Record<ResourceSourceFilter, string> = {
   all: "All sources",
   youtube: "YouTube",
   tiktok: "TikTok",
+  instagram: "Instagram",
 };
 
 export default function SkillDetailScreen() {

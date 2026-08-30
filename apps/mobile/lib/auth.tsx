@@ -22,6 +22,7 @@ interface AuthContextValue {
   isLoading: boolean;
   ensureSession: (reason?: string) => Promise<Session>;
   signInWithMagicLink: (email: string) => Promise<string>;
+  signInToExistingWithMagicLink: (email: string) => Promise<string>;
   signInWithGoogle: () => Promise<void>;
   signInWithApple: () => Promise<void>;
   signOut: () => Promise<void>;
@@ -35,8 +36,11 @@ type ConfiguredSupabaseClient = NonNullable<ReturnType<typeof getSupabase>>;
 type IdTokenCredentials = Parameters<ConfiguredSupabaseClient["auth"]["signInWithIdToken"]>[0];
 type IdTokenResponse = ReturnType<ConfiguredSupabaseClient["auth"]["signInWithIdToken"]>;
 
-function redirectTo() {
-  return ExpoLinking.createURL("auth/callback");
+function redirectTo(nextPath = "/account") {
+  const next = nextPath.startsWith("/") ? nextPath : `/${nextPath}`;
+  const base = ExpoLinking.createURL("auth/callback");
+  const separator = base.includes("?") ? "&" : "?";
+  return `${base}${separator}next=${encodeURIComponent(next)}`;
 }
 
 function appleFullName(fullName: AppleAuthentication.AppleAuthenticationFullName | null | undefined) {
@@ -177,8 +181,21 @@ export function AuthProvider({ children }: PropsWithChildren) {
         upgradingAnonymous: Boolean(currentSession?.user.is_anonymous),
       });
       return currentSession?.user.is_anonymous
-        ? "Check your email to finish saving this account."
+        ? "Check your email to finish saving this account. The account is not saved until you open that confirmation link."
         : "Check your email for a magic link.";
+    },
+    async signInToExistingWithMagicLink(email: string) {
+      if (!supabase) throw new Error("Supabase is not configured.");
+      const { error } = await supabase.auth.signInWithOtp({
+        email,
+        options: {
+          emailRedirectTo: redirectTo(),
+          shouldCreateUser: false,
+        },
+      });
+      if (error) throw error;
+      console.info("[auth] Existing-account magic-link flow requested");
+      return "Check your email to sign in. Items saved on this device's temporary library will not carry over yet.";
     },
     async signInWithGoogle() {
       if (!supabase) throw new Error("Supabase is not configured.");

@@ -15,6 +15,7 @@ interface SuggestFormProps {
   catalogs: CatalogOption[];
   initialCategorySlug?: string | undefined;
   initialSkillSlug?: string | undefined;
+  initialUrl?: string | undefined;
   contributorSlug?: string | null;
 }
 
@@ -28,6 +29,7 @@ export function SuggestForm({
   catalogs,
   initialCategorySlug,
   initialSkillSlug,
+  initialUrl,
   contributorSlug,
 }: SuggestFormProps) {
   const initialCatalog =
@@ -39,9 +41,12 @@ export function SuggestForm({
     selectedCatalog?.skills[0] ??
     null;
   const [skillId, setSkillId] = useState(initialSkill?.id ?? "");
-  const [url, setUrl] = useState("");
+  const [url, setUrl] = useState(initialUrl ?? "");
+  const [fallbackTitle, setFallbackTitle] = useState("");
   const [note, setNote] = useState("");
   const [level, setLevel] = useState<SkillLevel | "">("");
+  const [addToWatchLater, setAddToWatchLater] = useState(true);
+  const [suggestToCatalog, setSuggestToCatalog] = useState(true);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -52,6 +57,19 @@ export function SuggestForm({
     setCategoryId(nextCategoryId);
     setSkillId(nextCatalog?.skills[0]?.id ?? "");
   }
+
+  const urlSource = useMemo(() => {
+    try {
+      const hostname = new URL(url).hostname.replace(/^www\./, "").toLowerCase();
+      if (hostname === "youtu.be" || hostname === "youtube.com" || hostname.endsWith(".youtube.com")) return "youtube";
+      if (hostname === "tiktok.com" || hostname.endsWith(".tiktok.com")) return "tiktok";
+      if (hostname === "instagram.com" || hostname.endsWith(".instagram.com")) return "instagram";
+    } catch {
+      return null;
+    }
+    return "other";
+  }, [url]);
+  const showFallbackTitle = url.trim().length > 0 && urlSource !== "youtube";
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -66,6 +84,10 @@ export function SuggestForm({
     }
     if (!skillId) {
       setError("Choose a skill before submitting.");
+      return;
+    }
+    if (!addToWatchLater && !suggestToCatalog) {
+      setError("Choose Watch later, catalogue review, or both.");
       return;
     }
 
@@ -89,6 +111,8 @@ export function SuggestForm({
       body: JSON.stringify({
         type: "LINK_ADD",
         origin_type: "human",
+        add_to_watch_later: addToWatchLater,
+        suggest_to_catalog: suggestToCatalog,
         origin_name: contributorSlug
           ? `web_${contributorSlug}`
           : session.user.is_anonymous
@@ -100,6 +124,7 @@ export function SuggestForm({
           url,
           canonical_url: url,
           target_skill_id: skillId,
+          title: showFallbackTitle && fallbackTitle.trim() ? fallbackTitle.trim() : null,
           public_note: note.trim() || null,
           skill_level: level || null,
           language: "en",
@@ -115,13 +140,17 @@ export function SuggestForm({
     }
 
     setUrl("");
+    setFallbackTitle("");
     setNote("");
     setLevel("");
-    setStatus(
-      body.duplicate
-        ? "already submitted, thanks"
-        : "Thanks! Your suggestion is queued for coach review.",
-    );
+    const saved = Boolean(body.saved);
+    setStatus(() => {
+      if (body.duplicate && saved) return "Already submitted; added to Watch later.";
+      if (body.duplicate) return "Already submitted; the existing item is still in review.";
+      if (saved && suggestToCatalog) return "Saved to Watch later and submitted for review.";
+      if (saved) return "Saved to Watch later.";
+      return "Submitted for review.";
+    });
   }
 
   return (
@@ -140,6 +169,48 @@ export function SuggestForm({
           placeholder="https://..."
         />
       </label>
+
+      {showFallbackTitle ? (
+        <label className="block">
+          <span className="text-sm font-bold text-ink">Title</span>
+          <input
+            type="text"
+            value={fallbackTitle}
+            onChange={(event) => setFallbackTitle(event.target.value.slice(0, 180))}
+            className="focus-ring mt-2 w-full rounded-md border border-divider bg-bg px-3 py-2 text-base text-ink"
+            placeholder="Optional fallback title"
+            maxLength={180}
+          />
+        </label>
+      ) : null}
+
+      <fieldset className="space-y-2">
+        <legend className="text-sm font-bold text-ink">What should Subskills do?</legend>
+        <label className="focus-within:ring-focus flex items-start gap-3 rounded-md border border-divider bg-bg px-3 py-2 text-sm font-medium text-muted">
+          <input
+            type="checkbox"
+            checked={addToWatchLater}
+            onChange={(event) => setAddToWatchLater(event.target.checked)}
+            className="mt-1"
+          />
+          <span>
+            <span className="block font-bold text-ink">Add to Watch later</span>
+            <span className="block">Keep it in your private library.</span>
+          </span>
+        </label>
+        <label className="focus-within:ring-focus flex items-start gap-3 rounded-md border border-divider bg-bg px-3 py-2 text-sm font-medium text-muted">
+          <input
+            type="checkbox"
+            checked={suggestToCatalog}
+            onChange={(event) => setSuggestToCatalog(event.target.checked)}
+            className="mt-1"
+          />
+          <span>
+            <span className="block font-bold text-ink">Also suggest to the catalogue</span>
+            <span className="block">Send it for review before it can appear publicly.</span>
+          </span>
+        </label>
+      </fieldset>
 
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="block">
@@ -215,10 +286,10 @@ export function SuggestForm({
 
       <button
         type="submit"
-        disabled={isSubmitting}
+        disabled={isSubmitting || (!addToWatchLater && !suggestToCatalog)}
         className="focus-ring inline-flex w-full items-center justify-center rounded-md bg-ink px-4 py-2.5 text-sm font-bold text-surface transition hover:opacity-90 disabled:opacity-60"
       >
-        {isSubmitting ? "Submitting..." : "Submit suggestion"}
+        {isSubmitting ? "Submitting..." : "Save / suggest link"}
       </button>
 
       {status ? <p className="text-sm font-bold text-accent">{status}</p> : null}

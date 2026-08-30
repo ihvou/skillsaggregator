@@ -39,6 +39,14 @@ function shapeLinkWithContributor<
     thumbnail_storage_path?: string | null;
     canonical_url?: string | null;
     url?: string | null;
+    duration_seconds?: number | null;
+    like_count?: number | null;
+    comment_count?: number | null;
+    share_count?: number | null;
+    favorite_count?: number | null;
+    creator_handle?: string | null;
+    creator_url?: string | null;
+    created_at?: string | null;
     scoring_strategy?: string | null;
     content_type?: string | null;
   },
@@ -157,6 +165,7 @@ type LinkRow = {
 
 type RelationWithSkillId = {
   id: string;
+  link_id?: string | null;
   skill_id?: string | null;
   public_note?: string | null;
   skill_level?: SkillResource["skill_level"];
@@ -171,6 +180,58 @@ type RelationWithSkillId = {
   coach_take?: string | null;
   created_at?: string | null;
   links?: LinkRow | LinkRow[] | null;
+};
+
+type LibraryResourceRow = {
+  library_view?: "saved" | "watched" | string | null;
+  bookmark_id?: string | null;
+  list_sort_order?: number | string | null;
+  library_added_at?: string | null;
+  watched_at?: string | null;
+  catalog_status?: SkillResource["catalog_status"];
+  link_skill_relation_id?: string | null;
+  relation_published?: boolean | null;
+  suggestion_status?: SkillResource["suggestion_status"];
+  public_note?: string | null;
+  skill_level?: SkillResource["skill_level"];
+  upvote_count?: number | null;
+  downvote_count?: number | null;
+  vote_score?: number | null;
+  value_score?: number | null;
+  curator_score?: number | null;
+  curator_reviews?: number | null;
+  user_score?: number | null;
+  combined_score?: number | null;
+  coach_take?: string | null;
+  relation_created_at?: string | null;
+  link_id: string;
+  url?: string | null;
+  canonical_url?: string | null;
+  domain?: string | null;
+  title?: string | null;
+  description?: string | null;
+  thumbnail_url?: string | null;
+  thumbnail_storage_path?: string | null;
+  duration_seconds?: number | null;
+  like_count?: number | null;
+  comment_count?: number | null;
+  share_count?: number | null;
+  favorite_count?: number | null;
+  creator_handle?: string | null;
+  creator_url?: string | null;
+  scoring_strategy?: string | null;
+  content_type?: string | null;
+  link_created_at?: string | null;
+  contributor_profile_id?: string | null;
+  contributor_slug?: string | null;
+  contributor_display_name?: string | null;
+  contributor_avatar_url?: string | null;
+  contributor_accepted_count?: number | null;
+  skill_id?: string | null;
+  skill_slug?: string | null;
+  skill_name?: string | null;
+  category_slug?: string | null;
+  category_name?: string | null;
 };
 
 function unwrapRow<T>(value: T | T[] | null | undefined): T | null {
@@ -256,6 +317,7 @@ function shapeRelationResource(
   if (!link) return null;
   return {
     id: relation.id,
+    link_skill_relation_id: relation.id,
     public_note: relation.public_note ?? null,
     skill_level: relation.skill_level ?? null,
     ...relationVotes(relation),
@@ -269,6 +331,78 @@ function shapeRelationResource(
       category_name: skill.category_name ?? null,
     },
   };
+}
+
+function normalizeCatalogStatus(value: LibraryResourceRow["catalog_status"]) {
+  return value === "private" || value === "in_review" || value === "in_catalog" || value === "not_added"
+    ? value
+    : null;
+}
+
+function numericSortOrder(value: number | string | null | undefined) {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function shapeLibraryResource(row: LibraryResourceRow): SkillResource | null {
+  if (!row.link_id) return null;
+  const contributor = row.contributor_profile_id
+    ? {
+        id: row.contributor_profile_id,
+        slug: row.contributor_slug ?? "",
+        display_name: row.contributor_display_name ?? "Contributor",
+        avatar_url: row.contributor_avatar_url ?? null,
+        accepted_count: row.contributor_accepted_count ?? 0,
+      }
+    : null;
+  const resource: SkillResource = {
+    id: row.bookmark_id ?? row.link_skill_relation_id ?? row.link_id,
+    link_skill_relation_id: row.link_skill_relation_id ?? null,
+    personal_list_id: row.bookmark_id ?? null,
+    catalog_status: normalizeCatalogStatus(row.catalog_status),
+    list_sort_order: numericSortOrder(row.list_sort_order),
+    suggestion_status: row.suggestion_status ?? null,
+    relation_published: row.relation_published ?? null,
+    public_note: row.public_note ?? null,
+    skill_level: row.skill_level ?? null,
+    ...relationVotes(row),
+    created_at: row.relation_created_at ?? row.link_created_at ?? row.library_added_at ?? null,
+    link: shapeLinkWithContributor({
+      id: row.link_id,
+      url: row.url ?? row.canonical_url ?? "",
+      canonical_url: row.canonical_url ?? row.url ?? "",
+      domain: row.domain ?? "",
+      title: row.title ?? null,
+      description: row.description ?? null,
+      thumbnail_url: row.thumbnail_url ?? null,
+      thumbnail_storage_path: row.thumbnail_storage_path ?? null,
+      duration_seconds: row.duration_seconds ?? null,
+      like_count: row.like_count ?? null,
+      comment_count: row.comment_count ?? null,
+      share_count: row.share_count ?? null,
+      favorite_count: row.favorite_count ?? null,
+      creator_handle: row.creator_handle ?? null,
+      creator_url: row.creator_url ?? null,
+      scoring_strategy: row.scoring_strategy ?? null,
+      content_type: row.content_type ?? null,
+      created_at: row.link_created_at ?? null,
+      contributor_profile: contributor,
+    }),
+  };
+  if (row.skill_id && row.skill_slug && row.skill_name) {
+    resource.skill = {
+      id: row.skill_id,
+      slug: row.skill_slug,
+      name: row.skill_name,
+      category_slug: row.category_slug ?? "",
+      category_name: row.category_name ?? null,
+    };
+  }
+  return resource;
 }
 
 function fallbackSkillsForCategory(categorySlug: string) {
@@ -558,84 +692,24 @@ export async function getCategoryWithSkillResources(
 export type UserLibraryView = "saved" | "watched";
 
 export async function getUserLibraryResources(
-  userId: string,
+  _userId: string,
   view: UserLibraryView,
 ): Promise<SkillResource[]> {
   const supabase = getSupabase();
   if (!supabase) return [];
 
-  const table = view === "saved" ? "user_bookmarks" : "user_watched";
-  const orderColumn = view === "saved" ? "created_at" : "watched_at";
-  const { data: stateRows, error: stateError } = await supabase
-    .from(table)
-    .select(`link_skill_relation_id, ${orderColumn}`)
-    .eq("user_id", userId)
-    .order(orderColumn, { ascending: false });
-  if (stateError) {
+  const { data, error } = await supabase.rpc("get_user_library_resources", {
+    p_view: view,
+  });
+  if (error) {
     console.warn("mobile_user_library_state_load_failed", {
       view,
-      message: stateError.message,
+      message: error.message,
     });
-    throw stateError;
+    throw error;
   }
 
-  const relationIds = (stateRows ?? [])
-    .map((row) => row.link_skill_relation_id)
-    .filter((id): id is string => typeof id === "string" && id.length > 0);
-  if (relationIds.length === 0) return [];
-
-  const { data: relations, error: relationError } = await supabase
-    .from("link_skill_relations")
-    .select(
-      `id, public_note, skill_level, ${RELATION_VOTE_SELECT}, created_at, link_id, links!inner(${RESOURCE_LINK_SELECT}), skills!inner(id, slug, name, categories!inner(slug, name))`,
-    )
-    .in("id", relationIds)
-    .eq("is_active", true)
-    .eq("published", true)
-    .eq("links.is_active", true)
-    .order("combined_score", { ascending: false, nullsFirst: false })
-    .order("curator_reviews", { ascending: false, nullsFirst: false })
-    .order("value_score", { ascending: false, nullsFirst: false })
-    .order("vote_score", { ascending: false });
-  if (relationError) {
-    console.warn("mobile_user_library_resource_load_failed", {
-      view,
-      message: relationError.message,
-    });
-    throw relationError;
-  }
-
-  const byRelation = new Map<string, SkillResource>();
-  for (const relation of relations ?? []) {
-    const link = Array.isArray(relation.links) ? relation.links[0] : relation.links;
-    if (!link) continue;
-    const skill = Array.isArray(relation.skills) ? relation.skills[0] : relation.skills;
-    const category = skill
-      ? Array.isArray(skill.categories)
-        ? skill.categories[0]
-        : skill.categories
-      : null;
-    const resource: SkillResource = {
-      id: relation.id,
-      public_note: relation.public_note,
-      skill_level: relation.skill_level,
-      ...relationVotes(relation),
-      created_at: relation.created_at ?? link.created_at ?? null,
-      link: shapeLinkWithContributor(link),
-    };
-    if (skill) {
-      resource.skill = {
-        id: skill.id,
-        slug: skill.slug,
-        name: skill.name,
-        category_slug: category?.slug ?? "",
-        category_name: category?.name ?? null,
-      };
-    }
-    byRelation.set(relation.id, resource);
-  }
-
-  return relationIds
-    .map((id) => byRelation.get(id))
+  return ((data ?? []) as LibraryResourceRow[])
+    .map(shapeLibraryResource)
     .filter((resource): resource is SkillResource => Boolean(resource));
 }

@@ -22,7 +22,8 @@ export type UserVoteState = -1 | 0 | 1;
 // database applies. The RPC returns the authoritative combined_score anyway; the
 // local arithmetic only covers the moment before it answers.
 export function useResourceActions(
-  relationId: string,
+  relationId: string | null,
+  linkId: string,
   initialUserScore: number = 0,
   initialCombinedScore: number | null = null,
 ) {
@@ -70,20 +71,24 @@ export function useResourceActions(
         .from("user_bookmarks")
         .select("created_at")
         .eq("user_id", user.id)
-        .eq("link_skill_relation_id", relationId)
+        .eq("link_id", linkId)
         .maybeSingle(),
-      supabase
-        .from("user_watched")
-        .select("watched_at")
-        .eq("user_id", user.id)
-        .eq("link_skill_relation_id", relationId)
-        .maybeSingle(),
-      supabase
-        .from("user_relation_votes")
-        .select("vote")
-        .eq("user_id", user.id)
-        .eq("link_skill_relation_id", relationId)
-        .maybeSingle(),
+      relationId
+        ? supabase
+            .from("user_watched")
+            .select("watched_at")
+            .eq("user_id", user.id)
+            .eq("link_skill_relation_id", relationId)
+            .maybeSingle()
+        : Promise.resolve({ data: null, error: null }),
+      relationId
+        ? supabase
+            .from("user_relation_votes")
+            .select("vote")
+            .eq("user_id", user.id)
+            .eq("link_skill_relation_id", relationId)
+            .maybeSingle()
+        : Promise.resolve({ data: null, error: null }),
     ]);
 
     if (bookmarkResult.error) console.warn("resource_bookmark_load_failed", bookmarkResult.error.message);
@@ -94,7 +99,7 @@ export function useResourceActions(
     setIsWatched(Boolean(watchedResult.data));
     setVote(voteResult.data?.vote === -1 ? -1 : voteResult.data?.vote === 1 ? 1 : 0);
     setLoaded(true);
-  }, [relationId, supabase]);
+  }, [linkId, relationId, supabase]);
 
   useEffect(() => {
     let cancelled = false;
@@ -134,30 +139,40 @@ export function useResourceActions(
       const message = actionError instanceof Error ? actionError.message : String(actionError);
       console.warn("resource_action_session_create_failed", {
         relation_id: relationId,
+        link_id: linkId,
         action,
         message,
       });
       setError(message);
       return null;
     }
-  }, [relationId, supabase]);
+  }, [linkId, relationId, supabase]);
 
   const toggleSaved = useCallback(async () => {
     if (!(await ensureActionSession("save_resource"))) return;
     const next = !isSaved;
     setIsSaved(next);
-    const { error: mutationError } = await supabase!.rpc("set_user_bookmark", {
-      p_relation_id: relationId,
-      p_saved: next,
-    });
+    const { error: mutationError } = relationId
+      ? await supabase!.rpc("set_user_bookmark", {
+          p_relation_id: relationId,
+          p_saved: next,
+        })
+      : await supabase!.rpc("set_user_link_bookmark", {
+          p_link_id: linkId,
+          p_saved: next,
+        });
     if (mutationError) {
       setIsSaved(!next);
       setError(mutationError.message);
-      console.warn("resource_bookmark_write_failed", { relationId, message: mutationError.message });
+      console.warn("resource_bookmark_write_failed", { relationId, linkId, message: mutationError.message });
     }
-  }, [ensureActionSession, isSaved, relationId, supabase]);
+  }, [ensureActionSession, isSaved, linkId, relationId, supabase]);
 
   const toggleWatched = useCallback(async () => {
+    if (!relationId) {
+      setError("This link needs catalogue review before it can be marked watched.");
+      return;
+    }
     if (!(await ensureActionSession("mark_watched"))) return;
     const next = !isWatched;
     setIsWatched(next);
@@ -173,6 +188,10 @@ export function useResourceActions(
   }, [ensureActionSession, isWatched, relationId, supabase]);
 
   const setUserVote = useCallback(async (nextVote: UserVoteState) => {
+    if (!relationId) {
+      setError("This link needs catalogue review before votes are available.");
+      return;
+    }
     if (!(await ensureActionSession("vote_resource"))) return;
     const previousVote = vote;
     const previousScore = userScore;

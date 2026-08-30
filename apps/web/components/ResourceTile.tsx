@@ -1,5 +1,5 @@
 import Image from "next/image";
-import { Globe, Music2, PlaySquare } from "lucide-react";
+import { Camera, Globe, Music2, PlaySquare } from "lucide-react";
 import { getLinkSource, type SkillResource } from "@skillsaggregator/shared";
 
 interface ResourceTileProps {
@@ -9,13 +9,15 @@ interface ResourceTileProps {
 }
 
 function isPortraitResource(resource: SkillResource) {
-  return getLinkSource(resource.link) === "tiktok";
+  const source = getLinkSource(resource.link);
+  return source === "tiktok" || source === "instagram";
 }
 
 function SourceIcon({ resource }: { resource: SkillResource }) {
   const source = getLinkSource(resource.link);
   if (source === "youtube") return <PlaySquare className="h-3.5 w-3.5 text-[#ff0000]" />;
   if (source === "tiktok") return <Music2 className="h-3.5 w-3.5 text-ink" />;
+  if (source === "instagram") return <Camera className="h-3.5 w-3.5 text-[#c13584]" />;
   return <Globe className="h-3.5 w-3.5 text-faint" />;
 }
 

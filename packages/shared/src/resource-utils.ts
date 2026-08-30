@@ -77,6 +77,7 @@ export function getLinkSource(link: SourceLink): ResourceSource {
     .toLowerCase();
 
   if (includesAny(haystack, ["tiktok.com", "/tiktok/"])) return "tiktok";
+  if (includesAny(haystack, ["instagram.com", "/instagram/"])) return "instagram";
   if (includesAny(haystack, ["youtube.com", "youtu.be", "ytimg.com"])) return "youtube";
   return "other";
 }

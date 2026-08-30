@@ -30,6 +30,7 @@ const SOURCES: Array<{ value: ResourceSourceFilter; label: string }> = [
   { value: "all", label: "All sources" },
   { value: "youtube", label: "YouTube" },
   { value: "tiktok", label: "TikTok" },
+  { value: "instagram", label: "Instagram" },
 ];
 
 /**

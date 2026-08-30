@@ -117,6 +117,8 @@ if (dryRun) {
       video_id: link.video_id,
       title: link.title,
       canonical_url: link.canonical_url,
+      human_submitted: link.human_submitted,
+      human_relation_created_at: link.human_relation_created_at,
     });
   }
   log("info", "missing_transcript_scrape_completed", stats);
@@ -148,6 +150,8 @@ try {
         link_id: link.id,
         video_id: link.video_id,
         title: link.title,
+        human_submitted: link.human_submitted,
+        human_relation_created_at: link.human_relation_created_at,
       });
       const transcript = normalizeTranscriptText(await fetchTranscriptBrowser(link.video_id));
       stats.fetched += 1;

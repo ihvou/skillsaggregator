@@ -43,7 +43,7 @@ function DeletionExplainer() {
         <h2 className="text-xl font-extrabold text-ink">What deletion removes</h2>
         <ul className="mt-3 list-disc space-y-2 pl-5 text-base leading-7 text-muted">
           <li>Your sign-in account and email address.</li>
-          <li>Your private library — saved resources, watched history, and your votes.</li>
+          <li>Your private library: Watch later resources, watched history, and your votes.</li>
           <li>Your contributor profile and public contributor page.</li>
         </ul>
       </section>

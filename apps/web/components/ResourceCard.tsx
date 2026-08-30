@@ -5,6 +5,7 @@ import { useState } from "react";
 import {
   Bookmark,
   BookmarkCheck,
+  Camera,
   CircleCheck,
   Globe,
   Music2,
@@ -25,14 +26,32 @@ function capitalize(value: string) {
 }
 
 function isPortraitResource(resource: SkillResource) {
-  return getLinkSource(resource.link) === "tiktok";
+  const source = getLinkSource(resource.link);
+  return source === "tiktok" || source === "instagram";
 }
 
 function SourceIcon({ resource }: { resource: SkillResource }) {
   const source = getLinkSource(resource.link);
   if (source === "youtube") return <PlaySquare className="h-4 w-4 text-[#ff0000]" />;
   if (source === "tiktok") return <Music2 className="h-4 w-4 text-ink" />;
+  if (source === "instagram") return <Camera className="h-4 w-4 text-[#c13584]" />;
   return <Globe className="h-4 w-4 text-faint" />;
+}
+
+function CatalogStatusChip({ resource }: { resource: SkillResource }) {
+  const status = resource.catalog_status;
+  if (!status) return null;
+  const labels: Record<NonNullable<SkillResource["catalog_status"]>, string> = {
+    private: "Saved privately",
+    in_review: "In review",
+    in_catalog: "In catalogue",
+    not_added: "Reviewed",
+  };
+  return (
+    <span className="inline-flex items-center rounded-pill bg-bgGroup px-2.5 py-0.5 text-xs font-bold text-muted">
+      {labels[status]}
+    </span>
+  );
 }
 
 /**
@@ -43,7 +62,11 @@ function SourceIcon({ resource }: { resource: SkillResource }) {
  *  - State (save / watched / vote) is authenticated and stored server-side.
  */
 export function ResourceCard({ resource }: ResourceCardProps) {
-  const relationId = resource.id;
+  const resolvedRelationId = resource.link_skill_relation_id ?? (resource.catalog_status ? null : resource.id);
+  const relationId =
+    resource.catalog_status && resource.catalog_status !== "in_catalog"
+      ? null
+      : resolvedRelationId;
   const {
     isSaved,
     isWatched,
@@ -53,7 +76,12 @@ export function ResourceCard({ resource }: ResourceCardProps) {
     toggleWatched,
     combinedScore,
     setUserVote,
-  } = useResourceActions(relationId, resource.user_score ?? 0, resource.combined_score ?? null);
+  } = useResourceActions(
+    relationId,
+    resource.link.id,
+    resource.user_score ?? 0,
+    resource.combined_score ?? null,
+  );
 
   // TikTok serves thumbnails from a SIGNED CDN URL carrying an `x-expires` stamp,
   // good for roughly 3-7 days; after that the host returns 403 and the card renders
@@ -122,6 +150,7 @@ export function ResourceCard({ resource }: ResourceCardProps) {
             <SourceIcon resource={resource} />
           </div>
           <div className="flex shrink-0 items-center gap-2">
+            <CatalogStatusChip resource={resource} />
             {resource.skill_level ? (
               <span className="inline-flex items-center rounded-pill bg-muted px-2.5 py-0.5 text-xs font-bold text-surface">
                 {capitalize(resource.skill_level)}

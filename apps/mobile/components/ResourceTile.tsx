@@ -1,6 +1,6 @@
 import { Linking, Pressable, StyleSheet, View } from "react-native";
 import { Image } from "expo-image";
-import { Globe, Music2, PlaySquare } from "lucide-react-native";
+import { Camera, Globe, Music2, PlaySquare } from "lucide-react-native";
 import { getLinkSource, type SkillResource } from "@skillsaggregator/shared";
 import { colors, radius, shadows } from "@/lib/theme";
 
@@ -11,13 +11,15 @@ interface ResourceTileProps {
 }
 
 function isPortraitResource(resource: SkillResource) {
-  return getLinkSource(resource.link) === "tiktok";
+  const source = getLinkSource(resource.link);
+  return source === "tiktok" || source === "instagram";
 }
 
 function SourceIcon({ resource }: { resource: SkillResource }) {
   const source = getLinkSource(resource.link);
   if (source === "youtube") return <PlaySquare size={13} color="#FF0000" />;
   if (source === "tiktok") return <Music2 size={12} color={colors.ink} />;
+  if (source === "instagram") return <Camera size={12} color="#C13584" />;
   return <Globe size={11} color={colors.faint} />;
 }
 

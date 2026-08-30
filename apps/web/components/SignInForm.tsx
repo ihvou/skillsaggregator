@@ -18,13 +18,20 @@ export function SignInForm({ nextPath = "/contributors/me" }: SignInFormProps) {
   const [email, setEmail] = useState("");
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [emailExistsCollision, setEmailExistsCollision] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const supabase = getBrowserSupabase();
+
+  function isEmailExistsError(error: { message?: string; code?: string | undefined } | null) {
+    const message = error?.message?.toLowerCase() ?? "";
+    return error?.code === "email_exists" || message.includes("email_exists") || message.includes("already registered");
+  }
 
   async function sendMagicLink(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
     setStatus(null);
+    setEmailExistsCollision(false);
     if (!supabase) {
       setError("Supabase is not configured for this environment.");
       return;
@@ -47,6 +54,11 @@ export function SignInForm({ nextPath = "/contributors/me" }: SignInFormProps) {
         });
     setIsSubmitting(false);
     if (signInError) {
+      if (session?.user.is_anonymous && isEmailExistsError(signInError)) {
+        setEmailExistsCollision(true);
+        setError("That email already has a Subskills account.");
+        return;
+      }
       setError(signInError.message);
       return;
     }
@@ -55,9 +67,38 @@ export function SignInForm({ nextPath = "/contributors/me" }: SignInFormProps) {
     });
     setStatus(
       session?.user.is_anonymous
-        ? "Check your email to finish saving this account."
+        ? "Check your email to finish saving this account. Your account is not saved until you open that confirmation link."
         : "Check your email for a magic link.",
     );
+  }
+
+  async function signInToExistingAccount() {
+    setError(null);
+    setStatus(null);
+    setEmailExistsCollision(false);
+    if (!supabase) {
+      setError("Supabase is not configured for this environment.");
+      return;
+    }
+    if (!email.trim()) {
+      setError("Enter the email for the account you want to sign in to.");
+      return;
+    }
+    setIsSubmitting(true);
+    const { error: signInError } = await supabase.auth.signInWithOtp({
+      email,
+      options: {
+        emailRedirectTo: callbackUrl(nextPath),
+        shouldCreateUser: false,
+      },
+    });
+    setIsSubmitting(false);
+    if (signInError) {
+      setError(signInError.message);
+      return;
+    }
+    console.info("web_existing_account_magic_link_requested");
+    setStatus("Check your email to sign in. Items saved in this browser's temporary library will not carry over yet.");
   }
 
   async function signInWithGoogle() {
@@ -66,6 +107,7 @@ export function SignInForm({ nextPath = "/contributors/me" }: SignInFormProps) {
       setError("Supabase is not configured for this environment.");
       return;
     }
+    setEmailExistsCollision(false);
     const {
       data: { session },
     } = await supabase.auth.getSession();
@@ -131,6 +173,22 @@ export function SignInForm({ nextPath = "/contributors/me" }: SignInFormProps) {
       >
         Continue with Google
       </button>
+
+      {emailExistsCollision ? (
+        <div className="mt-4 rounded-md bg-bgGroup p-3 text-sm text-muted">
+          <p>
+            Sign in to that account instead. Items saved in this browser&apos;s temporary library will not carry over yet.
+          </p>
+          <button
+            type="button"
+            onClick={signInToExistingAccount}
+            disabled={isSubmitting}
+            className="focus-ring mt-3 w-full rounded-md border border-divider bg-surface px-4 py-2 text-sm font-bold text-ink transition hover:bg-bg"
+          >
+            {isSubmitting ? "Sending..." : "Sign in to that account"}
+          </button>
+        </div>
+      ) : null}
 
       {status ? <p className="mt-4 text-sm font-medium text-accent">{status}</p> : null}
       {error ? <p className="mt-4 text-sm font-medium text-red-600">{error}</p> : null}

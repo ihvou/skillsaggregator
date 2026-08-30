@@ -1,7 +1,8 @@
 export type SkillLevel = "beginner" | "intermediate" | "advanced";
 export type ResourceSort = "newest" | "popular";
-export type ResourceSourceFilter = "all" | "youtube" | "tiktok";
-export type ResourceSource = "youtube" | "tiktok" | "other";
+export type ResourceSourceFilter = "all" | "youtube" | "tiktok" | "instagram";
+export type ResourceSource = "youtube" | "tiktok" | "instagram" | "other";
+export type LibraryCatalogStatus = "private" | "in_review" | "in_catalog" | "not_added";
 
 export type SuggestionType =
   | "LINK_ADD"
@@ -62,6 +63,12 @@ export interface LinkResource {
 
 export interface SkillResource {
   id: string;
+  link_skill_relation_id?: string | null;
+  personal_list_id?: string | null;
+  catalog_status?: LibraryCatalogStatus | null;
+  list_sort_order?: number | null;
+  suggestion_status?: SuggestionStatus | string | null;
+  relation_published?: boolean | null;
   public_note: string | null;
   skill_level: SkillLevel | null;
   upvote_count: number;

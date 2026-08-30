@@ -11,7 +11,7 @@ export const metadata = {
 export default async function SuggestPage({
   searchParams,
 }: {
-  searchParams?: Promise<{ category?: string; skill?: string }>;
+  searchParams?: Promise<{ category?: string; skill?: string; url?: string }>;
 }) {
   const resolvedSearchParams = (await searchParams) ?? {};
   const catalogs = await getAllCatalogs();
@@ -36,7 +36,7 @@ export default async function SuggestPage({
     <div className="pb-20">
       <PageHeader
         title="Suggest a link"
-        subtitle="Send a useful tutorial to the moderation queue."
+        subtitle="Save a training link, submit it for review, or both."
         backHref="/"
       />
       <section className="mx-auto max-w-5xl px-4">
@@ -44,6 +44,7 @@ export default async function SuggestPage({
           catalogs={catalogs}
           initialCategorySlug={resolvedSearchParams.category}
           initialSkillSlug={resolvedSearchParams.skill}
+          initialUrl={resolvedSearchParams.url}
           contributorSlug={contributorSlug}
         />
       </section>
