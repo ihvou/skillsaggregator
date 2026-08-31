@@ -7,6 +7,7 @@ import {
   BookmarkCheck,
   Camera,
   CircleCheck,
+  Flag,
   Globe,
   Music2,
   PlaySquare,
@@ -19,6 +20,10 @@ import { useResourceActions } from "@/lib/useResourceActions";
 
 interface ResourceCardProps {
   resource: SkillResource;
+  initialSaved?: boolean;
+  initialWatched?: boolean;
+  onSavedChange?: (resource: SkillResource, saved: boolean) => void;
+  onWatchedChange?: (resource: SkillResource, watched: boolean) => void;
 }
 
 function capitalize(value: string) {
@@ -42,7 +47,7 @@ function CatalogStatusChip({ resource }: { resource: SkillResource }) {
   const status = resource.catalog_status;
   if (!status) return null;
   const labels: Record<NonNullable<SkillResource["catalog_status"]>, string> = {
-    private: "Saved privately",
+    private: "Private",
     in_review: "In review",
     in_catalog: "In catalogue",
     not_added: "Reviewed",
@@ -61,7 +66,13 @@ function CatalogStatusChip({ resource }: { resource: SkillResource }) {
  *    level badge + watched/saved/vote actions.
  *  - State (save / watched / vote) is authenticated and stored server-side.
  */
-export function ResourceCard({ resource }: ResourceCardProps) {
+export function ResourceCard({
+  resource,
+  initialSaved = false,
+  initialWatched = false,
+  onSavedChange,
+  onWatchedChange,
+}: ResourceCardProps) {
   const resolvedRelationId = resource.link_skill_relation_id ?? (resource.catalog_status ? null : resource.id);
   const relationId =
     resource.catalog_status && resource.catalog_status !== "in_catalog"
@@ -81,6 +92,7 @@ export function ResourceCard({ resource }: ResourceCardProps) {
     resource.link.id,
     resource.user_score ?? 0,
     resource.combined_score ?? null,
+    { initialSaved, initialWatched },
   );
 
   // TikTok serves thumbnails from a SIGNED CDN URL carrying an `x-expires` stamp,
@@ -104,8 +116,22 @@ export function ResourceCard({ resource }: ResourceCardProps) {
   function onDownvote() {
     void setUserVote(vote === -1 ? 0 : -1);
   }
+  async function onToggleSaved() {
+    const next = !isSaved;
+    if (await toggleSaved()) onSavedChange?.(resource, next);
+  }
+  async function onToggleWatched() {
+    const next = !isWatched;
+    if (await toggleWatched()) onWatchedChange?.(resource, next);
+  }
 
   const SavedIcon = isSaved ? BookmarkCheck : Bookmark;
+  const reportParams = new URLSearchParams({
+    resource: relationId ?? resource.id,
+    link: resource.link.id,
+  });
+  if (resource.link.title) reportParams.set("title", resource.link.title);
+  const reportHref = `/support?${reportParams.toString()}`;
 
   return (
     // Stacked (thumbnail above text) below `sm` — a fixed-width thumb in a row
@@ -189,9 +215,17 @@ export function ResourceCard({ resource }: ResourceCardProps) {
             ) : null}
           </div>
           <div className="flex items-center gap-3">
+            <a
+              href={reportHref}
+              aria-label="Report resource"
+              title="Report resource"
+              className="focus-ring inline-flex h-7 w-7 items-center justify-center rounded-md text-muted transition hover:bg-bgGroup hover:text-ink"
+            >
+              <Flag className="h-4 w-4" />
+            </a>
             <button
               type="button"
-              onClick={() => void toggleWatched()}
+              onClick={() => void onToggleWatched()}
               aria-label={isWatched ? "Mark not watched" : "Mark watched"}
               aria-pressed={isWatched}
               className="focus-ring inline-flex h-7 w-7 items-center justify-center rounded-md transition hover:bg-bgGroup"
@@ -205,8 +239,8 @@ export function ResourceCard({ resource }: ResourceCardProps) {
             </button>
             <button
               type="button"
-              onClick={() => void toggleSaved()}
-              aria-label={isSaved ? "Unsave resource" : "Save resource"}
+              onClick={() => void onToggleSaved()}
+              aria-label={isSaved ? "Remove from Watch later" : "Add to Watch later"}
               aria-pressed={isSaved}
               className="focus-ring inline-flex h-7 w-7 items-center justify-center rounded-md transition hover:bg-bgGroup"
             >

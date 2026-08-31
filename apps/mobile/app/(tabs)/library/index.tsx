@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Alert, Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
+import { useEffect, useMemo, useState } from "react";
+import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { FlashList } from "@shopify/flash-list";
 import { useRouter } from "expo-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -10,7 +10,12 @@ import { PageHeader } from "@/components/PageHeader";
 import { ResourceCard } from "@/components/ResourceCard";
 import { Screen } from "@/components/Screen";
 import { SkeletonList } from "@/components/SkeletonList";
-import { getUserLibraryResources, type UserLibraryView } from "@/lib/data";
+import {
+  getUserLibraryResources,
+  getUserSkillProgress,
+  type UserLibraryView,
+  type UserSkillProgress,
+} from "@/lib/data";
 import { useAuth } from "@/lib/auth";
 import { getSupabase } from "@/lib/supabase";
 import { useOnboardingGate } from "@/lib/useOnboardingGate";
@@ -22,6 +27,7 @@ export default function SavedTab() {
   useOnboardingGate();
   const { user } = useAuth();
   const [view, setView] = useState<UserLibraryView>("saved");
+  const [selectedSkillId, setSelectedSkillId] = useState<string>("all");
   const queryKey = ["user-library", user?.id, view] as const;
 
   const query = useQuery({
@@ -31,9 +37,46 @@ export default function SavedTab() {
     staleTime: 600000,
   });
 
-  const displayResources = query.data ?? [];
+  const allResources = query.data ?? [];
+  const skillOptions = useMemo(() => {
+    const bySkill = new Map<string, { id: string; name: string; count: number }>();
+    for (const resource of allResources) {
+      const skill = resource.skill;
+      if (!skill?.id) continue;
+      const current = bySkill.get(skill.id);
+      bySkill.set(skill.id, {
+        id: skill.id,
+        name: skill.name,
+        count: (current?.count ?? 0) + 1,
+      });
+    }
+    return [...bySkill.values()].sort((a, b) => a.name.localeCompare(b.name));
+  }, [allResources]);
+  const skillIds = useMemo(() => skillOptions.map((skill) => skill.id), [skillOptions]);
+  const progressQuery = useQuery({
+    queryKey: ["user-skill-progress", user?.id, skillIds.join(",")],
+    queryFn: () => getUserSkillProgress(skillIds),
+    enabled: Boolean(user && skillIds.length > 0),
+    staleTime: 300000,
+  });
+  const progressBySkill = useMemo(() => {
+    const rows = new Map<string, UserSkillProgress>();
+    for (const row of progressQuery.data ?? []) rows.set(row.skill_id, row);
+    return rows;
+  }, [progressQuery.data]);
+  const displayResources = useMemo(() => {
+    if (selectedSkillId === "all") return allResources;
+    return allResources.filter((resource) => resource.skill?.id === selectedSkillId);
+  }, [allResources, selectedSkillId]);
   const showSkeleton = Boolean(user) && displayResources.length === 0 && query.isLoading;
   const emptyIcon = view === "saved" ? Bookmark : CheckCircle;
+
+  useEffect(() => {
+    if (selectedSkillId === "all") return;
+    if (!skillOptions.some((skill) => skill.id === selectedSkillId)) {
+      setSelectedSkillId("all");
+    }
+  }, [selectedSkillId, skillOptions]);
 
   async function moveResource(resourceId: string, direction: -1 | 1) {
     if (view !== "saved" || !user) return;
@@ -83,6 +126,14 @@ export default function SavedTab() {
             </Pressable>
           ))}
         </View>
+        {skillOptions.length > 0 ? (
+          <SkillFilterChips
+            skills={skillOptions}
+            selectedSkillId={selectedSkillId}
+            progressBySkill={progressBySkill}
+            onSelect={setSelectedSkillId}
+          />
+        ) : null}
       </View>
       {showSkeleton ? (
         <View style={styles.skeletonWrap}>
@@ -131,7 +182,7 @@ export default function SavedTab() {
           renderItem={({ item, index }) => (
             <View style={styles.rowWrap}>
               <View style={styles.resourceRow}>
-                {view === "saved" && displayResources.length > 1 ? (
+                {view === "saved" && selectedSkillId === "all" && displayResources.length > 1 ? (
                   <View style={styles.reorderControls}>
                     <Pressable
                       onPress={() => {
@@ -166,7 +217,11 @@ export default function SavedTab() {
                   </View>
                 ) : null}
                 <View style={styles.resourceCardWrap}>
-                  <ResourceCard resource={item} />
+                  <ResourceCard
+                    resource={item}
+                    initialSaved={view === "saved" || Boolean(item.personal_list_id)}
+                    initialCompleted={view === "watched"}
+                  />
                 </View>
               </View>
             </View>
@@ -185,6 +240,83 @@ export default function SavedTab() {
         />
       )}
     </Screen>
+  );
+}
+
+function SkillFilterChips({
+  skills,
+  selectedSkillId,
+  progressBySkill,
+  onSelect,
+}: {
+  skills: Array<{ id: string; name: string; count: number }>;
+  selectedSkillId: string;
+  progressBySkill: Map<string, UserSkillProgress>;
+  onSelect: (skillId: string) => void;
+}) {
+  return (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={styles.skillChips}
+      nestedScrollEnabled
+      directionalLockEnabled
+    >
+      <SkillFilterChip
+        label="All"
+        count={skills.reduce((total, skill) => total + skill.count, 0)}
+        selected={selectedSkillId === "all"}
+        progress={100}
+        onPress={() => onSelect("all")}
+      />
+      {skills.map((skill) => (
+        <SkillFilterChip
+          key={skill.id}
+          label={skill.name}
+          count={skill.count}
+          selected={selectedSkillId === skill.id}
+          progress={progressBySkill.get(skill.id)?.percent ?? 0}
+          onPress={() => onSelect(skill.id)}
+        />
+      ))}
+    </ScrollView>
+  );
+}
+
+function SkillFilterChip({
+  label,
+  count,
+  selected,
+  progress,
+  onPress,
+}: {
+  label: string;
+  count: number;
+  selected: boolean;
+  progress: number;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={[styles.skillChip, selected && styles.skillChipActive]}
+      accessibilityRole="button"
+      accessibilityState={{ selected }}
+      accessibilityLabel={`${label}, ${count} ${count === 1 ? "resource" : "resources"}, ${progress}% progress`}
+    >
+      <Text style={[styles.skillChipText, selected && styles.skillChipTextActive]} numberOfLines={1}>
+        {label}
+      </Text>
+      <View style={[styles.skillChipBarTrack, selected && styles.skillChipBarTrackActive]}>
+        <View
+          style={[
+            styles.skillChipBarFill,
+            selected && styles.skillChipBarFillActive,
+            { width: `${Math.max(0, Math.min(100, progress))}%` },
+          ]}
+        />
+      </View>
+    </Pressable>
   );
 }
 
@@ -232,6 +364,51 @@ const styles = StyleSheet.create({
   },
   tabTextActive: {
     color: colors.ink,
+  },
+  skillChips: {
+    gap: spacing.xs,
+    paddingTop: spacing.md,
+    paddingRight: spacing.page,
+  },
+  skillChip: {
+    width: 118,
+    minHeight: 46,
+    justifyContent: "center",
+    gap: 6,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radius.sm,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.divider,
+    backgroundColor: colors.surface,
+  },
+  skillChipActive: {
+    borderColor: colors.ink,
+    backgroundColor: colors.ink,
+  },
+  skillChipText: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  skillChipTextActive: {
+    color: colors.surface,
+  },
+  skillChipBarTrack: {
+    height: 4,
+    overflow: "hidden",
+    borderRadius: 2,
+    backgroundColor: colors.bgGroup,
+  },
+  skillChipBarTrackActive: {
+    backgroundColor: "rgba(255,255,255,0.24)",
+  },
+  skillChipBarFill: {
+    height: "100%",
+    borderRadius: 2,
+    backgroundColor: colors.muted,
+  },
+  skillChipBarFillActive: {
+    backgroundColor: colors.surface,
   },
   list: {
     flex: 1,

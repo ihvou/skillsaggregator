@@ -101,9 +101,12 @@ export function resourceMatchesLevel(
 export function resourceValueScore(
   resource: Pick<
     SkillResource,
-    "combined_score" | "curator_score" | "curator_reviews" | "value_score" | "vote_score" | "upvote_count"
+    "rank_key" | "combined_score" | "curator_score" | "curator_reviews" | "value_score" | "vote_score" | "upvote_count"
   >,
 ) {
+  if (typeof resource.rank_key === "number" && Number.isFinite(resource.rank_key)) {
+    return resource.rank_key;
+  }
   if (typeof resource.combined_score === "number" && Number.isFinite(resource.combined_score)) {
     return resource.combined_score;
   }
@@ -137,7 +140,17 @@ export function hasCombinedScore(resource: Pick<SkillResource, "combined_score">
   return typeof resource.combined_score === "number" && Number.isFinite(resource.combined_score);
 }
 
+export function hasRankKey(resource: Pick<SkillResource, "rank_key">) {
+  return typeof resource.rank_key === "number" && Number.isFinite(resource.rank_key);
+}
+
 export function compareResourcesByValue(a: SkillResource, b: SkillResource) {
+  const rankKeyDiff = Number(hasRankKey(b)) - Number(hasRankKey(a));
+  if (rankKeyDiff !== 0) return rankKeyDiff;
+  if (hasRankKey(a) || hasRankKey(b)) {
+    const scoreDiff = (b.rank_key ?? Number.NEGATIVE_INFINITY) - (a.rank_key ?? Number.NEGATIVE_INFINITY);
+    if (scoreDiff !== 0) return scoreDiff;
+  }
   const combinedDiff = Number(hasCombinedScore(b)) - Number(hasCombinedScore(a));
   if (combinedDiff !== 0) return combinedDiff;
   if (hasCombinedScore(a) || hasCombinedScore(b)) {

@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import type { User } from "@supabase/supabase-js";
 import { getAuthSupabase, getPublicSupabase, getServiceSupabase } from "@/lib/supabase";
+
+type ResolvedUser = {
+  id: string;
+};
 
 function json(status: number, body: { ok?: boolean; error?: string }) {
   return NextResponse.json(body, { status });
@@ -39,7 +42,7 @@ async function userFromCookies() {
   return data.user ?? null;
 }
 
-async function resolveUser(request: NextRequest): Promise<User | null> {
+async function resolveUser(request: NextRequest): Promise<ResolvedUser | null> {
   return (await userFromBearer(request)) ?? (await userFromCookies());
 }
 

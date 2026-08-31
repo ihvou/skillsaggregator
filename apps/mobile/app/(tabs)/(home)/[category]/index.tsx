@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { FlashList } from "@shopify/flash-list";
 import { useQuery } from "@tanstack/react-query";
 import {
   buildLearningPathIndex,
@@ -20,6 +21,10 @@ import { SearchBar } from "@/components/SearchBar";
 import { SectionHeader } from "@/components/SectionHeader";
 import { SkeletonList } from "@/components/SkeletonList";
 import { SortFilterSheet } from "@/components/SortFilterSheet";
+import {
+  readCachedCategoryResources,
+  writeCachedCategoryResources,
+} from "@/lib/categoryCache";
 import { getCategoryWithSkillResources } from "@/lib/data";
 import { colors, radius, spacing, typography } from "@/lib/theme";
 
@@ -35,10 +40,24 @@ export default function CategoryScreen() {
   const [sort, setSort] = useState<ResourceSort>("popular");
   const [source, setSource] = useState<ResourceSourceFilter>("all");
   const [menuVisible, setMenuVisible] = useState(false);
+  const cachedCategoryData = useMemo(
+    () => readCachedCategoryResources(categorySlug),
+    [categorySlug],
+  );
   const query = useQuery({
     queryKey: ["category-sections", categorySlug],
-    queryFn: () => getCategoryWithSkillResources(categorySlug),
+    queryFn: async () => {
+      const data = await getCategoryWithSkillResources(categorySlug);
+      writeCachedCategoryResources(categorySlug, data);
+      return data;
+    },
     staleTime: 180000,
+    ...(cachedCategoryData
+      ? {
+          initialData: cachedCategoryData.data,
+          initialDataUpdatedAt: cachedCategoryData.updatedAt,
+        }
+      : {}),
   });
 
   const categoryData = query.data?.category ?? null;
@@ -162,15 +181,19 @@ export default function CategoryScreen() {
                     title={section.skill.name}
                     onPress={() => router.push(`/${categorySlug}/${section.skill.slug}`)}
                   />
-                  <ScrollView
+                  <FlashList
                     horizontal
+                    data={section.resources}
+                    keyExtractor={(resource) => resource.id}
+                    renderItem={({ item: resource }) => (
+                      <ResourceTile resource={resource} />
+                    )}
+                    ItemSeparatorComponent={() => <View style={styles.horizontalGap} />}
+                    style={styles.horizontalList}
                     showsHorizontalScrollIndicator={false}
                     contentContainerStyle={styles.horizontalRow}
-                  >
-                    {section.resources.map((resource) => (
-                      <ResourceTile key={resource.id} resource={resource} />
-                    ))}
-                  </ScrollView>
+                    nestedScrollEnabled
+                  />
                   <View style={styles.divider} />
                 </View>
               ))
@@ -268,7 +291,12 @@ const styles = StyleSheet.create({
   },
   horizontalRow: {
     paddingHorizontal: spacing.page,
-    gap: spacing.md,
+  },
+  horizontalList: {
+    height: 104,
+  },
+  horizontalGap: {
+    width: spacing.md,
   },
   divider: {
     height: StyleSheet.hairlineWidth,

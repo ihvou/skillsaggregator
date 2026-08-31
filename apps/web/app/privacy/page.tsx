@@ -12,7 +12,7 @@ const sections = [
   },
   {
     title: "Account And Contribution Data",
-    body: "Subskills uses Supabase authentication to identify anonymous and signed-in users. It may store auth identifiers, saved resources, watched state, votes, submitted links, and public notes. If you upgrade the account with email, Google, or Apple, it may also store email addresses, display names, profile slugs, and contribution history.",
+    body: "Subskills uses Supabase authentication to identify anonymous and signed-in users. It may store auth identifiers, Watch later resources, watched state, votes, submitted links, and public notes. If you upgrade the account with email, Google, or Apple, it may also store email addresses, display names, profile slugs, and contribution history.",
   },
   {
     title: "Network Data",
@@ -32,7 +32,7 @@ const sections = [
   },
   {
     title: "Data Deletion",
-    body: "Users can delete their account from the mobile Account tab or from /account/delete on the web after opening their anonymous or upgraded account. Deletion removes the auth account, private saved/watched/vote state, and contributor profile. Public resources previously submitted by the account may remain in the catalog without the deleted profile attached, so learners do not lose reviewed resources.",
+    body: "Users can delete their account from the mobile Account tab or from /account/delete on the web after opening their anonymous or upgraded account. Deletion removes the auth account, private Watch later/watched/vote state, and contributor profile. Public resources previously submitted by the account may remain in the catalog without the deleted profile attached, so learners do not lose reviewed resources.",
   },
   {
     title: "Changes",

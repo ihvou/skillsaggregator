@@ -1,12 +1,18 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Alert, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import * as AppleAuthentication from "expo-apple-authentication";
 import { useRouter } from "expo-router";
+import { useQuery } from "@tanstack/react-query";
 import { ExternalLink, Mail, Trash2 } from "lucide-react-native";
 import { PageHeader } from "@/components/PageHeader";
 import { Screen } from "@/components/Screen";
 import { useAuth } from "@/lib/auth";
-import { setOnboardingCompleted } from "@/lib/localState";
+import { getCategories } from "@/lib/data";
+import {
+  getOnboardingInterests,
+  setOnboardingCompleted,
+  setOnboardingInterests,
+} from "@/lib/localState";
 import { useOnboardingGate } from "@/lib/useOnboardingGate";
 import { colors, radius, spacing, typography } from "@/lib/theme";
 import { webUrl } from "@/lib/webLinks";
@@ -43,7 +49,14 @@ export default function AccountScreen() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isAppleAvailable, setIsAppleAvailable] = useState(false);
+  const [sports, setSports] = useState<string[]>(() => getOnboardingInterests());
   const permanentUser = user && !isAnonymous ? user : null;
+  const categoriesQuery = useQuery({
+    queryKey: ["account-categories"],
+    queryFn: getCategories,
+    staleTime: 300000,
+  });
+  const categories = useMemo(() => categoriesQuery.data ?? [], [categoriesQuery.data]);
 
   useEffect(() => {
     let cancelled = false;
@@ -138,10 +151,20 @@ export default function AccountScreen() {
     router.push("/onboarding");
   }
 
+  function toggleSport(slug: string) {
+    setSports((current) => {
+      const next = current.includes(slug)
+        ? current.filter((item) => item !== slug)
+        : [...current, slug];
+      setOnboardingInterests(next);
+      return next;
+    });
+  }
+
   function confirmDeleteAccount() {
     Alert.alert(
       "Delete account?",
-      "This permanently deletes your Subskills account, private saved/watched/vote state, and contributor profile. Public resources you submitted may remain without your profile attached.",
+      "This permanently deletes your Subskills account, private Watch later/watched/vote state, and contributor profile. Public resources you submitted may remain without your profile attached.",
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -301,6 +324,29 @@ export default function AccountScreen() {
           >
             <Text style={styles.secondaryButtonText}>Replay intro</Text>
           </Pressable>
+          {categories.length > 0 ? (
+            <View style={styles.sportsBlock}>
+              <Text style={styles.label}>Sports</Text>
+              <View style={styles.sportChips}>
+                {categories.map((category) => {
+                  const selected = sports.includes(category.slug);
+                  return (
+                    <Pressable
+                      key={category.id}
+                      onPress={() => toggleSport(category.slug)}
+                      style={[styles.sportChip, selected && styles.sportChipActive]}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected }}
+                    >
+                      <Text style={[styles.sportChipText, selected && styles.sportChipTextActive]}>
+                        {category.name}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+          ) : null}
           <View style={styles.linkList}>
             {accountLinks.map((link) => (
               <Pressable
@@ -427,6 +473,35 @@ const styles = StyleSheet.create({
   linkList: {
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.divider,
+  },
+  sportsBlock: {
+    gap: spacing.xs,
+  },
+  sportChips: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.xs,
+  },
+  sportChip: {
+    minHeight: 34,
+    justifyContent: "center",
+    paddingHorizontal: spacing.sm,
+    borderRadius: radius.pill,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.divider,
+    backgroundColor: colors.bg,
+  },
+  sportChipActive: {
+    borderColor: colors.ink,
+    backgroundColor: colors.ink,
+  },
+  sportChipText: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  sportChipTextActive: {
+    color: colors.surface,
   },
   linkRow: {
     minHeight: 44,

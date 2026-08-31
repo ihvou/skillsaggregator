@@ -24,9 +24,27 @@ export type DiscoverCategorySection = {
   skills: DiscoverSkillTile[];
 };
 
+export type SkillSummaryPoint = { point: string; support: number };
+export type SkillTechniqueSummary = {
+  consensus: SkillSummaryPoint[];
+  mistakes: SkillSummaryPoint[];
+  source_count: number;
+  used_count: number;
+  generated_at: string;
+};
+
+export type UserSkillProgress = {
+  skill_id: string;
+  total_count: number;
+  watched_count: number;
+  target: number;
+  completed: boolean;
+  percent: number;
+};
+
 const RESOURCE_LINK_SELECT =
   "id, url, canonical_url, domain, title, description, thumbnail_url, thumbnail_storage_path, duration_seconds, like_count, comment_count, share_count, favorite_count, creator_handle, creator_url, scoring_strategy, content_type, created_at, contributor_profile:contributor_profiles(id, slug, display_name, avatar_url, accepted_count)";
-const RELATION_VOTE_SELECT = "upvote_count, downvote_count, vote_score, value_score, curator_score, curator_reviews, user_score, combined_score, coach_take";
+const RELATION_VOTE_SELECT = "upvote_count, downvote_count, vote_score, value_score, curator_score, curator_reviews, user_score, combined_score, rank_key, coach_take";
 
 function shapeLinkWithContributor<
   TLink extends {
@@ -112,6 +130,7 @@ function relationVotes(relation: {
   curator_reviews?: number | null;
   user_score?: number | null;
   combined_score?: number | null;
+  rank_key?: number | null;
   coach_take?: string | null;
 }) {
   const upvoteCount = relation.upvote_count ?? 0;
@@ -125,6 +144,7 @@ function relationVotes(relation: {
     curator_reviews: relation.curator_reviews ?? null,
     user_score: relation.user_score ?? null,
     combined_score: relation.combined_score ?? relation.curator_score ?? null,
+    rank_key: relation.rank_key ?? relation.combined_score ?? relation.curator_score ?? null,
     coach_take: relation.coach_take ?? null,
   };
 }
@@ -139,6 +159,22 @@ type LatestSkillThumbnailRow = {
   thumbnail_storage_path: string | null;
   canonical_url: string | null;
   url: string | null;
+};
+
+type SkillSummaryRow = {
+  consensus?: unknown;
+  mistakes?: unknown;
+  source_count?: number | null;
+  used_count?: number | null;
+  generated_at?: string | null;
+};
+
+type UserSkillProgressRow = {
+  skill_id: string;
+  total_count?: number | null;
+  watched_count?: number | null;
+  target?: number | null;
+  completed?: boolean | null;
 };
 
 type LinkRow = {
@@ -177,6 +213,7 @@ type RelationWithSkillId = {
   curator_reviews?: number | null;
   user_score?: number | null;
   combined_score?: number | null;
+  rank_key?: number | null;
   coach_take?: string | null;
   created_at?: string | null;
   links?: LinkRow | LinkRow[] | null;
@@ -202,6 +239,7 @@ type LibraryResourceRow = {
   curator_reviews?: number | null;
   user_score?: number | null;
   combined_score?: number | null;
+  rank_key?: number | null;
   coach_take?: string | null;
   relation_created_at?: string | null;
   link_id: string;
@@ -238,10 +276,86 @@ function unwrapRow<T>(value: T | T[] | null | undefined): T | null {
   return Array.isArray(value) ? value[0] ?? null : value ?? null;
 }
 
+function shapeSummaryPoints(value: unknown): SkillSummaryPoint[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (!item || typeof item !== "object" || !("point" in item)) return [];
+    const point = typeof item.point === "string" ? item.point.trim() : "";
+    if (!point) return [];
+    const support =
+      "support" in item && typeof item.support === "number" && Number.isFinite(item.support)
+        ? item.support
+        : 0;
+    return [{ point, support }];
+  });
+}
+
+function shapeSkillTechniqueSummary(row: SkillSummaryRow | null | undefined): SkillTechniqueSummary | null {
+  if (!row) return null;
+  const consensus = shapeSummaryPoints(row.consensus);
+  if (consensus.length === 0 || !row.generated_at) return null;
+  return {
+    consensus,
+    mistakes: shapeSummaryPoints(row.mistakes),
+    source_count: row.source_count ?? 0,
+    used_count: row.used_count ?? 0,
+    generated_at: row.generated_at,
+  };
+}
+
+function shapeSkillProgress(row: UserSkillProgressRow): UserSkillProgress {
+  const total = Math.max(0, row.total_count ?? 0);
+  const watched = Math.max(0, row.watched_count ?? 0);
+  const target = Math.max(0, row.target ?? Math.min(3, total));
+  return {
+    skill_id: row.skill_id,
+    total_count: total,
+    watched_count: watched,
+    target,
+    completed: Boolean(row.completed),
+    percent: target > 0 ? Math.min(100, Math.round((Math.min(watched, target) / target) * 100)) : 0,
+  };
+}
+
 async function fetchActiveSkillRelations(
   supabase: SupabaseClient,
   skillIds: string[],
+  options: {
+    perSkill?: number;
+    sort?: ResourceSort;
+    level?: string;
+    source?: string;
+  } = {},
 ): Promise<RelationWithSkillId[]> {
+  if (skillIds.length === 0) return [];
+
+  const sort = normalizeSort(options.sort);
+  if (typeof options.perSkill === "number") {
+    const { data, error } = await supabase
+      .rpc("get_ranked_skill_relations", {
+        p_skill_ids: skillIds,
+        p_per_skill: options.perSkill,
+        p_sort: sort,
+        p_level: options.level ?? "all",
+        p_source: options.source ?? "all",
+      })
+      .select(
+        `id, skill_id, public_note, skill_level, ${RELATION_VOTE_SELECT}, created_at, links!inner(${RESOURCE_LINK_SELECT})`,
+      );
+
+    if (error) {
+      console.warn("mobile_ranked_skill_relations_load_failed", {
+        message: error.message,
+        skillCount: skillIds.length,
+        perSkill: options.perSkill,
+        sort,
+      });
+      return [];
+    }
+
+    return (data ?? []) as RelationWithSkillId[];
+  }
+
   const relations: RelationWithSkillId[] = [];
   for (let from = 0; ; from += RELATION_PAGE_SIZE) {
     const to = from + RELATION_PAGE_SIZE - 1;
@@ -254,11 +368,9 @@ async function fetchActiveSkillRelations(
       .eq("is_active", true)
       .eq("published", true)
       .eq("links.is_active", true)
-      .order("combined_score", { ascending: false, nullsFirst: false })
-      .order("curator_reviews", { ascending: false, nullsFirst: false })
-      .order("value_score", { ascending: false, nullsFirst: false })
-      .order("vote_score", { ascending: false })
+      .order(sort === "newest" ? "created_at" : "rank_key", { ascending: false, nullsFirst: false })
       .order("created_at", { ascending: false })
+      .order("id", { ascending: true })
       .range(from, to);
 
     if (error) {
@@ -502,6 +614,7 @@ export async function getSkillResources(categorySlug: string, skillSlug: string,
   category: CategorySummary | null;
   skill: SkillSummary | null;
   resources: SkillResource[];
+  summary: SkillTechniqueSummary | null;
 }> {
   const sort = normalizeSort(sortInput);
   const supabase = getSupabase();
@@ -523,7 +636,7 @@ export async function getSkillResources(categorySlug: string, skillSlug: string,
           sort,
         )
       : [];
-    return { category, skill, resources };
+    return { category, skill, resources, summary: null };
   }
 
   const { data: skill } = await supabase
@@ -534,21 +647,34 @@ export async function getSkillResources(categorySlug: string, skillSlug: string,
     .eq("is_active", true)
     .maybeSingle();
 
-  if (!skill) return { category: null, skill: null, resources: [] };
+  if (!skill) return { category: null, skill: null, resources: [], summary: null };
   const category = Array.isArray(skill.categories) ? skill.categories[0] : skill.categories;
-  if (!category) return { category: null, skill: null, resources: [] };
+  if (!category) return { category: null, skill: null, resources: [], summary: null };
 
-  const { data: relations } = await supabase
-    .from("link_skill_relations")
-    .select(`id, public_note, skill_level, ${RELATION_VOTE_SELECT}, created_at, links!inner(${RESOURCE_LINK_SELECT})`)
-    .eq("skill_id", skill.id)
-    .eq("is_active", true)
-    .eq("published", true)
-    .eq("links.is_active", true)
-    .order(sort === "newest" ? "created_at" : "combined_score", { ascending: false, nullsFirst: false })
-    .order(sort === "newest" ? "id" : "curator_reviews", { ascending: false, nullsFirst: false })
-    .order(sort === "newest" ? "id" : "value_score", { ascending: false, nullsFirst: false })
-    .order(sort === "newest" ? "id" : "vote_score", { ascending: false });
+  const [{ data: relations }, { data: summaryRow, error: summaryError }] = await Promise.all([
+    supabase
+      .from("link_skill_relations")
+      .select(`id, public_note, skill_level, ${RELATION_VOTE_SELECT}, created_at, links!inner(${RESOURCE_LINK_SELECT})`)
+      .eq("skill_id", skill.id)
+      .eq("is_active", true)
+      .eq("published", true)
+      .eq("links.is_active", true)
+      .order(sort === "newest" ? "created_at" : "rank_key", { ascending: false, nullsFirst: false })
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: true }),
+    supabase
+      .from("skill_summaries")
+      .select("consensus, mistakes, source_count, used_count, generated_at")
+      .eq("skill_id", skill.id)
+      .maybeSingle(),
+  ]);
+
+  if (summaryError) {
+    console.warn("mobile_skill_summary_load_failed", {
+      skillId: skill.id,
+      message: summaryError.message,
+    });
+  }
 
   return {
     category,
@@ -564,19 +690,17 @@ export async function getSkillResources(categorySlug: string, skillSlug: string,
       learning_order: skill.learning_order ?? null,
       updated_at: skill.updated_at,
     },
-    resources: sortResources(
-      ((relations ?? []) as RelationWithSkillId[]).flatMap((relation) => {
-        const resource = shapeRelationResource(relation, {
-          id: skill.id,
-          slug: skill.slug,
-          name: skill.name,
-          category_slug: category.slug,
-          category_name: category.name,
-        });
-        return resource ? [resource] : [];
-      }),
-      sort,
-    ),
+    resources: ((relations ?? []) as RelationWithSkillId[]).flatMap((relation) => {
+      const resource = shapeRelationResource(relation, {
+        id: skill.id,
+        slug: skill.slug,
+        name: skill.name,
+        category_slug: category.slug,
+        category_name: category.name,
+      });
+      return resource ? [resource] : [];
+    }),
+    summary: shapeSkillTechniqueSummary(summaryRow as SkillSummaryRow | null),
   };
 }
 
@@ -669,7 +793,10 @@ export async function getCategoryWithSkillResources(
 
   const skillById = new Map(skillsWithResources.map((skill) => [skill.id, skill]));
   const resources = sortResources(
-    (await fetchActiveSkillRelations(supabase, skillsWithResources.map((skill) => skill.id))).flatMap(
+    (await fetchActiveSkillRelations(supabase, skillsWithResources.map((skill) => skill.id), {
+      perSkill: 8,
+      sort: "popular",
+    })).flatMap(
       (relation) => {
         const skill = relation.skill_id ? skillById.get(relation.skill_id) : null;
         if (!skill) return [];
@@ -712,4 +839,23 @@ export async function getUserLibraryResources(
   return ((data ?? []) as LibraryResourceRow[])
     .map(shapeLibraryResource)
     .filter((resource): resource is SkillResource => Boolean(resource));
+}
+
+export async function getUserSkillProgress(skillIds: string[]): Promise<UserSkillProgress[]> {
+  const supabase = getSupabase();
+  const uniqueSkillIds = [...new Set(skillIds)].filter(Boolean);
+  if (!supabase || uniqueSkillIds.length === 0) return [];
+
+  const { data, error } = await supabase.rpc("get_user_skill_progress", {
+    p_skill_ids: uniqueSkillIds,
+  });
+  if (error) {
+    console.warn("mobile_user_skill_progress_load_failed", {
+      message: error.message,
+      skillCount: uniqueSkillIds.length,
+    });
+    return [];
+  }
+
+  return ((data ?? []) as UserSkillProgressRow[]).map(shapeSkillProgress);
 }

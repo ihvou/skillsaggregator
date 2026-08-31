@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { GripVertical } from "lucide-react";
 import type { SkillResource } from "@skillsaggregator/shared";
@@ -14,12 +14,21 @@ import {
 } from "@/lib/resourceRows";
 
 type LibraryView = "saved" | "watched";
+type UserSkillProgress = {
+  skill_id: string;
+  total_count: number;
+  watched_count: number;
+  target: number;
+  completed: boolean;
+};
 
 export function SavedResourceBrowser() {
   const [view, setView] = useState<LibraryView>("saved");
   const [signedIn, setSignedIn] = useState<boolean | null>(null);
   const [isAnonymous, setIsAnonymous] = useState(false);
   const [resources, setResources] = useState<SkillResource[]>([]);
+  const [selectedSkillId, setSelectedSkillId] = useState("all");
+  const [progressBySkill, setProgressBySkill] = useState<Map<string, UserSkillProgress>>(() => new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const loadedKeyRef = useRef<string | null>(null);
@@ -85,6 +94,81 @@ export function SavedResourceBrowser() {
     setLoading(false);
   }, [view]);
 
+  const skillOptions = useMemo(() => {
+    const bySkill = new Map<string, { id: string; name: string; count: number }>();
+    for (const resource of resources) {
+      const skill = resource.skill;
+      if (!skill?.id) continue;
+      const current = bySkill.get(skill.id);
+      bySkill.set(skill.id, {
+        id: skill.id,
+        name: skill.name,
+        count: (current?.count ?? 0) + 1,
+      });
+    }
+    return [...bySkill.values()].sort((a, b) => a.name.localeCompare(b.name));
+  }, [resources]);
+  const skillIdsKey = useMemo(
+    () => skillOptions.map((skill) => skill.id).join(","),
+    [skillOptions],
+  );
+  const visibleResources = useMemo(() => {
+    if (selectedSkillId === "all") return resources;
+    return resources.filter((resource) => resource.skill?.id === selectedSkillId);
+  }, [resources, selectedSkillId]);
+
+  useEffect(() => {
+    if (selectedSkillId === "all") return;
+    if (!skillOptions.some((skill) => skill.id === selectedSkillId)) {
+      setSelectedSkillId("all");
+    }
+  }, [selectedSkillId, skillOptions]);
+
+  useEffect(() => {
+    const supabase = getBrowserSupabase();
+    const skillIds = skillIdsKey ? skillIdsKey.split(",").filter(Boolean) : [];
+    if (!supabase || !signedIn || skillIds.length === 0) {
+      setProgressBySkill(new Map());
+      return;
+    }
+
+    let cancelled = false;
+    async function loadProgress() {
+      try {
+        const { data, error: progressError } = await supabase.rpc("get_user_skill_progress", {
+          p_skill_ids: skillIds,
+        });
+        if (cancelled) return;
+        if (progressError) {
+          console.warn("library_skill_progress_load_failed", {
+            message: progressError.message,
+            skillCount: skillIds.length,
+          });
+          setProgressBySkill(new Map());
+          return;
+        }
+        const next = new Map<string, UserSkillProgress>();
+        for (const row of (data ?? []) as UserSkillProgress[]) {
+          next.set(row.skill_id, row);
+        }
+        setProgressBySkill(next);
+      } catch (progressError) {
+        if (cancelled) return;
+        console.warn("library_skill_progress_load_failed", {
+          message: progressError instanceof Error ? progressError.message : String(progressError),
+          skillCount: skillIds.length,
+        });
+        setProgressBySkill(new Map());
+      }
+    }
+
+    void loadProgress();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [signedIn, skillIdsKey]);
+
   useEffect(() => {
     void refresh();
     function onFocus() {
@@ -148,6 +232,18 @@ export function SavedResourceBrowser() {
     void persistSavedOrder(nextResources, previousResources);
   }
 
+  function applySavedChange(resource: SkillResource, saved: boolean) {
+    if (view !== "saved" || saved) return;
+    setResources((current) => current.filter((item) => item.id !== resource.id));
+    loadedKeyRef.current = null;
+  }
+
+  function applyWatchedChange(resource: SkillResource, watched: boolean) {
+    if (view !== "saved" || !watched) return;
+    setResources((current) => current.filter((item) => item.id !== resource.id));
+    loadedKeyRef.current = null;
+  }
+
   return (
     <div className="pb-20">
       <PageHeader
@@ -165,6 +261,7 @@ export function SavedResourceBrowser() {
               type="button"
               onClick={() => {
                 loadedKeyRef.current = null;
+                setSelectedSkillId("all");
                 setView(item);
               }}
               className={`focus-ring rounded-md px-4 py-2 text-sm font-bold capitalize transition ${
@@ -175,6 +272,14 @@ export function SavedResourceBrowser() {
             </button>
           ))}
         </div>
+        {skillOptions.length > 0 ? (
+          <SkillFilterChips
+            skills={skillOptions}
+            selectedSkillId={selectedSkillId}
+            progressBySkill={progressBySkill}
+            onSelect={setSelectedSkillId}
+          />
+        ) : null}
         {loading ? <p className="text-sm text-muted">Loading {view === "saved" ? "Watch later" : view} resources...</p> : null}
         {!loading && error ? <p className="text-sm font-medium text-red-600">{error}</p> : null}
         {!loading && !error && signedIn === false ? (
@@ -202,11 +307,14 @@ export function SavedResourceBrowser() {
               : "Nothing watched yet. Use the check button on a resource after you watch it."}
           </p>
         ) : null}
-        {resources.length > 0 ? (
+        {!loading && !error && signedIn && resources.length > 0 && visibleResources.length === 0 ? (
+          <p className="text-sm text-muted">No resources match this skill filter.</p>
+        ) : null}
+        {visibleResources.length > 0 ? (
           <div className="divide-y divide-divider">
-            {resources.map((resource) => {
+            {visibleResources.map((resource) => {
               const id = bookmarkId(resource);
-              const canReorder = view === "saved" && Boolean(id);
+              const canReorder = view === "saved" && selectedSkillId === "all" && Boolean(id);
               return (
                 <div
                   key={resource.id}
@@ -231,7 +339,13 @@ export function SavedResourceBrowser() {
                       </span>
                     ) : null}
                     <div className="min-w-0 flex-1">
-                      <ResourceCard resource={resource} />
+                      <ResourceCard
+                        resource={resource}
+                        initialSaved={view === "saved" || Boolean(resource.personal_list_id)}
+                        initialWatched={view === "watched"}
+                        onSavedChange={applySavedChange}
+                        onWatchedChange={applyWatchedChange}
+                      />
                     </div>
                   </div>
                 </div>
@@ -241,5 +355,81 @@ export function SavedResourceBrowser() {
         ) : null}
       </section>
     </div>
+  );
+}
+
+function progressPercent(row: UserSkillProgress | undefined) {
+  if (!row || row.target <= 0) return 0;
+  return Math.min(100, Math.round((Math.min(row.watched_count, row.target) / row.target) * 100));
+}
+
+function SkillFilterChips({
+  skills,
+  selectedSkillId,
+  progressBySkill,
+  onSelect,
+}: {
+  skills: Array<{ id: string; name: string; count: number }>;
+  selectedSkillId: string;
+  progressBySkill: Map<string, UserSkillProgress>;
+  onSelect: (skillId: string) => void;
+}) {
+  return (
+    <div className="mb-6 flex gap-2 overflow-x-auto pb-2 no-scrollbar">
+      <SkillFilterChip
+        label="All"
+        count={skills.reduce((total, skill) => total + skill.count, 0)}
+        selected={selectedSkillId === "all"}
+        progress={100}
+        onClick={() => onSelect("all")}
+      />
+      {skills.map((skill) => (
+        <SkillFilterChip
+          key={skill.id}
+          label={skill.name}
+          count={skill.count}
+          selected={selectedSkillId === skill.id}
+          progress={progressPercent(progressBySkill.get(skill.id))}
+          onClick={() => onSelect(skill.id)}
+        />
+      ))}
+    </div>
+  );
+}
+
+function SkillFilterChip({
+  label,
+  count,
+  selected,
+  progress,
+  onClick,
+}: {
+  label: string;
+  count: number;
+  selected: boolean;
+  progress: number;
+  onClick: () => void;
+}) {
+  const boundedProgress = Math.max(0, Math.min(100, progress));
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={selected}
+      aria-label={`${label}, ${count} ${count === 1 ? "resource" : "resources"}, ${boundedProgress}% progress`}
+      className={`focus-ring w-36 shrink-0 rounded-md border px-3 py-2 text-left transition ${
+        selected
+          ? "border-ink bg-ink text-surface"
+          : "border-divider bg-surface text-muted hover:text-ink"
+      }`}
+    >
+      <span className="block truncate text-xs font-extrabold">{label}</span>
+      <span className={`mt-2 block h-1 overflow-hidden rounded-full ${selected ? "bg-white/25" : "bg-bgGroup"}`}>
+        <span
+          className={`block h-full rounded-full ${selected ? "bg-surface" : "bg-muted"}`}
+          style={{ width: `${boundedProgress}%` }}
+        />
+      </span>
+    </button>
   );
 }

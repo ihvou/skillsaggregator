@@ -1,8 +1,9 @@
-import { Linking, Pressable, StyleSheet, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
 import { Image } from "expo-image";
 import { Camera, Globe, Music2, PlaySquare } from "lucide-react-native";
 import { getLinkSource, type SkillResource } from "@skillsaggregator/shared";
 import { colors, radius, shadows } from "@/lib/theme";
+import { openTutorialResource } from "@/lib/tutorialReturnPrompt";
 
 interface ResourceTileProps {
   resource: SkillResource;
@@ -35,7 +36,9 @@ export function ResourceTile({ resource, width = 170 }: ResourceTileProps) {
 
   return (
     <Pressable
-      onPress={() => Linking.openURL(resource.link.url)}
+      onPress={() => {
+        void openTutorialResource(resource);
+      }}
       style={({ pressed }) => [styles.wrap, pressed && styles.pressed]}
       accessibilityRole="button"
       accessibilityLabel={resource.link.title ?? "Open resource"}

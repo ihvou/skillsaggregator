@@ -4,6 +4,16 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { getBrowserSupabase } from "@/lib/browserSupabase";
 
+type BrowserAuthUserResult = {
+  data: {
+    user: unknown | null;
+  };
+};
+
+type BrowserAuthSession = {
+  user?: unknown | null;
+} | null;
+
 /**
  * Auth-aware nav links.
  *
@@ -25,14 +35,14 @@ function useIsSignedIn() {
 
     supabase.auth
       .getUser()
-      .then(({ data }) => {
+      .then(({ data }: BrowserAuthUserResult) => {
         if (!cancelled) setSignedIn(Boolean(data.user));
       })
       .catch(() => {
         if (!cancelled) setSignedIn(false);
       });
 
-    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data } = supabase.auth.onAuthStateChange((_event: string, session: BrowserAuthSession) => {
       if (!cancelled) setSignedIn(Boolean(session?.user));
     });
 

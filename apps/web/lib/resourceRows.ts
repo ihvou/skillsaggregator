@@ -3,7 +3,7 @@ import { normalizeThumbnailUrl } from "./thumbnails";
 
 export const RESOURCE_LINK_SELECT =
   "id, url, canonical_url, domain, title, description, thumbnail_url, thumbnail_storage_path, duration_seconds, like_count, comment_count, share_count, favorite_count, creator_handle, creator_url, scoring_strategy, content_type, created_at, contributor_profile:contributor_profiles(id, slug, display_name, avatar_url, accepted_count)";
-export const RELATION_VOTE_SELECT = "upvote_count, downvote_count, vote_score, value_score, curator_score, curator_reviews, user_score, combined_score, coach_take";
+export const RELATION_VOTE_SELECT = "upvote_count, downvote_count, vote_score, value_score, curator_score, curator_reviews, user_score, combined_score, rank_key, coach_take";
 export const SAVED_RELATION_SELECT = `id, public_note, skill_level, ${RELATION_VOTE_SELECT}, created_at, link_id, links!inner(${RESOURCE_LINK_SELECT}), skills!inner(id, slug, name, categories!inner(slug, name))`;
 
 type MaybeArray<T> = T | T[] | null | undefined;
@@ -25,6 +25,7 @@ export interface RelationVoteRow {
   curator_reviews?: number | null;
   user_score?: number | null;
   combined_score?: number | null;
+  rank_key?: number | null;
   coach_take?: string | null;
 }
 
@@ -171,6 +172,7 @@ export function relationVotes(relation: RelationVoteRow) {
     curator_reviews: relation.curator_reviews ?? null,
     user_score: relation.user_score ?? null,
     combined_score: relation.combined_score ?? relation.curator_score ?? null,
+    rank_key: relation.rank_key ?? relation.combined_score ?? relation.curator_score ?? null,
     coach_take: relation.coach_take ?? null,
   };
 }

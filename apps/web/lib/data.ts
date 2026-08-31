@@ -19,7 +19,6 @@ import {
   shapeJoinedRelationResource,
   shapeLinkWithContributor,
   shapeRelationResource,
-  unwrapRow,
 } from "./resourceRows";
 import { getPublicSupabase, getServiceSupabase } from "./supabase";
 import { normalizeThumbnailUrl } from "./thumbnails";
@@ -212,11 +211,9 @@ export async function getSkillPage(categorySlug: string, skillSlug: string) {
     .eq("skill_id", skillRow.id)
     .eq("is_active", true)
     .eq("published", true)
-    .order("combined_score", { ascending: false, nullsFirst: false })
-    .order("curator_reviews", { ascending: false, nullsFirst: false })
-    .order("value_score", { ascending: false, nullsFirst: false })
-    .order("vote_score", { ascending: false })
-    .order("created_at", { ascending: false });
+    .order("rank_key", { ascending: false, nullsFirst: false })
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: true });
 
   // Synthesised from the transcripts of the videos on this page (see
   // docs/skill-summary-routine.md). Absent until a page has >= 6 videos, so every
@@ -235,19 +232,16 @@ export async function getSkillPage(categorySlug: string, skillSlug: string) {
     .neq("id", skillRow.id)
     .limit(4);
 
-  const shapedResources = sortResources(
-    ((resources ?? []) as RelationWithSkillId[]).flatMap((relation) => {
-      const resource = shapeRelationResource(relation, {
-        id: skillRow.id,
-        slug: skillRow.slug,
-        name: skillRow.name,
-        category_slug: category.slug,
-        category_name: category.name,
-      });
-      return resource ? [resource] : [];
-    }),
-    "popular",
-  );
+  const shapedResources = ((resources ?? []) as RelationWithSkillId[]).flatMap((relation) => {
+    const resource = shapeRelationResource(relation, {
+      id: skillRow.id,
+      slug: skillRow.slug,
+      name: skillRow.name,
+      category_slug: category.slug,
+      category_name: category.name,
+    });
+    return resource ? [resource] : [];
+  });
 
   return {
     category,
@@ -309,7 +303,42 @@ type PublicSupabaseClient = NonNullable<ReturnType<typeof getPublicSupabase>>;
 async function fetchActiveSkillRelations(
   supabase: PublicSupabaseClient,
   skillIds: string[],
+  options: {
+    perSkill?: number;
+    sort?: ResourceSort;
+    level?: string;
+    source?: string;
+  } = {},
 ): Promise<RelationWithSkillId[]> {
+  if (skillIds.length === 0) return [];
+
+  const sort = options.sort === "newest" ? "newest" : "popular";
+  if (typeof options.perSkill === "number") {
+    const { data, error } = await supabase
+      .rpc("get_ranked_skill_relations", {
+        p_skill_ids: skillIds,
+        p_per_skill: options.perSkill,
+        p_sort: sort,
+        p_level: options.level ?? "all",
+        p_source: options.source ?? "all",
+      })
+      .select(
+        `id, skill_id, public_note, skill_level, ${RELATION_VOTE_SELECT}, created_at, links!inner(${RESOURCE_LINK_SELECT})`,
+      );
+
+    if (error) {
+      console.warn("ranked_skill_relations_load_failed", {
+        message: error.message,
+        skillCount: skillIds.length,
+        perSkill: options.perSkill,
+        sort,
+      });
+      return [];
+    }
+
+    return (data ?? []) as RelationWithSkillId[];
+  }
+
   const relations: RelationWithSkillId[] = [];
   for (let from = 0; ; from += RELATION_PAGE_SIZE) {
     const to = from + RELATION_PAGE_SIZE - 1;
@@ -322,11 +351,9 @@ async function fetchActiveSkillRelations(
       .eq("is_active", true)
       .eq("published", true)
       .eq("links.is_active", true)
-      .order("combined_score", { ascending: false, nullsFirst: false })
-      .order("curator_reviews", { ascending: false, nullsFirst: false })
-      .order("value_score", { ascending: false, nullsFirst: false })
-      .order("vote_score", { ascending: false })
+      .order(sort === "newest" ? "created_at" : "rank_key", { ascending: false, nullsFirst: false })
       .order("created_at", { ascending: false })
+      .order("id", { ascending: true })
       .range(from, to);
 
     if (error) {
@@ -340,27 +367,41 @@ async function fetchActiveSkillRelations(
   return relations;
 }
 
-async function fetchLatestSkillThumbnail(
+async function fetchLatestSkillThumbnails(
   supabase: PublicSupabaseClient,
-  skillId: string,
+  skillIds: string[],
 ) {
-  const { data } = await supabase
-    .from("link_skill_relations")
-    .select("created_at, links!inner(thumbnail_url, thumbnail_storage_path, canonical_url, url)")
-    .eq("skill_id", skillId)
-    .eq("is_active", true)
-    .eq("published", true)
-    .eq("links.is_active", true)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  const result = new Map<string, string | null>();
+  if (skillIds.length === 0) return result;
 
-  const link = unwrapRow(data?.links);
-  return normalizeThumbnailUrl(
-    link?.thumbnail_storage_path ?? link?.thumbnail_url ?? null,
-    link?.canonical_url ?? link?.url ?? null,
-    link?.thumbnail_storage_path ? link?.thumbnail_url ?? null : null,
-  );
+  const { data, error } = await supabase.rpc("get_latest_skill_thumbnails", {
+    p_skill_ids: skillIds,
+  });
+  if (error) {
+    console.warn("latest_skill_thumbnails_load_failed", {
+      message: error.message,
+      skillCount: skillIds.length,
+    });
+    return result;
+  }
+
+  for (const row of (data ?? []) as Array<{
+    skill_id: string;
+    thumbnail_url: string | null;
+    thumbnail_storage_path: string | null;
+    canonical_url: string | null;
+    url: string | null;
+  }>) {
+    result.set(
+      row.skill_id,
+      normalizeThumbnailUrl(
+        row.thumbnail_storage_path ?? row.thumbnail_url ?? null,
+        row.canonical_url ?? row.url ?? null,
+        row.thumbnail_storage_path ? row.thumbnail_url ?? null : null,
+      ),
+    );
+  }
+  return result;
 }
 
 /**
@@ -397,13 +438,9 @@ export async function getDiscoverSections(perCategorySkills: number | null = nul
       if (skillsWithResources.length === 0) {
         return { category, skills: [] };
       }
-      const latestThumbBySkill = new Map(
-        await Promise.all(
-          skillsWithResources.map(async (skill) => [
-            skill.id,
-            await fetchLatestSkillThumbnail(supabase, skill.id),
-          ] as const),
-        ),
+      const latestThumbBySkill = await fetchLatestSkillThumbnails(
+        supabase,
+        skillsWithResources.map((skill) => skill.id),
       );
 
       return {
@@ -458,7 +495,10 @@ export async function getCategoryWithSkillResources(
 
   const skillById = new Map(skills.map((skill) => [skill.id, skill]));
   const resources = sortResources(
-    (await fetchActiveSkillRelations(supabase, skills.map((skill) => skill.id))).flatMap((relation) => {
+    (await fetchActiveSkillRelations(supabase, skills.map((skill) => skill.id), {
+      perSkill,
+      sort: "popular",
+    })).flatMap((relation) => {
       const skill = relation.skill_id ? skillById.get(relation.skill_id) : null;
       if (!skill) return [];
       const resource = shapeRelationResource(relation, {
@@ -507,7 +547,13 @@ export async function getCategoryBrowserData(categorySlug: string): Promise<Cate
 
   const skillById = new Map(skills.map((skill) => [skill.id, skill]));
   const resources = sortResources(
-    (await fetchActiveSkillRelations(supabase, skills.map((skill) => skill.id))).flatMap((relation) => {
+    (await fetchActiveSkillRelations(supabase, skills.map((skill) => skill.id), {
+      // Category pages expose client-side level/source filters. Fetch more than the
+      // visible rail size, but still cap in SQL so large categories do not hit the
+      // PostgREST 1000-row default or send their entire relation table.
+      perSkill: 48,
+      sort: "popular",
+    })).flatMap((relation) => {
       const skill = relation.skill_id ? skillById.get(relation.skill_id) : null;
       if (!skill) return [];
       const resource = shapeRelationResource(relation, {
@@ -591,10 +637,9 @@ export async function getContributorProfileBySlug(slug: string): Promise<{
     .eq("published", true)
     .eq("links.is_active", true)
     .eq("links.contributor_profile_id", profile.id)
-    .order("combined_score", { ascending: false, nullsFirst: false })
-    .order("curator_reviews", { ascending: false, nullsFirst: false })
-    .order("value_score", { ascending: false, nullsFirst: false })
+    .order("rank_key", { ascending: false, nullsFirst: false })
     .order("created_at", { ascending: false })
+    .order("id", { ascending: true })
     .limit(50);
   if (relationsError) {
     console.warn("contributor_resources_load_failed", relationsError.message);

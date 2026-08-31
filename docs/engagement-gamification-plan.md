@@ -9,31 +9,31 @@
 The engagement **data spine already exists** (migration `0025`, plus app wiring by the parallel thread). v2 builds the progress/badge/notification layer as **derived state on top of it**, and does **not** introduce the `user_actions`-based tables v1 proposed.
 
 Shipped and in use:
-- Tables (all **auth-only**, RLS own-read, keyed by `link_skill_relation_id`): `user_bookmarks` (Saved), `user_watched` (Watched, has `watched_at`), `user_relation_votes` (votes).
+- Tables (all **auth-only**, RLS own-read, keyed by `link_skill_relation_id` where applicable): `user_bookmarks` (Watch later), `user_watched` (Watched, has `watched_at`), `user_relation_votes` (votes).
 - RPCs: `set_user_bookmark(relation_id, saved)`, `set_user_watched(relation_id, watched)`, `set_user_vote(relation_id, vote)` — auth required, published+active relations only. `set_user_watched` preserves earliest `watched_at`.
 - Ranking: `link_skill_relations.combined_score` + best-first index `(skill_id, combined_score desc …) where is_active and published`. Publish gate (15-min cron) controls which relations are visible/actionable.
 - `get_skill_resource_counts(uuid[])` → per-skill total of active+published relations (anon-callable) = the progress **denominator source**.
-- UI: both apps have a **Library** with `Saved | Watched` tabs and a `ResourceCard` (save/watch/vote + coach's take). Web: `apps/web/app/saved/page.tsx` → `SavedResourceBrowser`, `useResourceActions`, `NavLinks` "My library". Mobile: `apps/mobile/app/(tabs)/library/index.tsx` → `getUserLibraryResources`, `ResourceCard`.
+- UI: both apps have a **Library** with `Watch later | Watched` tabs and a `ResourceCard` (watch-later/watch/vote + coach's take). Web: `apps/web/app/saved/page.tsx` → `SavedResourceBrowser`, `useResourceActions`, `NavLinks` "My library". Mobile: `apps/mobile/app/(tabs)/library/index.tsx` → `getUserLibraryResources`, `ResourceCard`.
 
 ## 1. Confirmed decisions (this session)
 
 - **D1 — Real anonymous identity, not local-first.** Save/Watch/Vote/Suggest create a Supabase anonymous user lazily on the first write action. Anonymous users still use a real JWT and the `authenticated` Postgres role, so the existing own-row RLS/RPC model remains the boundary. Registration is an upgrade path: email uses `updateUser`, OAuth uses `linkIdentity`, and rows keyed by `auth.uid()` stay attached when the anonymous user becomes permanent. No client-supplied device id, no local-first persistence, and no anon→server reconciliation queue.
-- **D2 — Saved = a derived "watch-later" list that empties as you watch.** Saved list = bookmarked **minus** watched (non-destructive; the bookmark row is kept). Watched list = everything in `user_watched` (including items never bookmarked). No destructive move. *(This also fixes confirmed bug B-1, §5.)*
+- **D2 — Watch later is a derived list that empties as you watch.** Watch later = bookmarked **minus** watched (non-destructive; the bookmark row is kept). Watched list = everything in `user_watched` (including items never bookmarked). No destructive move. *(This also fixes confirmed bug B-1, §5.)*
 - **D3 — The web personal hub is the existing Library** (`/saved`), augmented in place. **No new `/me` route.**
 - **D4 — Skill completion = watched a fixed TARGET of a skill's resources.** Default target = `least(3, published_resource_count)` so skills with <3 resources can still complete. Best-first ordering (`combined_score`) means "watch any 3" ≈ "watch the 3 best." Optional `skills.completion_target` override later.
 - **D5 — Badges are DERIVED** (skill badge ⇔ watched ≥ target; category badge ⇔ category complete). No points/XP economy. Optional slim `user_category_badges(earned_at)` only if we want prestige timestamps / confetti-once semantics.
 - **Category progress = a single bar** per category (completed skills / total or category target). **Level = a filter lens** (reuse the existing level filter / Learning Path), **not** three per-level bars.
-- **Category badge homes: primary = category page header** (bar→badge transform); **secondary = Library header.** (Skill badges, by contrast, are functional **filter chips** on Saved/Watched/Skill pages.)
+- **Category badge homes: primary = category page header** (bar→badge transform); **secondary = Library header.** (Skill badges, by contrast, are functional **filter chips** on Watch later/Watched/Skill pages.)
 
 ## 2. Behavioural goal (north star)
 
-Bring identified learners back a few times a week to work through their **Saved list** and make **visible progress** toward completable skills. The identity may start anonymous and later be upgraded. Content is **evergreen**, so retention comes from the user's own list + progress, **not** content freshness. We reward honest forward motion; we do not manufacture streak-guilt.
+Bring identified learners back a few times a week to work through their **Watch later queue** and make **visible progress** toward completable skills. The identity may start anonymous and later be upgraded. Content is **evergreen**, so retention comes from the user's own list + progress, **not** content freshness. We reward honest forward motion; we do not manufacture streak-guilt.
 
 ## 3. Model & definitions (mapped to shipped tables)
 
 | Concept | Definition | Source |
 |---|---|---|
-| Saved (watch-later) | bookmarked and **not yet** watched | `user_bookmarks` − `user_watched` |
+| Watch later | bookmarked and **not yet** watched | `user_bookmarks` − `user_watched` |
 | Watched (archive) | marked watched (saved earlier or not) | `user_watched` |
 | Skill progress | `min(watched_in_skill, target) / target` | `user_watched` ⨝ `link_skill_relations` by `skill_id` |
 | Skill complete / badge | `watched_in_skill ≥ target` (target = `least(3, published_count)`) | derived |
@@ -48,7 +48,7 @@ Bring identified learners back a few times a week to work through their **Saved 
 | Save/Watch/Vote tables + RPCs (auth-only, relation-keyed) | `0025` | ✅ done |
 | Best-first ordering + publish gate | `0025`, `0023` | ✅ done |
 | Per-skill total count RPC | `get_skill_resource_counts` (`0023`) | ✅ done |
-| Library (Saved / Watched tabs) | web `SavedResourceBrowser`, mobile `getUserLibraryResources` | ✅ done |
+| Library (Watch later / Watched tabs) | web `SavedResourceBrowser`, mobile `getUserLibraryResources` | ✅ done |
 | ResourceCard save/watch/vote + coach's take | web + mobile `ResourceCard` | ✅ done |
 | Level filter / Learning Path lens | web `SortFilterMenu`/`CategoryResourceBrowser`, mobile `LevelFilter` | ✅ reusable |
 | Web auth (magic-link/Google), signed-in nav | `supabase.ts`, `browserSupabase.ts`, `NavLinks` | ✅ done |
@@ -57,7 +57,7 @@ Everything below (progress, badges, category rollup, stats, notifications, onboa
 
 ## 5. Bugs found (in shipped Library)
 
-- **B-1 (confirmed).** Saved tab includes already-watched items — no "minus watched" filter (`SavedResourceBrowser` web L55-61; `getUserLibraryResources` mobile `data.ts:653-659`). Contradicts D2. **Fix:** exclude relation ids present in `user_watched` from the Saved list. (Task M56.)
+- **B-1 (fixed in migration `0054`).** Watch later used to include already-watched items because `get_user_library_resources('saved')` did not subtract watched links. The saved branch now excludes any bookmarked link that also appears in the user's watched history, while preserving the bookmark row for order/history. (Task M56.)
 - **B-2 (needs data confirmation).** User reports Library items with **no** saved/watched mark. Not reproducible from code — list and card marks are keyed identically to `link_skill_relation_id`, and hydration already filters `is_active+published`. Most likely **pre-v2 data** (bookmarks made under the old link-keyed model) or a relation since unpublished. Diagnostic: list the user's `user_bookmarks`/`user_watched` rows left-joined to `link_skill_relations` and look for `published/is_active = f/null`. **Fix if confirmed:** a one-off cleanup of orphaned rows + ensure both the Library list *and* the card read apply the same published+active filter. (Task M97.)
 
 ## 6. Data model & backend (the delta)
@@ -97,8 +97,8 @@ grant execute on function public.get_user_skill_progress(uuid[]) to authenticate
 - **Category rollup:** compute client-side from `get_user_skill_progress` over a category's skills (cheaper than a second RPC); add a dedicated rollup RPC only if a category page needs it without loading all skills.
 - **Completion target:** v1 uses `least(3, total)` inline (above). If per-skill overrides are wanted later, add `skills.completion_target int not null default 3` and swap `least(3,total)` → `least(completion_target, total)`.
 
-### 6.2 Saved-minus-watched (B-1 fix) — no migration
-Change the Saved query to exclude watched relation ids: fetch the user's `user_watched` relation ids and filter them out of the `user_bookmarks` list (client-side set difference is fine; or a small `get_user_saved_unwatched()` RPC if we prefer server-side). Watched tab unchanged.
+### 6.2 Watch-later-minus-watched (B-1 fix) — migration `0054`
+`get_user_library_resources('saved')` owns the set difference. Its saved branch excludes links already represented in `user_watched`, so both web and mobile get the same Watch later behavior through the shared RPC. Watched tab unchanged.
 
 ### 6.3 Badges — derived (D5)
 Skill/category badges are computed from `get_user_skill_progress` (skill: `completed=true`; category: all/target skills completed). No table for v1. **Optional** `0039_category_badge_earned.sql` → `user_category_badges(user_id, category_id, earned_at)` only if we want prestige timestamps and confetti-once.
@@ -118,8 +118,8 @@ Both apps feed rows from `get_user_skill_progress` into these so bar/badge math 
 
 Deps to install (missing): `react-native-reanimated`, `react-native-confetti-cannon`. (`react-native-svg` present for bars/rings.) Notifications deps deferred to §10.
 
-- **Saved-minus-watched (B-1):** filter `getUserLibraryResources('saved')` to exclude watched relation ids (`apps/mobile/lib/data.ts`).
-- **Progress bars:** new `SkillProgressBar.tsx` (svg), fed by `get_user_skill_progress`. Placement: skill detail header (`(home)/[category]/[skill].tsx`), and as **skill filter chips carrying the bar** on the Library (Saved/Watched). 
+- **Watch-later-minus-watched (B-1):** read `getUserLibraryResources('saved')` through the RPC fixed in migration `0054`.
+- **Progress bars:** new `SkillProgressBar.tsx` (svg), fed by `get_user_skill_progress`. Placement: skill detail header (`(home)/[category]/[skill].tsx`), and as **skill filter chips carrying the bar** on the Library (Watch later/Watched).
 - **Skill badge:** bar transforms into badge at `completed`; badges act as **filter chips** on Library + skill screens.
 - **Category:** single progress bar + level lens on `(home)/[category]/index.tsx`; **category badge in the category page header** (bar→badge) and **Library header** (secondary).
 - **Stats + weekly ring:** `StatsPanel.tsx` + forgiving `WeeklyRing.tsx` (from `user_watched.watched_at`) on the Library/Account surface.
@@ -131,7 +131,7 @@ Deps to install (missing): `react-native-reanimated`, `react-native-confetti-can
 
 No onboarding, no notifications, no confetti on web. Anonymous users can save/watch/vote/suggest because they have a real Supabase Auth identity. Show upgrade nudges only when the user has personal state worth preserving.
 
-- **Saved-minus-watched (B-1):** filter `SavedResourceBrowser` Saved view to exclude watched relation ids.
+- **Watch-later-minus-watched (B-1):** read `SavedResourceBrowser` through the RPC fixed in migration `0054`.
 - **Progress bars:** new `PerSkillProgress.tsx` on the skill page (`app/[category]/[skill]`, inside `SkillResourceBrowser` after the description) + as **skill filter chips** on the Library.
 - **Skill badges:** bar→badge + badge-as-filter chips on Library/Skill pages.
 - **Category:** single progress bar + level lens on `app/[category]/page.tsx`; **category badge in the category page header** and **Library header** (secondary) — per D3/decision.
@@ -141,7 +141,7 @@ No onboarding, no notifications, no confetti on web. Anonymous users can save/wa
 ## 10. Notifications (Phase 2, mobile only) — reframed
 
 Primary logic is about the **user's own list/progress**, not content freshness (evergreen catalog):
-1. **Playlist resurfacing** — "You have N saved videos waiting." (primary)
+1. **Playlist resurfacing** — "You have N videos waiting." (primary)
 2. **Open-loop** — "One more video to complete <skill>." (goal-gradient)
 3. **Stale-save** — "Still want to watch <title> from your list?"
 4. **New content** — secondary, opt-in, only for users who completed a skill's target and chose to follow it.
@@ -150,15 +150,15 @@ Infra (deferred): `user_follows`, `notification_queue`, `user_push_tokens`, `exp
 ## 11. Testing
 
 - **Shared unit (Vitest):** `progress.test.ts` (target = least(3,total), never-0% floor, mastery boundary, total=0), `badges.test.ts` (skill/category completion, category target).
-- **SQL/RLS:** `get_user_skill_progress` returns `auth.uid()`-scoped counts; respects publish gate; Saved-minus-watched difference correct.
-- **Mobile Maestro:** watch to target → bar fills → badge + confetti; Saved item disappears from Saved after watched, appears in Watched; category badge on category header.
+- **SQL/RLS:** `get_user_skill_progress` returns `auth.uid()`-scoped counts; respects publish gate; Watch-later-minus-watched difference correct.
+- **Mobile Maestro:** watch to target → bar fills → badge + confetti; Watch later item disappears from Watch later after watched, appears in Watched; category badge on category header.
 - **Web Playwright:** anon sees catalog and can create personal state; identified Library shows progress/badges/stats; skill page bar appears when user state exists.
 
 ## 12. Rollout sequencing
 
 1. `M55` shared package (progress/badges math).
 2. `M54` `get_user_skill_progress` RPC (`0038`).
-3. `M56` Saved-minus-watched (B-1 fix) + `M97` B-2 data cleanup.
+3. `M56` Watch-later-minus-watched (B-1 fix) + `M97` B-2 data cleanup.
 4. `M57` completion-target model → `M58` skill progress bars (mobile + web) → `MI31` skill filter chips.
 5. `M60` skill badges (bar→badge + filter) → `M59` category progress (bar + level lens) → `M61` category badges (header + Library header).
 6. `M62` stats + weekly ring; `M63` onboarding win + confetti (mobile).

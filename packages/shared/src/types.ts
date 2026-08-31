@@ -79,6 +79,7 @@ export interface SkillResource {
   curator_reviews?: number | null;
   user_score?: number | null;
   combined_score?: number | null;
+  rank_key?: number | null;
   coach_take?: string | null;
   created_at?: string | null;
   link: LinkResource;

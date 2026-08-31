@@ -16,6 +16,7 @@ import type { LevelFilterValue } from "@/components/LevelFilter";
 import { PageHeader } from "@/components/PageHeader";
 import { ResourceCard } from "@/components/ResourceCard";
 import { Screen } from "@/components/Screen";
+import { SkillTechniqueSummary } from "@/components/SkillTechniqueSummary";
 import { SkeletonList } from "@/components/SkeletonList";
 import { SortFilterSheet } from "@/components/SortFilterSheet";
 import { getSkillResources } from "@/lib/data";
@@ -74,6 +75,8 @@ export default function SkillDetailScreen() {
     );
     return sortResources(filtered, sort);
   }, [level, query.data?.resources, sort, source]);
+  const skillData = query.data?.skill ?? null;
+  const summary = query.data?.summary ?? null;
 
   const headerSubtitle = useMemo(() => {
     const parts: string[] = [SORT_LABELS[sort]];
@@ -86,7 +89,7 @@ export default function SkillDetailScreen() {
     <Screen edges={["top"]} padded={false}>
       <View style={styles.headerWrap}>
         <PageHeader
-          title={query.data?.skill?.name ?? "Skill"}
+          title={skillData?.name ?? "Skill"}
           subtitle={headerSubtitle}
           showBack
           showMenu
@@ -121,6 +124,18 @@ export default function SkillDetailScreen() {
                 subtitle="Open the menu (...) to change sort, level, or source."
               />
             </View>
+          }
+          ListHeaderComponent={
+            skillData?.description || summary ? (
+              <View style={styles.introWrap}>
+                {skillData?.description ? (
+                  <Text style={styles.skillDescription}>{skillData.description}</Text>
+                ) : null}
+                {summary ? (
+                  <SkillTechniqueSummary summary={summary} />
+                ) : null}
+              </View>
+            ) : null
           }
           ItemSeparatorComponent={() => <View style={styles.divider} />}
           renderItem={({ item }) => (
@@ -164,6 +179,17 @@ const styles = StyleSheet.create({
   rowWrap: {
     paddingHorizontal: spacing.page,
     paddingVertical: spacing.lg,
+  },
+  introWrap: {
+    gap: spacing.md,
+    paddingHorizontal: spacing.page,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.sm,
+  },
+  skillDescription: {
+    color: colors.muted,
+    fontSize: 16,
+    lineHeight: 23,
   },
   divider: {
     height: StyleSheet.hairlineWidth,

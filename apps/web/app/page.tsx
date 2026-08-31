@@ -46,7 +46,7 @@ function homeJsonLd() {
 }
 
 export default async function HomePage() {
-  const sections = await getDiscoverSections();
+  const sections = await getDiscoverSections(12);
 
   return (
     <>

@@ -53,7 +53,7 @@ HOW YOU USE IT
 • Discover — browse by sport, or search across every sport at once
 • Learning Path — sub-skills grouped beginner to advanced, so you always know what comes next
 • Levels — every tutorial tagged beginner, intermediate or advanced
-• Save — keep the ones worth returning to
+• Watch later — keep the ones worth returning to
 • Watched — mark off what you have already done
 • Vote — thumbs up or down; votes decide what stays near the top
 • Suggest — send a link you rate. Suggestions are reviewed, not auto-published.
@@ -88,7 +88,7 @@ Curated sport tutorials
 
 **Promotional text** [141/170] — editable without a new build, so use it for news
 ```
-Every sport broken into sub-skills, each with a reviewed shortlist of free tutorials. Follow a beginner-to-advanced path and save what works.
+Every sport broken into sub-skills, each with a reviewed shortlist of free tutorials. Follow a beginner-to-advanced path and queue what works.
 ```
 
 **Keywords** [94/100] — comma-separated, no spaces (spaces are billed as characters)
@@ -114,7 +114,7 @@ HOW YOU USE IT
 - Discover: browse by sport, or search across every sport at once
 - Learning Path: sub-skills grouped beginner to advanced, so you always know what comes next
 - Levels: every tutorial tagged beginner, intermediate or advanced
-- Save: keep the ones worth returning to
+- Watch later: keep the ones worth returning to
 - Watched: mark off what you have already done
 - Vote: thumbs up or down; votes decide what stays near the top
 - Suggest: send a link you rate. Suggestions are reviewed, not auto-published.

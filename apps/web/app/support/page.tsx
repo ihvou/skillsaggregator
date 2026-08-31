@@ -5,7 +5,54 @@ export const metadata = {
   description: "Support and catalog problem reporting for Subskills.",
 };
 
-export default function SupportPage() {
+type SupportSearchParams = Record<string, string | string[] | undefined>;
+
+function firstParam(searchParams: SupportSearchParams, key: string) {
+  const value = searchParams[key];
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function issueUrl(searchParams: SupportSearchParams) {
+  const resource = firstParam(searchParams, "resource");
+  const link = firstParam(searchParams, "link");
+  const contributor = firstParam(searchParams, "contributor");
+  const title = firstParam(searchParams, "title");
+  const reportTitle = contributor
+    ? `Report contributor @${contributor}`
+    : title
+      ? `Report resource: ${title}`
+      : resource
+        ? `Report resource ${resource}`
+        : "Support request";
+  const body = [
+    "What should we review?",
+    "",
+    resource ? `Resource id: ${resource}` : null,
+    link ? `Link id: ${link}` : null,
+    contributor ? `Contributor: @${contributor}` : null,
+    title ? `Title: ${title}` : null,
+    "",
+    "Problem type: inaccurate / unsafe / duplicated / broken / off-topic / profile",
+    "",
+    "What happened?",
+  ].filter(Boolean).join("\n");
+  const url = new URL("https://github.com/ihvou/skillsaggregator/issues/new");
+  url.searchParams.set("title", reportTitle);
+  url.searchParams.set("body", body);
+  return url.toString();
+}
+
+export default async function SupportPage({
+  searchParams,
+}: {
+  searchParams: Promise<SupportSearchParams>;
+}) {
+  const resolvedSearchParams = await searchParams;
+  const resource = firstParam(resolvedSearchParams, "resource");
+  const contributor = firstParam(resolvedSearchParams, "contributor");
+  const hasReportContext = Boolean(resource || contributor);
+  const reportIssueUrl = issueUrl(resolvedSearchParams);
+
   return (
     <div className="pb-20">
       <PageHeader
@@ -15,6 +62,21 @@ export default function SupportPage() {
       />
       <section className="mx-auto max-w-3xl px-4">
         <div className="mt-8 space-y-8 rounded-lg bg-surface p-5 shadow-card ring-1 ring-divider">
+          {hasReportContext ? (
+            <section>
+              <h2 className="text-xl font-extrabold text-ink">Report Context</h2>
+              <p className="mt-3 text-base leading-7 text-muted">
+                This report is prefilled for{" "}
+                {resource ? `resource ${resource}` : `contributor @${contributor}`}.
+              </p>
+              <a
+                className="focus-ring mt-4 inline-flex min-h-10 items-center rounded-md bg-ink px-4 text-sm font-bold text-surface transition hover:opacity-90"
+                href={reportIssueUrl}
+              >
+                Open prefilled report
+              </a>
+            </section>
+          ) : null}
           <section>
             <h2 className="text-xl font-extrabold text-ink">Contact</h2>
             <p className="mt-3 text-base leading-7 text-muted">

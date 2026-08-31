@@ -26,12 +26,13 @@ export function useResourceActions(
   linkId: string,
   initialUserScore: number = 0,
   initialCombinedScore: number | null = null,
+  options: { initialSaved?: boolean; initialWatched?: boolean } = {},
 ) {
   const supabase = useMemo(() => getBrowserSupabase(), []);
   const [userId, setUserId] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
-  const [isSaved, setIsSaved] = useState(false);
-  const [isWatched, setIsWatched] = useState(false);
+  const [isSaved, setIsSaved] = useState(Boolean(options.initialSaved));
+  const [isWatched, setIsWatched] = useState(Boolean(options.initialWatched));
   const [vote, setVote] = useState<UserVoteState>(0);
   const [userScore, setUserScore] = useState<number>(initialUserScore);
   const [baseScore, setBaseScore] = useState<number | null>(
@@ -59,8 +60,8 @@ export function useResourceActions(
     const user = session?.user ?? null;
     setUserId(user?.id ?? null);
     if (!user) {
-      setIsSaved(false);
-      setIsWatched(false);
+      setIsSaved(Boolean(options.initialSaved));
+      setIsWatched(Boolean(options.initialWatched));
       setVote(0);
       setLoaded(true);
       return;
@@ -99,7 +100,12 @@ export function useResourceActions(
     setIsWatched(Boolean(watchedResult.data));
     setVote(voteResult.data?.vote === -1 ? -1 : voteResult.data?.vote === 1 ? 1 : 0);
     setLoaded(true);
-  }, [linkId, relationId, supabase]);
+  }, [linkId, options.initialSaved, options.initialWatched, relationId, supabase]);
+
+  useEffect(() => {
+    setIsSaved(Boolean(options.initialSaved));
+    setIsWatched(Boolean(options.initialWatched));
+  }, [linkId, options.initialSaved, options.initialWatched, relationId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -149,7 +155,7 @@ export function useResourceActions(
   }, [linkId, relationId, supabase]);
 
   const toggleSaved = useCallback(async () => {
-    if (!(await ensureActionSession("save_resource"))) return;
+    if (!(await ensureActionSession("save_resource"))) return false;
     const next = !isSaved;
     setIsSaved(next);
     const { error: mutationError } = relationId
@@ -165,15 +171,17 @@ export function useResourceActions(
       setIsSaved(!next);
       setError(mutationError.message);
       console.warn("resource_bookmark_write_failed", { relationId, linkId, message: mutationError.message });
+      return false;
     }
+    return true;
   }, [ensureActionSession, isSaved, linkId, relationId, supabase]);
 
   const toggleWatched = useCallback(async () => {
     if (!relationId) {
       setError("This link needs catalogue review before it can be marked watched.");
-      return;
+      return false;
     }
-    if (!(await ensureActionSession("mark_watched"))) return;
+    if (!(await ensureActionSession("mark_watched"))) return false;
     const next = !isWatched;
     setIsWatched(next);
     const { error: mutationError } = await supabase!.rpc("set_user_watched", {
@@ -184,7 +192,9 @@ export function useResourceActions(
       setIsWatched(!next);
       setError(mutationError.message);
       console.warn("resource_watched_write_failed", { relationId, message: mutationError.message });
+      return false;
     }
+    return true;
   }, [ensureActionSession, isWatched, relationId, supabase]);
 
   const setUserVote = useCallback(async (nextVote: UserVoteState) => {

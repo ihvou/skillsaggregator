@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
-import { BookmarkCheck, Compass, ListFilter } from "lucide-react-native";
+import Svg, { Circle, Line, Path, Rect } from "react-native-svg";
 import { Screen } from "@/components/Screen";
 import { getCategories } from "@/lib/data";
 import {
@@ -13,21 +13,28 @@ import { colors, radius, spacing, typography } from "@/lib/theme";
 
 const slides = [
   {
-    title: "Curated sport learning",
-    body: "Find human-moderated tutorials and lessons grouped by sport, skill, and level.",
-    icon: Compass,
+    title: "Pick your sports",
+    body: "Choose what should appear first on Discover. You can still browse every sport later.",
+    kind: "sports",
   },
   {
-    title: "Practice with intent",
-    body: "Filter for beginner, intermediate, or advanced resources, then save the ones worth revisiting.",
-    icon: ListFilter,
+    title: "Find the exact sub-skill",
+    body: "Skip the giant sport playlist. Open the backhand clear, the low serve, the pop-up, or squat depth.",
+    kind: "subskills",
   },
   {
-    title: "Build your library",
-    body: "Pick the sports you care about first. You can still browse every category later.",
-    icon: BookmarkCheck,
+    title: "Build your Watch later",
+    body: "Save tutorials into a queue, open them, then tick them off as you learn.",
+    kind: "watch",
+  },
+  {
+    title: "Add outside videos",
+    body: "Bring in useful YouTube, TikTok, or Instagram links so they live with the rest of your training.",
+    kind: "add",
   },
 ] as const;
+
+type SlideKind = (typeof slides)[number]["kind"];
 
 export default function OnboardingScreen() {
   const router = useRouter();
@@ -39,7 +46,6 @@ export default function OnboardingScreen() {
     staleTime: 300000,
   });
   const slide = slides[index] ?? slides[0]!;
-  const Icon = slide.icon;
   const isLast = index === slides.length - 1;
 
   const categories = useMemo(() => categoriesQuery.data ?? [], [categoriesQuery.data]);
@@ -70,13 +76,11 @@ export default function OnboardingScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <View style={styles.iconWrap}>
-          <Icon size={34} color={colors.surface} strokeWidth={2.4} />
-        </View>
+        <OnboardingDiagram kind={slide.kind} />
         <Text style={styles.title}>{slide.title}</Text>
         <Text style={styles.body}>{slide.body}</Text>
 
-        {isLast ? (
+        {slide.kind === "sports" ? (
           <View style={styles.interests}>
             {categories.map((category) => {
               const selected = interests.includes(category.slug);
@@ -122,6 +126,69 @@ export default function OnboardingScreen() {
   );
 }
 
+function OnboardingDiagram({ kind }: { kind: SlideKind }) {
+  if (kind === "sports") {
+    return (
+      <Svg width="100%" height={148} viewBox="0 0 280 148" accessibilityLabel="Sport cards">
+        <Rect x={24} y={24} width={76} height={92} rx={10} fill={colors.ink} />
+        <Circle cx={62} cy={58} r={20} fill={colors.surface} opacity={0.92} />
+        <Path d="M54 58h16M62 50v16" stroke={colors.ink} strokeWidth={5} strokeLinecap="round" />
+        <Line x1={100} y1={70} x2={152} y2={42} stroke={colors.muted} strokeWidth={3} strokeLinecap="round" />
+        <Line x1={100} y1={70} x2={152} y2={74} stroke={colors.muted} strokeWidth={3} strokeLinecap="round" />
+        <Line x1={100} y1={70} x2={152} y2={106} stroke={colors.muted} strokeWidth={3} strokeLinecap="round" />
+        <Rect x={154} y={28} width={94} height={28} rx={14} fill={colors.bgGroup} />
+        <Rect x={154} y={60} width={110} height={28} rx={14} fill={colors.bgGroup} />
+        <Rect x={154} y={92} width={82} height={28} rx={14} fill={colors.bgGroup} />
+      </Svg>
+    );
+  }
+  if (kind === "subskills") {
+    return (
+      <Svg width="100%" height={148} viewBox="0 0 280 148" accessibilityLabel="Sub-skill branches">
+        <Rect x={24} y={34} width={84} height={80} rx={10} fill={colors.bgGroup} />
+        <Circle cx={66} cy={74} r={23} fill={colors.ink} />
+        <Path d="M56 76c10-18 28-18 38-2" stroke={colors.surface} strokeWidth={5} strokeLinecap="round" fill="none" />
+        <Line x1={108} y1={74} x2={156} y2={44} stroke={colors.muted} strokeWidth={3} strokeLinecap="round" />
+        <Line x1={108} y1={74} x2={156} y2={74} stroke={colors.muted} strokeWidth={3} strokeLinecap="round" />
+        <Line x1={108} y1={74} x2={156} y2={104} stroke={colors.muted} strokeWidth={3} strokeLinecap="round" />
+        <Rect x={158} y={30} width={82} height={28} rx={8} fill={colors.surface} stroke={colors.divider} />
+        <Rect x={158} y={60} width={98} height={28} rx={8} fill={colors.surface} stroke={colors.divider} />
+        <Rect x={158} y={90} width={72} height={28} rx={8} fill={colors.surface} stroke={colors.divider} />
+      </Svg>
+    );
+  }
+  if (kind === "watch") {
+    return (
+      <Svg width="100%" height={148} viewBox="0 0 280 148" accessibilityLabel="Watch later stack">
+        <Rect x={54} y={26} width={150} height={74} rx={10} fill={colors.bgGroup} />
+        <Rect x={66} y={38} width={150} height={74} rx={10} fill={colors.surface} stroke={colors.divider} />
+        <Rect x={78} y={50} width={150} height={74} rx={10} fill={colors.ink} />
+        <Circle cx={112} cy={87} r={19} fill={colors.surface} />
+        <Path d="M103 87l7 7 15-18" stroke={colors.accent} strokeWidth={5} strokeLinecap="round" strokeLinejoin="round" fill="none" />
+        <Rect x={142} y={72} width={58} height={8} rx={4} fill={colors.surface} opacity={0.9} />
+        <Rect x={142} y={90} width={42} height={8} rx={4} fill={colors.surface} opacity={0.65} />
+      </Svg>
+    );
+  }
+  return (
+    <Svg width="100%" height={148} viewBox="0 0 280 148" accessibilityLabel="External video sources flowing into one list">
+      <Circle cx={52} cy={42} r={22} fill="#ff0000" />
+      <Path d="M46 32l18 10-18 10z" fill={colors.surface} />
+      <Circle cx={52} cy={104} r={22} fill={colors.ink} />
+      <Path d="M45 112c14 3 25-5 25-18" stroke={colors.surface} strokeWidth={5} strokeLinecap="round" fill="none" />
+      <Circle cx={112} cy={74} r={22} fill="#c13584" />
+      <Circle cx={112} cy={74} r={9} fill="none" stroke={colors.surface} strokeWidth={5} />
+      <Line x1={74} y1={42} x2={174} y2={56} stroke={colors.muted} strokeWidth={3} strokeLinecap="round" />
+      <Line x1={74} y1={104} x2={174} y2={92} stroke={colors.muted} strokeWidth={3} strokeLinecap="round" />
+      <Line x1={134} y1={74} x2={174} y2={74} stroke={colors.muted} strokeWidth={3} strokeLinecap="round" />
+      <Rect x={176} y={42} width={72} height={64} rx={10} fill={colors.bgGroup} stroke={colors.divider} />
+      <Rect x={190} y={58} width={44} height={8} rx={4} fill={colors.ink} />
+      <Rect x={190} y={74} width={32} height={8} rx={4} fill={colors.muted} />
+      <Rect x={190} y={90} width={38} height={8} rx={4} fill={colors.muted} />
+    </Svg>
+  );
+}
+
 const styles = StyleSheet.create({
   topRow: {
     minHeight: 40,
@@ -149,14 +216,6 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     justifyContent: "center",
     paddingVertical: spacing.xxl,
-  },
-  iconWrap: {
-    width: 72,
-    height: 72,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 36,
-    backgroundColor: colors.ink,
   },
   title: {
     marginTop: spacing.xl,

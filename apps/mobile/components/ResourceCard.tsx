@@ -2,11 +2,13 @@ import { useEffect, useState } from "react";
 import { Alert, Linking, Pressable, StyleSheet, Text, View } from "react-native";
 import { Image } from "expo-image";
 import * as Haptics from "expo-haptics";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   Bookmark,
   BookmarkCheck,
   Camera,
   CircleCheck,
+  Flag,
   Globe,
   Music2,
   PlaySquare,
@@ -14,17 +16,24 @@ import {
   ThumbsUp,
   UserRound,
 } from "lucide-react-native";
-import { Swipeable } from "react-native-gesture-handler";
-import { getLinkSource, type SkillResource } from "@skillsaggregator/shared";
+import {
+  boundedUserVoteWeight,
+  formatAggregateScore,
+  getLinkSource,
+  type SkillResource,
+} from "@skillsaggregator/shared";
 import { useAuth } from "@/lib/auth";
+import { recordWatchedForReviewPrompt } from "@/lib/storeReview";
 import { getSupabase } from "@/lib/supabase";
 import { colors, radius, shadows, spacing, typography } from "@/lib/theme";
+import { openTutorialResource } from "@/lib/tutorialReturnPrompt";
+import { webUrl } from "@/lib/webLinks";
 
 interface ResourceCardProps {
   resource: SkillResource;
+  initialSaved?: boolean;
+  initialCompleted?: boolean;
 }
-
-type SwipeDirection = "left" | "right";
 
 /**
  * The right-hand metadata column owns this height (4 visual rows: source+pill,
@@ -32,9 +41,9 @@ type SwipeDirection = "left" | "right";
  * stretches to match it via `alignSelf: "stretch"` + `aspectRatio`.
  */
 // The 16/9 thumbnail stretches to this height, so it also sets the thumbnail size:
-// 96 -> 171x96, which matches ResourceTile (170x96) on the Home/Category screens.
-// Keep them in sync — raising this silently enlarges the Skill-screen thumbnails.
-const BODY_HEIGHT = 96;
+// 90 -> 160x90, leaving enough right-column width for the score + report actions
+// on narrow Android devices.
+const BODY_HEIGHT = 90;
 
 function triggerSelectionHaptic() {
   Haptics.selectionAsync().catch(() => undefined);
@@ -74,9 +83,14 @@ function statusLabel(status: SkillResource["catalog_status"]) {
  *    the bottom of the actions row)
  *  - Right column: top meta row (source + level pill), 2-line title,
  *    bottom row (domain + check/bookmark/thumbs-up + count + thumbs-down)
- *  - Tap opens the URL; swipe right to save, swipe left to mark complete
+ *  - Thumbnail/title taps open the URL; action buttons are siblings rather
+ *    than nested inside a card-wide press handler.
  */
-export function ResourceCard({ resource }: ResourceCardProps) {
+export function ResourceCard({
+  resource,
+  initialSaved = false,
+  initialCompleted = false,
+}: ResourceCardProps) {
   const resolvedRelationId = resource.link_skill_relation_id ?? (resource.catalog_status ? null : resource.id);
   const relationId =
     resource.catalog_status && resource.catalog_status !== "in_catalog"
@@ -84,16 +98,36 @@ export function ResourceCard({ resource }: ResourceCardProps) {
       : resolvedRelationId;
   const linkId = resource.link.id;
   const { user, ensureSession } = useAuth();
-  const [isSaved, setIsSaved] = useState(false);
-  const [isCompleted, setIsCompleted] = useState(false);
+  const queryClient = useQueryClient();
+  const savedFromResource = initialSaved || Boolean(resource.personal_list_id);
+  const [isSaved, setIsSaved] = useState(savedFromResource);
+  const [isCompleted, setIsCompleted] = useState(initialCompleted);
   const [vote, setVote] = useState<-1 | 0 | 1>(0);
+  const [userScore, setUserScore] = useState(resource.user_score ?? 0);
+  const [baseScore, setBaseScore] = useState<number | null>(
+    typeof resource.combined_score === "number" && Number.isFinite(resource.combined_score)
+      ? resource.combined_score - boundedUserVoteWeight(resource.user_score)
+      : null,
+  );
+  const combinedScore = baseScore === null ? null : baseScore + boundedUserVoteWeight(userScore);
+
+  useEffect(() => {
+    setIsSaved(savedFromResource);
+    setIsCompleted(initialCompleted);
+    setUserScore(resource.user_score ?? 0);
+    setBaseScore(
+      typeof resource.combined_score === "number" && Number.isFinite(resource.combined_score)
+        ? resource.combined_score - boundedUserVoteWeight(resource.user_score)
+        : null,
+    );
+  }, [initialCompleted, resource.combined_score, resource.id, resource.user_score, savedFromResource]);
 
   useEffect(() => {
     let cancelled = false;
     const supabase = getSupabase();
     if (!supabase || !user) {
-      setIsSaved(false);
-      setIsCompleted(false);
+      setIsSaved(savedFromResource);
+      setIsCompleted(initialCompleted);
       setVote(0);
       return;
     }
@@ -138,7 +172,7 @@ export function ResourceCard({ resource }: ResourceCardProps) {
     return () => {
       cancelled = true;
     };
-  }, [linkId, relationId, user]);
+  }, [initialCompleted, linkId, relationId, savedFromResource, user]);
 
   async function ensureActionSession(action: string) {
     try {
@@ -178,6 +212,7 @@ export function ResourceCard({ resource }: ResourceCardProps) {
       return;
     }
     triggerSelectionHaptic();
+    void queryClient.invalidateQueries({ queryKey: ["user-library"] });
   }
 
   async function toggleCompleted() {
@@ -200,7 +235,9 @@ export function ResourceCard({ resource }: ResourceCardProps) {
       console.warn("[resource-actions] Watched write failed", { relationId, error: error.message });
       return;
     }
+    if (next) void recordWatchedForReviewPrompt(relationId);
     triggerSelectionHaptic();
+    void queryClient.invalidateQueries({ queryKey: ["user-library"] });
   }
 
   async function writeVote(nextVote: -1 | 0 | 1) {
@@ -212,19 +249,33 @@ export function ResourceCard({ resource }: ResourceCardProps) {
     const supabase = getSupabase();
     if (!supabase) return;
     const previousVote = vote;
+    const previousUserScore = userScore;
     setVote(nextVote);
-    const { data, error } = await supabase.rpc("set_user_vote", {
-      p_relation_id: relationId,
-      p_vote: nextVote,
-    }).single();
+    setUserScore(previousUserScore - previousVote + nextVote);
+    const { data, error } = await supabase
+      .rpc("set_user_vote", {
+        p_relation_id: relationId,
+        p_vote: nextVote,
+      })
+      .single();
     if (error) {
       setVote(previousVote);
+      setUserScore(previousUserScore);
       Alert.alert("Vote failed", error.message);
       console.warn("[resource-actions] Vote write failed", { relationId, vote: nextVote, error: error.message });
       return;
     }
-    const returnedVote = (data as { vote?: number | null } | null)?.vote;
+    const row = data as {
+      vote?: number | null;
+      user_score?: number | null;
+      combined_score?: number | null;
+    } | null;
+    const returnedVote = row?.vote;
     setVote(returnedVote === -1 ? -1 : returnedVote === 1 ? 1 : 0);
+    if (typeof row?.user_score === "number") setUserScore(row.user_score);
+    if (typeof row?.combined_score === "number" && typeof row?.user_score === "number") {
+      setBaseScore(row.combined_score - boundedUserVoteWeight(row.user_score));
+    }
     triggerSelectionHaptic();
   }
 
@@ -236,28 +287,15 @@ export function ResourceCard({ resource }: ResourceCardProps) {
     void writeVote(vote === -1 ? 0 : -1);
   }
 
-  function handleSwipeOpen(direction: SwipeDirection, swipeable: Swipeable) {
-    if (direction === "right") toggleSaved();
-    if (direction === "left") toggleCompleted();
-    swipeable.close();
+  function openResource() {
+    void openTutorialResource(resource, { alreadyWatched: isCompleted });
   }
 
-  function renderLeftActions() {
-    return (
-      <View style={[styles.swipeAction, styles.completeAction]}>
-        <CircleCheck size={22} color={colors.surface} />
-        <Text style={styles.swipeActionText}>{isCompleted ? "Undo" : "Done"}</Text>
-      </View>
-    );
-  }
-
-  function renderRightActions() {
-    return (
-      <View style={[styles.swipeAction, styles.saveAction]}>
-        <BookmarkCheck size={22} color={colors.surface} />
-        <Text style={styles.swipeActionText}>{isSaved ? "Unsave" : "Save"}</Text>
-      </View>
-    );
+  function reportResource() {
+    const resourceId = encodeURIComponent(relationId ?? resource.id);
+    const link = encodeURIComponent(linkId);
+    const title = resource.link.title ? `&title=${encodeURIComponent(resource.link.title)}` : "";
+    void Linking.openURL(webUrl(`/support?resource=${resourceId}&link=${link}${title}`));
   }
 
   const SavedIcon = isSaved ? BookmarkCheck : Bookmark;
@@ -266,171 +304,170 @@ export function ResourceCard({ resource }: ResourceCardProps) {
   const catalogueStatus = statusLabel(resource.catalog_status);
 
   return (
-    <Swipeable
-      containerStyle={styles.swipeContainer}
-      friction={1.8}
-      leftThreshold={56}
-      rightThreshold={56}
-      overshootFriction={8}
-      renderLeftActions={renderLeftActions}
-      renderRightActions={renderRightActions}
-      onSwipeableOpen={handleSwipeOpen}
-    >
+    <View style={styles.row}>
       <Pressable
-        onPress={() => Linking.openURL(resource.link.url)}
+        onPress={openResource}
         onLongPress={toggleSaved}
-        style={({ pressed }) => [styles.row, pressed && styles.pressed]}
+        style={({ pressed }) => [styles.thumbWrap, pressed && styles.pressed]}
+        accessibilityRole="button"
+        accessibilityLabel={resource.link.title ?? "Open resource"}
       >
-        <View style={styles.thumbWrap}>
-          {resource.link.thumbnail_url ? (
-            <>
-              {portrait ? (
-                <Image
-                  source={resource.link.thumbnail_url}
-                  style={styles.thumbnailBackdrop}
-                  contentFit="cover"
-                  blurRadius={16}
-                />
-              ) : null}
+        {resource.link.thumbnail_url ? (
+          <>
+            {portrait ? (
               <Image
                 source={resource.link.thumbnail_url}
-                style={styles.thumbnail}
-                contentFit={portrait ? "contain" : "cover"}
-                accessibilityLabel={resource.link.title ?? "Resource thumbnail"}
+                style={styles.thumbnailBackdrop}
+                contentFit="cover"
+                blurRadius={16}
               />
-            </>
-          ) : (
-            <View style={styles.thumbnailFallback} />
-          )}
-        </View>
-        <View style={styles.body}>
-          <View style={styles.topRow}>
-            <View style={styles.dateGroup}>
-              <SourceIcon link={resource.link} />
-            </View>
-            <View style={styles.pillGroup}>
-              {catalogueStatus ? (
-                <View style={styles.statusPill}>
-                  <Text style={styles.statusText} numberOfLines={1}>
-                    {catalogueStatus}
-                  </Text>
-                </View>
-              ) : null}
-              {resource.skill_level ? (
-                <View style={styles.levelPill}>
-                  {/* numberOfLines guards against "Intermedi/ate" wrapping mid-word
-                      when the title row is tight on narrow screens. */}
-                  <Text style={styles.levelText} numberOfLines={1}>
-                    {capitalize(resource.skill_level)}
-                  </Text>
-                </View>
-              ) : null}
-            </View>
+            ) : null}
+            <Image
+              source={resource.link.thumbnail_url}
+              style={styles.thumbnail}
+              contentFit={portrait ? "contain" : "cover"}
+              accessibilityLabel={resource.link.title ?? "Resource thumbnail"}
+            />
+          </>
+        ) : (
+          <View style={styles.thumbnailFallback} />
+        )}
+      </Pressable>
+      <View style={styles.body}>
+        <View style={styles.topRow}>
+          <View style={styles.dateGroup}>
+            <SourceIcon link={resource.link} />
           </View>
+          <View style={styles.pillGroup}>
+            {catalogueStatus ? (
+              <View style={styles.statusPill}>
+                <Text style={styles.statusText} numberOfLines={1}>
+                  {catalogueStatus}
+                </Text>
+              </View>
+            ) : null}
+            {resource.skill_level ? (
+              <View style={styles.levelPill}>
+                {/* numberOfLines guards against "Intermedi/ate" wrapping mid-word
+                    when the title row is tight on narrow screens. */}
+                <Text style={styles.levelText} numberOfLines={1}>
+                  {capitalize(resource.skill_level)}
+                </Text>
+              </View>
+            ) : null}
+          </View>
+        </View>
+        <Pressable
+          onPress={openResource}
+          onLongPress={toggleSaved}
+          style={({ pressed }) => [styles.titleTap, pressed && styles.pressed]}
+          accessibilityRole="button"
+          accessibilityLabel={resource.link.title ?? "Open resource"}
+        >
           <Text style={styles.title} numberOfLines={2}>
             {resource.link.title ?? resource.link.url}
           </Text>
-          <View style={styles.bottomRow}>
-            <View style={styles.metaLine}>
-              {contributor ? (
-                <View style={styles.contributorPill}>
-                  <UserRound size={11} color={colors.muted} />
-                  <Text style={styles.contributorText} numberOfLines={1}>
-                    @{contributor.slug}
-                  </Text>
-                </View>
-              ) : null}
-            </View>
-            <View style={styles.actions}>
-              <Pressable
-                onPress={toggleCompleted}
-                hitSlop={{ top: 8, right: 6, bottom: 8, left: 6 }}
-                style={styles.iconTap}
-                accessibilityRole="button"
-                accessibilityLabel={isCompleted ? "Mark not completed" : "Mark completed"}
-              >
-                <CircleCheck
-                  size={18}
-                  color={isCompleted ? colors.accent : colors.muted}
-                  fill={isCompleted ? colors.accent : "transparent"}
-                  stroke={isCompleted ? colors.surface : colors.muted}
-                  strokeWidth={2}
-                />
-              </Pressable>
-              <Pressable
-                onPress={toggleSaved}
-                hitSlop={{ top: 8, right: 6, bottom: 8, left: 6 }}
-                style={styles.iconTap}
-                accessibilityRole="button"
-                accessibilityLabel={isSaved ? "Unsave resource" : "Save resource"}
-              >
-                <SavedIcon
-                  size={18}
-                  color={isSaved ? colors.accent : colors.muted}
-                  fill={isSaved ? colors.accent : "transparent"}
-                  strokeWidth={2}
-                />
-              </Pressable>
-              <View style={styles.ratingGroup}>
-                <Pressable
-                  onPress={toggleUpvote}
-                  hitSlop={{ top: 8, right: 4, bottom: 8, left: 4 }}
-                  style={styles.ratingTap}
-                  accessibilityRole="button"
-                  accessibilityLabel={vote === 1 ? "Remove upvote" : "Upvote"}
-                >
-                  <ThumbsUp
-                  size={18}
-                    color={vote === 1 ? colors.accent : colors.muted}
-                    fill={vote === 1 ? colors.accent : "transparent"}
-                    strokeWidth={2}
-                  />
-                </Pressable>
-                <Pressable
-                  onPress={toggleDownvote}
-                  hitSlop={{ top: 8, right: 4, bottom: 8, left: 4 }}
-                  style={styles.ratingTap}
-                  accessibilityRole="button"
-                  accessibilityLabel={vote === -1 ? "Remove downvote" : "Downvote"}
-                >
-                  <ThumbsDown
-                    size={18}
-                    color={vote === -1 ? colors.ink : colors.muted}
-                    fill={vote === -1 ? colors.ink : "transparent"}
-                    strokeWidth={2}
-                  />
-                </Pressable>
+        </Pressable>
+        <View style={styles.bottomRow}>
+          <View style={styles.metaLine}>
+            {contributor ? (
+              <View style={styles.contributorPill}>
+                <UserRound size={11} color={colors.muted} />
+                <Text style={styles.contributorText} numberOfLines={1}>
+                  @{contributor.slug}
+                </Text>
               </View>
+            ) : null}
+          </View>
+          <View style={styles.actions}>
+            <Pressable
+              onPress={reportResource}
+              hitSlop={{ top: 10, right: 8, bottom: 10, left: 8 }}
+              style={styles.iconTap}
+              accessibilityRole="link"
+              accessibilityLabel="Report resource"
+            >
+              <Flag size={17} color={colors.muted} strokeWidth={2} />
+            </Pressable>
+            <Pressable
+              onPress={toggleCompleted}
+              hitSlop={{ top: 10, right: 8, bottom: 10, left: 8 }}
+              style={styles.iconTap}
+              accessibilityRole="button"
+              accessibilityLabel={isCompleted ? "Mark not completed" : "Mark completed"}
+            >
+              <CircleCheck
+                size={18}
+                color={isCompleted ? colors.accent : colors.muted}
+                fill={isCompleted ? colors.accent : "transparent"}
+                stroke={isCompleted ? colors.surface : colors.muted}
+                strokeWidth={2}
+              />
+            </Pressable>
+            <Pressable
+              onPress={toggleSaved}
+              hitSlop={{ top: 10, right: 8, bottom: 10, left: 8 }}
+              style={styles.iconTap}
+              accessibilityRole="button"
+              accessibilityLabel={isSaved ? "Remove from Watch later" : "Add to Watch later"}
+            >
+              <SavedIcon
+                size={18}
+                color={isSaved ? colors.accent : colors.muted}
+                fill={isSaved ? colors.accent : "transparent"}
+                strokeWidth={2}
+              />
+            </Pressable>
+            <View style={styles.ratingGroup}>
+              <Pressable
+                onPress={toggleUpvote}
+                hitSlop={{ top: 10, right: 6, bottom: 10, left: 6 }}
+                style={styles.ratingTap}
+                accessibilityRole="button"
+                accessibilityLabel={vote === 1 ? "Remove upvote" : "Upvote"}
+              >
+                <ThumbsUp
+                  size={18}
+                  color={vote === 1 ? colors.accent : colors.muted}
+                  fill={vote === 1 ? colors.accent : "transparent"}
+                  strokeWidth={2}
+                />
+              </Pressable>
+              {combinedScore !== null ? (
+                <Text
+                  style={[
+                    styles.scoreText,
+                    vote === 1 ? styles.scorePositive : vote === -1 ? styles.scoreNegative : null,
+                  ]}
+                  accessibilityLabel={`Score ${formatAggregateScore(combinedScore)}, from coach review and community votes`}
+                  accessibilityLiveRegion="polite"
+                >
+                  {formatAggregateScore(combinedScore)}
+                </Text>
+              ) : null}
+              <Pressable
+                onPress={toggleDownvote}
+                hitSlop={{ top: 10, right: 6, bottom: 10, left: 6 }}
+                style={styles.ratingTap}
+                accessibilityRole="button"
+                accessibilityLabel={vote === -1 ? "Remove downvote" : "Downvote"}
+              >
+                <ThumbsDown
+                  size={18}
+                  color={vote === -1 ? colors.ink : colors.muted}
+                  fill={vote === -1 ? colors.ink : "transparent"}
+                  strokeWidth={2}
+                />
+              </Pressable>
             </View>
           </View>
         </View>
-      </Pressable>
-    </Swipeable>
+      </View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  swipeContainer: {
-    borderRadius: radius.md,
-  },
-  swipeAction: {
-    width: 92,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 4,
-    borderRadius: radius.md,
-  },
-  saveAction: {
-    backgroundColor: colors.accent,
-  },
-  completeAction: {
-    backgroundColor: colors.ink,
-  },
-  swipeActionText: {
-    color: colors.surface,
-    fontSize: 12,
-    fontWeight: "700",
-  },
   row: {
     flexDirection: "row",
     alignItems: "stretch",
@@ -511,6 +548,10 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     fontWeight: "700",
   },
+  titleTap: {
+    minHeight: 44,
+    justifyContent: "center",
+  },
   bottomRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -540,25 +581,39 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
   actions: {
+    flexShrink: 0,
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
+    gap: 2,
   },
   iconTap: {
-    minWidth: 22,
-    minHeight: 22,
+    minWidth: 20,
+    minHeight: 28,
     alignItems: "center",
     justifyContent: "center",
   },
   ratingGroup: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
+    gap: 2,
   },
   ratingTap: {
-    minWidth: 22,
-    minHeight: 22,
+    minWidth: 20,
+    minHeight: 28,
     alignItems: "center",
     justifyContent: "center",
+  },
+  scoreText: {
+    minWidth: 24,
+    textAlign: "center",
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  scorePositive: {
+    color: colors.accent,
+  },
+  scoreNegative: {
+    color: colors.ink,
   },
 });

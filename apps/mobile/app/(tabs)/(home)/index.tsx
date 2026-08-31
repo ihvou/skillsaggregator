@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { RefreshControl, ScrollView, StyleSheet, View } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
+import { FlashList } from "@shopify/flash-list";
 import { useQuery } from "@tanstack/react-query";
 import { PageHeader } from "@/components/PageHeader";
 import { Screen } from "@/components/Screen";
@@ -22,7 +23,7 @@ export default function DiscoverTab() {
   const [interestSlugs, setInterestSlugs] = useState<string[]>([]);
   const query = useQuery({
     queryKey: ["discover-sections"],
-    queryFn: () => getDiscoverSections(),
+    queryFn: () => getDiscoverSections(12),
     staleTime: 300000,
   });
 
@@ -98,19 +99,22 @@ export default function DiscoverTab() {
                 title={section.category.name}
                 onPress={() => router.push(`/${section.category.slug}`)}
               />
-              <ScrollView
+              <FlashList
                 horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.horizontalRow}
-              >
-                {section.skills.map((tile) => (
+                data={section.skills}
+                keyExtractor={(tile) => tile.skill.id}
+                renderItem={({ item: tile }) => (
                   <SkillTile
-                    key={tile.skill.id}
                     skill={tile.skill}
                     thumbnailUrl={tile.latest_thumbnail}
                   />
-                ))}
-              </ScrollView>
+                )}
+                ItemSeparatorComponent={() => <View style={styles.horizontalGap} />}
+                style={styles.horizontalList}
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.horizontalRow}
+                nestedScrollEnabled
+              />
               <View style={styles.divider} />
             </View>
           ))
@@ -140,7 +144,12 @@ const styles = StyleSheet.create({
   },
   horizontalRow: {
     paddingHorizontal: spacing.page,
-    gap: spacing.md,
+  },
+  horizontalList: {
+    height: 104,
+  },
+  horizontalGap: {
+    width: spacing.md,
   },
   divider: {
     height: StyleSheet.hairlineWidth,

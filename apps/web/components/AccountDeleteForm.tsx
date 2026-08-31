@@ -41,7 +41,7 @@ export function AccountDeleteForm() {
         <div>
           <h2 className="text-lg font-extrabold text-ink">Delete your account</h2>
           <p className="mt-2 text-sm leading-6 text-muted">
-            This permanently deletes your Subskills account, private saved/watched/vote state,
+            This permanently deletes your Subskills account, private Watch later/watched/vote state,
             and contributor profile. Public resources you submitted may remain in the catalog
             without your profile attached.
           </p>
