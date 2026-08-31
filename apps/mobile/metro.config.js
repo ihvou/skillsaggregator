@@ -23,16 +23,32 @@ config.resolver.nodeModulesPaths = [
 // (nested inside expo-router) still resolve correctly.
 const reactCanonical = path.resolve(projectRoot, "node_modules/react");
 const reactNativeCanonical = path.resolve(workspaceRoot, "node_modules/react-native");
+// react-native-svg registers NATIVE views (RNSVGCircle, RNSVGPath, …). Two copies
+// exist — 15.12.1 here (Expo SDK 54's pin) and 15.15.4 at the root, pulled in by
+// lucide-react-native — and expo-doctor has long reported it as an accepted
+// duplicate. It was harmless only while nothing imported the package directly:
+// lucide's copy was the only one in the bundle. The moment app code imports
+// `react-native-svg` itself, BOTH copies load and the app dies at startup with
+// "Tried to register two views with the same name RNSVGCircle". Pin it here.
+const reactNativeSvgCanonical = path.resolve(projectRoot, "node_modules/react-native-svg");
 const singletonModules = new Map([
   ["react", reactCanonical],
   ["react-native", reactNativeCanonical],
+  ["react-native-svg", reactNativeSvgCanonical],
 ]);
+
+// Entry point per package: react/react-native resolve via index.js, but
+// react-native-svg's main is lib/commonjs/index.js, so read it rather than assume.
+function packageEntry(dir) {
+  const pkg = require(path.join(dir, "package.json"));
+  return path.resolve(dir, pkg["react-native"] || pkg.main || "index.js");
+}
 
 const previousResolveRequest = config.resolver.resolveRequest;
 config.resolver.resolveRequest = (context, moduleName, platform) => {
   for (const [pkg, dir] of singletonModules) {
     if (moduleName === pkg) {
-      return { type: "sourceFile", filePath: path.resolve(dir, "index.js") };
+      return { type: "sourceFile", filePath: packageEntry(dir) };
     }
     if (moduleName.startsWith(`${pkg}/`)) {
       const sub = moduleName.slice(pkg.length + 1);
