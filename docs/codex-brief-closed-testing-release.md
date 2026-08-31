@@ -73,6 +73,11 @@ These are not style preferences. Each one has already cost real time on this pro
    with `email_exists` (now `M122`). Both were found by running it, neither by reading it.
 10. **Prove behaviour against production, not against the repo.** Deployed edge functions have
     silently lagged their source by seven weeks before, and a stale deploy is invisible in a diff.
+11. **Run every migration against a real database before handing it over.** Batch 2's `0053` was
+    written, committed and handed over having never been executed. It failed on the first real
+    apply with `SQLSTATE 42P16`. A migration that has not been run is not finished — it is a
+    draft. `supabase db push` against the linked project, or `supabase db reset` locally, either
+    proves it; reading it does not.
 
 ## Decisions already made — do not re-litigate
 
@@ -117,7 +122,26 @@ needs redoing — the notes below are kept only as the record of what was asked 
 - `M109` — re-scoped to almost nothing: anonymous rows *are* the install signal. Drop the
   `app_installs` table, the `track-install` function and the MMKV id.
 
-## Batch 2 — share-in, client and server together
+## Batch 2 — share-in ✅ DELIVERED, REVIEWED AND SHIPPED (`13eedb4`, 2026-08-29)
+
+Migration `0053` applied to hosted (**53/53 recorded**), and all four new RPCs driven end to end
+against production with a real anonymous session: `set_user_link_bookmark`, `set_user_bookmark`,
+`get_user_library_resources`, `reorder_user_bookmarks`. `user_bookmarks` went 9 → 8 rows — the one
+expected `(user, link)` duplicate collapse, no orphans, all relation ids retained.
+
+`user_bookmarks` was reshaped in place rather than replaced by a new table. That was the better
+call than what this brief asked for: no data migration, existing bookmarks keep working, one table
+instead of two overlapping ones.
+
+**One defect, fixed during review:** `0053` failed on first apply with
+`ERROR: column "link_skill_relation_id" is in a primary key (SQLSTATE 42P16)` — `drop not null`
+ran while the column was still in the old primary key, which was dropped three statements later.
+Reordered, with a comment. It typechecked, passed CI and read correctly; **only running it found
+it.** See rule 11 below.
+
+The notes below are kept as the record of what was asked for.
+
+## Batch 2 — the original brief
 
 > **Start with `M101`. It is the keystone of this batch.**
 >
@@ -154,6 +178,8 @@ Cheap to include while the table is being built: `MI36` drag-to-reorder (the new
 sort column anyway).
 
 ## Batch 3 — bug fixes, onboarding, polish
+
+**`M56` moved.** Both clients now read the list through the `get_user_library_resources` RPC (migration `0053`), so saved-minus-watched is **one predicate in that function's `saved` branch** — which today filters only `ub.user_id` and `l.is_active` — not two client edits. It is a migration, so rule 11 applies: run it.
 
 **Tester-blocking bugs:** `M119` **Blocker** (nested touch targets do not fire on some devices —
 gesture arbitration, *not* an Android 9 incompatibility; **verify on a real API 28 device or
