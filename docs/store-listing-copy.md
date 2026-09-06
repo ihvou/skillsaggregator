@@ -1,6 +1,6 @@
 # Store listing copy
 
-Last updated: 2026-08-17
+Last updated: 2026-09-01
 
 Paste-ready text for both stores. Field limits are the store's own; the counts in
 brackets are what the text below actually uses.
@@ -18,8 +18,10 @@ The same applies to *enumerating* the sports. Listing all of them by name is a p
 listing every time a category launches. Name several as examples instead — the ASO value is in the
 sport words being present, not in the list being exhaustive.
 
-Live numbers on 2026-08-17: **20 categories (13 published, 7 staged — golf, table tennis, climbing,
-pickleball, skiing, snowboarding, BJJ), 298 published sub-skills, 2,000+ distinct tutorials.**
+Live numbers on 2026-09-01: **20 categories, all active and populated; 492 active sub-skills, none
+empty; 10,788 distinct published tutorials across 11,771 placements.** The 7 categories staged in
+August (golf, table tennis, climbing, pickleball, skiing, snowboarding, BJJ) have all shipped, and
+the 63 empty sub-skill pages are gone — nightly collection filled them.
 Copy below uses floors well under these, so it survives growth without edits.
 
 ---
@@ -36,7 +38,7 @@ Subskills
 Reviewed video tutorials for badminton, tennis, padel, gym, yoga and more.
 ```
 
-**Full description** [1646/4000]
+**Full description** [1736/4000]
 ```
 Getting better at a sport is not a search problem. It is a "what should I work on next, and which video actually teaches it" problem.
 
@@ -46,8 +48,8 @@ Badminton is not one topic. It is the backhand clear, the low serve, defence, fo
 
 WHAT'S INSIDE
 • Sports including badminton, tennis, padel, boxing, cycling, gym, pilates, running, soccer, surfing, swimming and yoga — with more added regularly
-• 250+ sub-skills, each with its own shortlist
-• 2,000+ free tutorials, every one reviewed before it appears
+• 400+ sub-skills, each with its own shortlist
+• 10,000+ free tutorials, every one reviewed before it appears
 
 HOW YOU USE IT
 • Discover — browse by sport, or search across every sport at once
@@ -86,7 +88,7 @@ Subskills
 Curated sport tutorials
 ```
 
-**Promotional text** [141/170] — editable without a new build, so use it for news
+**Promotional text** [142/170] — editable without a new build, so use it for news
 ```
 Every sport broken into sub-skills, each with a reviewed shortlist of free tutorials. Follow a beginner-to-advanced path and queue what works.
 ```
@@ -107,8 +109,8 @@ Badminton is not one topic. It is the backhand clear, the low serve, defence, fo
 
 WHAT'S INSIDE
 - Sports including badminton, tennis, padel, boxing, cycling, gym, pilates, running, soccer, surfing, swimming and yoga - with more added regularly
-- 250+ sub-skills, each with its own shortlist
-- 2,000+ free tutorials, every one reviewed before it appears
+- 400+ sub-skills, each with its own shortlist
+- 10,000+ free tutorials, every one reviewed before it appears
 
 HOW YOU USE IT
 - Discover: browse by sport, or search across every sport at once
@@ -144,12 +146,12 @@ being true if the product changes.
 
 | Claim | Backed by |
 |---|---|
-| "reviewed before it appears" | publish gate: ≥2 coach reviews and `combined_score ≥ 1.3` on `link_skill_relations` |
+| "reviewed before it appears" | publish gate: ≥2 coach reviews and `curator_score ≥ 1.3` on `link_skill_relations` (`0052_anonymous_identity_and_curation_gate.sql`). Curation-only — user votes affect ordering, never publication. |
 | "scored for relevance and teaching quality" | those are the literal coach vote dimensions |
 | "No ads. No third-party trackers. Nothing about you is sold or shared." | no ad SDK or third-party tracking SDK in `apps/mobile/package.json`; Apple defines tracking as linking app data with other companies' data for advertising/measurement or sharing with data brokers. First-party product analytics still require disclosure, but do not require ATT and do not make this claim false. |
 | "free to watch" | every resource links out to a free public video |
 | "Browsing needs no account" | catalogue reads are public; write actions lazily create a Supabase anonymous user with a real JWT |
-| "sports including …" / 250+ sub-skills / 2,000+ tutorials | Floors, well under the live figures (20 categories, 298 sub-skills). Deliberately **no exact sport count and no exhaustive list** — both go stale as categories launch. |
+| "sports including …" / 400+ sub-skills / 10,000+ tutorials | Floors under the live figures (20 categories, 492 sub-skills, 10,788 distinct tutorials on 2026-09-01). Deliberately **no exact sport count and no exhaustive list** — both go stale as categories launch. Note the tutorial floor has only ~7% headroom: a large pruning pass would falsify it, so re-check before each submission. |
 
 ---
 

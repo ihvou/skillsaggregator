@@ -177,7 +177,16 @@ Two orderings that matter regardless of how you sequence the work:
 Cheap to include while the table is being built: `MI36` drag-to-reorder (the new table wants a
 sort column anyway).
 
-## Batch 3 — bug fixes, onboarding, polish
+## Batch 3 — bug fixes, onboarding, polish ✅ DELIVERED, REVIEWED AND SHIPPED (`41b3fad`, 2026-09-01)
+
+Shipped with a follow-up crash fix (`116c66e`, `M123`): two copies of `react-native-svg`
+registered the same native views once onboarding imported the package directly, killing
+the app at startup. Pinned in `apps/mobile/metro.config.js`. The lesson generalises —
+an "accepted duplicate" in `expo-doctor` is a latent crash, not a note.
+
+Verified on the `eb76fae2` preview APK: launches clean, no fatals, onboarding renders.
+
+
 
 **`M56` moved.** Both clients now read the list through the `get_user_library_resources` RPC (migration `0053`), so saved-minus-watched is **one predicate in that function's `saved` branch** — which today filters only `ub.user_id` and `l.is_active` — not two client edits. It is a migration, so rule 11 applies: run it.
 
@@ -206,6 +215,84 @@ unregistered users can submit).
 pure waste): `MI52` skill summaries on mobile · `MI48` rating prompt · `M69` category
 over-fetch · `MI24` Library per-skill filter · `M44` rank/ordering fix, which pairs with `MI51`.
 
+## Batch 4 — first-hardware feedback ⬅ CURRENT
+
+`M126` · `M125` · `M127` · `M124` · `M129` · `M130` · `M128`
+
+Everything here comes from the owner testing the 2026-09-01 preview APK (`eb76fae2`,
+versionCode 3) on real hardware, plus one standing tester report. Seven client-side
+defects, no new features.
+
+> **This batch touches no database and no hosted configuration. None of it.**
+>
+> There is no migration to write, no RPC to add, no `supabase` command to run — every
+> task below edits React Native files only, and the one task that reads server data
+> (`M129` → `/suggest`) uses a route that already exists.
+>
+> **Do not start a local Postgres or a local Supabase stack for this work.** The
+> project's database is hosted Supabase (`vqxsaabskkkjdljxiyqi`); `supabase/config.toml`
+> is local-only scaffolding and is not what production runs. Batch 1 handed back notes
+> about local Postgres that had nothing to do with production, and batch 3 stalled
+> because its hosted step could not be applied — this batch is scoped so neither can
+> happen.
+>
+> **If you find yourself writing SQL, running `supabase db push`, `supabase db reset`,
+> `supabase migration repair`, or `supabase config push`, stop and ask.** It means a task
+> has been misread. Rules 1-11 above still apply the moment any of that becomes true, but
+> for this batch the correct number of migrations is **zero**.
+>
+> **Prove it on handover:** `supabase migration list --linked` must show the *same* rows,
+> with Remote populated, before and after your work. Quote the final line count in the
+> handover. An unchanged migration history is part of the definition of done, not an
+> afterthought.
+
+**Start with `M126`. It is the keystone of this batch.**
+
+The resource action row's real defect is not merely that its targets are 20x28pt. It is
+that each one pads itself with 8px of `hitSlop` into a 2px gap, so **neighbouring hit
+regions overlap, and a tap between two icons resolves by view order rather than by
+proximity**. That is very likely the same bug as the standing Huawei / Android 9 report
+(`M119`): a tap landing on the wrong neighbour is indistinguishable, to a user, from a
+button that does nothing. Get the geometry right first and the two tasks stacked behind
+it become trivial. Removing Report frees a slot — spend it on target size, and **delete
+the horizontal `hitSlop` once targets are genuinely 44pt**, or the overlap simply returns
+at a larger scale. `M119` stays open and still needs verification on an API 28 device; if
+this fixes it, say so on that row.
+
+**Client — the resource action row.** One file, `components/ResourceCard.tsx`, one
+sitting: `M126` tap targets and overlapping hit areas · `M125` Report out of the row and
+behind a long-press · `M127` reorder to Watch later | Watched | Upvote | score | Downvote.
+
+These three are cheaper together than apart — they edit the same twenty lines, and `M125`
+is what makes `M126` fit. Also fix the stale comment at `ResourceCard.tsx:85`, which
+still documents the old order.
+
+**Client — layout and copy.** Independent of the above, do in any order: `M124`
+onboarding footer clipped by the system navigation bar · `M129` Submit a new link moves
+into the Library header · `M130` Account's "Sports" becomes "Category preferences".
+
+Three specifics that are easy to get wrong:
+
+- `M124` is invisible under gesture navigation, which is why the emulator never showed
+  it. **Test with Android 3-button navigation enabled.** Then check `app/suggest.tsx`,
+  which has the identical `edges={["top"]}` and its own submit button — verify rather
+  than assume.
+- `M129` needs no new component: `PageHeader` already accepts a `rightAccessory`.
+- `M130` is copy only. **Never rename the `onboarding_interests` MMKV key** — a storage
+  key rename silently discards every existing user's picks. Sweep the "sports" wording
+  in onboarding and Account together, or defer the whole task; renaming one and not the
+  other is worse than leaving both.
+
+**Client — visual, do last.** `M128` recess watched cards in mixed lists. Opacity, not
+blur: blur needs a native dependency and costs frame time on exactly the low-end devices
+already reporting scroll problems. **Exempt the Library → Watched tab**, where every row
+is watched and dimming all of them makes the tab look disabled.
+
+**Not in this batch, deliberately:** `M131` onboarding illustrations and `M133` per-skill
+progress visibility. Both are a design initiative rather than tester feedback, `M131`'s
+art does not exist yet, and `M133` exists mainly to back `M131`'s promise — so the two
+should travel together, in a later batch. Leave both rows alone.
+
 ## Explicitly NOT in this release
 
 `M106`-`M108` Telegram ops · `M105` publish-gate latency · the engagement/gamification block
@@ -226,3 +313,21 @@ the reason they are out, not lack of value.
 - `supabase migration list --linked` shows a populated Remote column for **every** row before
   any batch is called done. Repaired on 2026-08-15 and again on 2026-08-29; do not make it three.
 - One build, smoke-tested from the Play closed track on real hardware before it is called done.
+
+**Batch 4 specifically:**
+
+- `supabase migration list --linked` returns the **same rows before and after** the batch, all
+  with Remote populated. Quote the count in the handover. Batch 4 adds zero migrations; an
+  unchanged history is the proof it stayed client-only.
+- No local Postgres or local Supabase stack was started, and no `supabase db push` /
+  `db reset` / `migration repair` / `config push` was run.
+- Every action target in the resource row measures ≥44x44pt and **no two hit areas
+  intersect** — verified by construction, not by feel.
+- All five row actions fit on one line at 320dp width, without wrapping or clipping the score.
+- Continue and Get started are fully tappable with **Android 3-button navigation enabled**,
+  not only under gesture navigation.
+- The Library → Watched tab is **not** dimmed by `M128`.
+- The `onboarding_interests` MMKV key is unchanged, and an existing user's picks survive the
+  upgrade.
+- `react-native-svg` is still in `package.json` and still pinned in `metro.config.js`.
+- No new native dependency, no raster asset (`M131` is not in this batch).
