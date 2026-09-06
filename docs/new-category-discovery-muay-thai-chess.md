@@ -13,10 +13,24 @@ channels** per category.
 
 ## Before you run these
 
-**Muay Thai is the cheap one.** The research doc calls it the "cheapest bolt-on" — it shares the
-Boxing audience and cross-links to it. That overlap is also the risk, so prompt A carries the full
-Boxing sub-skill list and asks explicitly what is *distinct*. A Muay Thai category that re-lists
-jab, cross, hook and footwork is a duplicate of a category you already have.
+**Muay Thai is the cheap one**, and it should stand alone rather than lean on Boxing. Someone
+learning Muay Thai gets everything on the Muay Thai pages — including punches — instead of bouncing
+between two categories guessing which technique lives where. Prompt A still carries the full Boxing
+sub-skill list, but as a *differentiation* reference, not an exclusion list: where a name is shared,
+the page must teach the Muay Thai version and say what differs.
+
+That is not a fudge, it is the sport. Muay Thai punching is genuinely its own thing — a squarer
+stance because you have to check kicks, a higher and wider guard against elbows and knees, markedly
+less head movement because slipping into a knee is how people get hurt, and punches often thrown to
+set up a kick rather than as the primary weapon. Different coaches teach it, so it should pull
+different videos.
+
+The catalogue already works this way and the schema is built for it: `skills` is
+`UNIQUE (category_id, slug)` rather than globally unique, and **"Lob"** already lives in Padel,
+Table tennis and Tennis, **"Drop shot"** in Badminton, Padel and Tennis, **"Deadlift"** in both
+gyms. Retrieval stays separate because open search prepends the category —
+`` `${category}${skill.name}` `` — so a Muay Thai jab page searches "Muay Thai The Jab", never the
+bare term.
 
 **Chess is a positioning decision, not a supply decision.** Supply and demand are not in doubt —
 the doc records "Basic Chess Openings Explained" at 4.8M and "How To Learn & Study Chess Openings"
@@ -66,8 +80,13 @@ Lucena position", "how to calculate candidate moves" — not "watch me play the 
 This gate is the single most important thing in this task. I would rather have 18 sub-skills that
 each have a real page of tutorials than 30 where a third of them return commentary.
 
-=== MUAY THAI: WHAT MUST BE DISTINCT ===
-I already run a BOXING category with these 23 sub-skills:
+=== MUAY THAI: THE CATEGORY MUST STAND ALONE ===
+Build the taxonomy a Muay Thai learner actually needs, END TO END. They should find everything on
+the Muay Thai pages — punches included — and never have to jump to another category to learn a
+basic weapon. So DO propose punching, stance, footwork and defence pages even though a boxing
+category exists.
+
+For reference, my BOXING category has these 23 sub-skills:
 
   Blocking & Parrying, Body punching, Boxer skip, Counter-punching, Distance and range management,
   Double end bag, Feinting, Footwork, Hand wrapping, Head Movement & Slipping, Heavy Bag Technique,
@@ -75,14 +94,19 @@ I already run a BOXING category with these 23 sub-skills:
   Combinations, Shadow Boxing, Sparring fundamentals, Stance & Guard, The Cross (Straight Right),
   The Hook, The Jab, The Uppercut
 
-Do NOT propose sub-skills that would duplicate those. Muay Thai has to earn its own category on what
-boxing does not cover: kicks, knees, elbows, the clinch, checking and catching, teeps, and the
-stance and footwork differences that follow from defending low kicks. Where a Muay Thai page would
-genuinely differ from its boxing namesake despite a similar title (Muay Thai stance is not a boxing
-stance), propose it and say in one line why it is a different page rather than a duplicate.
+That list is here so you can DIFFERENTIATE, not avoid. Muay Thai punching is its own craft — a
+squarer stance because you must check kicks, a higher wider guard against elbows and knees, much
+less head movement because slipping into a knee is a knockout, and punches thrown to set up kicks.
+Those are different pages taught by different coaches, and they should pull different videos.
 
-Mark each Muay Thai sub-skill as DISTINCT or OVERLAPS-BOXING so I can see the true size of the
-category.
+Mark each Muay Thai sub-skill:
+  MT-ONLY  — no boxing equivalent (teep, checking kicks, clinch, elbows, knees, ...)
+  SHARED   — a boxing category also has it; add ONE line on what the Muay Thai page teaches
+             differently and, where you can, a video title that shows the Muay Thai treatment
+
+If a SHARED page would teach literally the same content with no Muay Thai specificity at all, say
+so plainly — that is the only case I would consider dropping, and I would rather know than have you
+quietly omit it.
 
 === CHESS: STRUCTURE ===
 Chess decomposes along several axes at once (openings, tactics, endgames, strategy, calculation,
@@ -151,10 +175,14 @@ on reputation or subscriber count. If you cannot check the uploads, do not inclu
   - Which channels cover the widest span of the category, and which are narrow specialists
   - Any well-known channel in this space you deliberately EXCLUDED, and the reason. This is as
     useful to me as the inclusions.
-  - For Muay Thai: any channel that also covers boxing well. I already run a boxing category with
-    its own list (ExpertBoxing, Precision Striking, fightTIPS, Tony Jeffries, Keppner Boxing and
-    others), and a channel can only be assigned to ONE category in my system, so I need to know
-    where the overlap sits before I assign it.
+  - For Muay Thai: I need coaches who teach MUAY THAI PUNCHING too, not only kicks and clinch —
+    the Muay Thai jab, cross and hook are thrown from a different stance and guard than the boxing
+    versions, and I want channels that teach them that way. A boxing channel that occasionally
+    mentions Muay Thai is not what I am after.
+  - Also for Muay Thai: flag any channel that is really a boxing channel. I run a separate boxing
+    category (ExpertBoxing, Precision Striking, fightTIPS, Tony Jeffries, Keppner Boxing and
+    others) and a channel can be assigned to only ONE category in my system, so I need to know
+    which side a genuine hybrid belongs on.
 
 Real, verifiable channels only. Do not invent names or URLs — I will check every one.
 ```
@@ -169,10 +197,15 @@ render while empty — but note that a DB flag alone is not enough to publish it
 `generateStaticParams` runs with `publicOnly: true`, so the routes are not prerendered and the 404
 rendered while staged sits in the ISR cache. Publishing needs the flag flip **and** a rebuild.
 
-Channels need their real `UC...` ids harvested and verified before insert — identify by id, never by
-name. `trusted_sources` has `UNIQUE (source_type, identifier)`, so each channel binds to exactly one
-category; for anything that covers both Muay Thai and Boxing, pick the category where it is
-stronger and let open search reach it in the other.
+Sub-skill names may repeat across categories — `skills` is `UNIQUE (category_id, slug)`, and Lob,
+Drop shot and Deadlift already live in two or three categories each. Retrieval stays separate
+because open search prepends the category name to every query, so a shared name costs nothing.
+
+Channels are the opposite: `trusted_sources` is `UNIQUE (source_type, identifier)`, so a channel
+binds to exactly ONE category. Harvest and verify real `UC...` ids before insert — identify by id,
+never by name. For a genuine Muay Thai/Boxing hybrid, assign it where it is stronger and let open
+search reach it from the other side. This is the one place the two categories actually compete, and
+it is why prompt B asks which side a hybrid belongs on.
 
 Seed trusted sources **before** the first nightly touches the category. Migration `0046` records
 what happens otherwise: seven categories were created with zero trusted sources and ran open-search
