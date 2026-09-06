@@ -119,7 +119,7 @@ For each sub-skill:
   - Name, phrased the way a learner would search for it, not as jargon
   - One sentence describing what the page teaches
   - Evidence: 1-2 real video titles that would belong on it, with approximate view counts
-  - For Muay Thai only: DISTINCT or OVERLAPS-BOXING
+  - For Muay Thai only: MT-ONLY or SHARED (and if SHARED, the one line on what differs)
 
 Then, for each category, tell me:
   - Which 5 sub-skills you are most confident about, and why
