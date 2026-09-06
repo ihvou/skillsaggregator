@@ -326,7 +326,15 @@ export default function AccountScreen() {
           </Pressable>
           {categories.length > 0 ? (
             <View style={styles.sportsBlock}>
-              <Text style={styles.label}>Sports</Text>
+              {/* "Category preferences" rather than "Sports preferences" (M130):
+                  it survives the first non-sport category with no further edit,
+                  and chess is already in the discovery pipeline. The persisted
+                  key stays `onboarding_interests` — renaming it would silently
+                  discard every existing user's picks. */}
+              <Text style={styles.label}>Category preferences</Text>
+              <Text style={styles.sportsHint}>
+                Picked categories appear first on Discover. Everything else stays browsable.
+              </Text>
               <View style={styles.sportChips}>
                 {categories.map((category) => {
                   const selected = sports.includes(category.slug);
@@ -473,6 +481,13 @@ const styles = StyleSheet.create({
   linkList: {
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.divider,
+  },
+  sportsHint: {
+    color: colors.muted,
+    fontSize: 13,
+    lineHeight: 18,
+    marginTop: 2,
+    marginBottom: spacing.xs,
   },
   sportsBlock: {
     gap: spacing.xs,

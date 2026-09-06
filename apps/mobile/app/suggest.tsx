@@ -149,7 +149,7 @@ export default function SuggestScreen() {
   const loading = categoriesQuery.isLoading || skillsQuery.isLoading;
 
   return (
-    <Screen edges={["top"]}>
+    <Screen edges={["top", "bottom"]}>
       <PageHeader
         title="Suggest a link"
         subtitle="Save a training link, submit it for review, or both."

@@ -63,7 +63,7 @@ export default function OnboardingScreen() {
   }
 
   return (
-    <Screen edges={["top"]}>
+    <Screen edges={["top", "bottom"]}>
       <View style={styles.topRow}>
         <Text style={styles.step}>{index + 1} / {slides.length}</Text>
         <Pressable

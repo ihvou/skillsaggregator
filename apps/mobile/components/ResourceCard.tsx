@@ -8,7 +8,6 @@ import {
   BookmarkCheck,
   Camera,
   CircleCheck,
-  Flag,
   Globe,
   Music2,
   PlaySquare,
@@ -27,22 +26,31 @@ import { recordWatchedForReviewPrompt } from "@/lib/storeReview";
 import { getSupabase } from "@/lib/supabase";
 import { colors, radius, shadows, spacing, typography } from "@/lib/theme";
 import { openTutorialResource } from "@/lib/tutorialReturnPrompt";
+import { ResourceActionSheet } from "./ResourceActionSheet";
 import { webUrl } from "@/lib/webLinks";
 
 interface ResourceCardProps {
   resource: SkillResource;
   initialSaved?: boolean;
   initialCompleted?: boolean;
+  /**
+   * Recess the card once it is marked watched (M128). Defaults on, because the
+   * point of marking something watched is to stop having to look at it.
+   *
+   * Pass `false` wherever EVERY row is watched — the Library's Watched tab —
+   * or the whole list renders dimmed and reads as disabled.
+   */
+  dimWhenWatched?: boolean;
 }
 
 /**
- * The right-hand metadata column owns this height (4 visual rows: source+pill,
- * title line 1, title line 2, domain+actions). The 16/9 thumbnail then
- * stretches to match it via `alignSelf: "stretch"` + `aspectRatio`.
+ * The right-hand metadata column owns this height (3 visual rows: source+pill,
+ * title line 1, title line 2). The 16/9 thumbnail then stretches to match it via
+ * `alignSelf: "stretch"` + `aspectRatio`, so 90 -> 160x90.
+ *
+ * The actions no longer live in this column — see the action-bar comment in the
+ * render below for why they could not stay.
  */
-// The 16/9 thumbnail stretches to this height, so it also sets the thumbnail size:
-// 90 -> 160x90, leaving enough right-column width for the score + report actions
-// on narrow Android devices.
 const BODY_HEIGHT = 90;
 
 function triggerSelectionHaptic() {
@@ -79,17 +87,19 @@ function statusLabel(status: SkillResource["catalog_status"]) {
 
 /**
  * Skill-screen resource row.
- *  - 16/9 thumbnail on the left at row-height (so its bottom aligns with
- *    the bottom of the actions row)
- *  - Right column: top meta row (source + level pill), 2-line title,
- *    bottom row (domain + check/bookmark/thumbs-up + count + thumbs-down)
- *  - Thumbnail/title taps open the URL; action buttons are siblings rather
- *    than nested inside a card-wide press handler.
+ *  - 16/9 thumbnail on the left at row height
+ *  - Right column: top meta row (source + level pill), 2-line title, contributor
+ *  - Full-width action bar underneath, in this order:
+ *    Watch later | Watched | (spacer) | Upvote | score | Downvote
+ *  - Thumbnail/title taps open the URL; long-press opens the action sheet, which
+ *    is where Report lives. Action buttons are siblings rather than nested inside
+ *    a card-wide press handler.
  */
 export function ResourceCard({
   resource,
   initialSaved = false,
   initialCompleted = false,
+  dimWhenWatched = true,
 }: ResourceCardProps) {
   const resolvedRelationId = resource.link_skill_relation_id ?? (resource.catalog_status ? null : resource.id);
   const relationId =
@@ -103,6 +113,7 @@ export function ResourceCard({
   const [isSaved, setIsSaved] = useState(savedFromResource);
   const [isCompleted, setIsCompleted] = useState(initialCompleted);
   const [vote, setVote] = useState<-1 | 0 | 1>(0);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [userScore, setUserScore] = useState(resource.user_score ?? 0);
   const [baseScore, setBaseScore] = useState<number | null>(
     typeof resource.combined_score === "number" && Number.isFinite(resource.combined_score)
@@ -298,176 +309,206 @@ export function ResourceCard({
     void Linking.openURL(webUrl(`/support?resource=${resourceId}&link=${link}${title}`));
   }
 
+  function openMenu() {
+    triggerSelectionHaptic();
+    setMenuOpen(true);
+  }
+
   const SavedIcon = isSaved ? BookmarkCheck : Bookmark;
   const contributor = resource.link.contributor_profile;
   const portrait = isPortraitResource(resource);
   const catalogueStatus = statusLabel(resource.catalog_status);
+  // Only the thumbnail and title recede. The action bar stays at full opacity so
+  // the controls still read as live and re-tappable — including the check that
+  // undoes this state.
+  const dimmed = dimWhenWatched && isCompleted;
 
   return (
-    <View style={styles.row}>
-      <Pressable
-        onPress={openResource}
-        onLongPress={toggleSaved}
-        style={({ pressed }) => [styles.thumbWrap, pressed && styles.pressed]}
-        accessibilityRole="button"
-        accessibilityLabel={resource.link.title ?? "Open resource"}
-      >
-        {resource.link.thumbnail_url ? (
-          <>
-            {portrait ? (
-              <Image
-                source={resource.link.thumbnail_url}
-                style={styles.thumbnailBackdrop}
-                contentFit="cover"
-                blurRadius={16}
-              />
-            ) : null}
-            <Image
-              source={resource.link.thumbnail_url}
-              style={styles.thumbnail}
-              contentFit={portrait ? "contain" : "cover"}
-              accessibilityLabel={resource.link.title ?? "Resource thumbnail"}
-            />
-          </>
-        ) : (
-          <View style={styles.thumbnailFallback} />
-        )}
-      </Pressable>
-      <View style={styles.body}>
-        <View style={styles.topRow}>
-          <View style={styles.dateGroup}>
-            <SourceIcon link={resource.link} />
-          </View>
-          <View style={styles.pillGroup}>
-            {catalogueStatus ? (
-              <View style={styles.statusPill}>
-                <Text style={styles.statusText} numberOfLines={1}>
-                  {catalogueStatus}
-                </Text>
-              </View>
-            ) : null}
-            {resource.skill_level ? (
-              <View style={styles.levelPill}>
-                {/* numberOfLines guards against "Intermedi/ate" wrapping mid-word
-                    when the title row is tight on narrow screens. */}
-                <Text style={styles.levelText} numberOfLines={1}>
-                  {capitalize(resource.skill_level)}
-                </Text>
-              </View>
-            ) : null}
-          </View>
-        </View>
+    <View style={styles.card}>
+      <View style={styles.row}>
         <Pressable
           onPress={openResource}
-          onLongPress={toggleSaved}
-          style={({ pressed }) => [styles.titleTap, pressed && styles.pressed]}
+          onLongPress={openMenu}
+          delayLongPress={350}
+          style={({ pressed }) => [styles.thumbWrap, pressed && styles.pressed]}
           accessibilityRole="button"
           accessibilityLabel={resource.link.title ?? "Open resource"}
+          accessibilityHint="Long press for more actions"
         >
-          <Text style={styles.title} numberOfLines={2}>
-            {resource.link.title ?? resource.link.url}
-          </Text>
-        </Pressable>
-        <View style={styles.bottomRow}>
-          <View style={styles.metaLine}>
-            {contributor ? (
-              <View style={styles.contributorPill}>
-                <UserRound size={11} color={colors.muted} />
-                <Text style={styles.contributorText} numberOfLines={1}>
-                  @{contributor.slug}
-                </Text>
-              </View>
-            ) : null}
-          </View>
-          <View style={styles.actions}>
-            <Pressable
-              onPress={reportResource}
-              hitSlop={{ top: 10, right: 8, bottom: 10, left: 8 }}
-              style={styles.iconTap}
-              accessibilityRole="link"
-              accessibilityLabel="Report resource"
-            >
-              <Flag size={17} color={colors.muted} strokeWidth={2} />
-            </Pressable>
-            <Pressable
-              onPress={toggleCompleted}
-              hitSlop={{ top: 10, right: 8, bottom: 10, left: 8 }}
-              style={styles.iconTap}
-              accessibilityRole="button"
-              accessibilityLabel={isCompleted ? "Mark not completed" : "Mark completed"}
-            >
-              <CircleCheck
-                size={18}
-                color={isCompleted ? colors.accent : colors.muted}
-                fill={isCompleted ? colors.accent : "transparent"}
-                stroke={isCompleted ? colors.surface : colors.muted}
-                strokeWidth={2}
-              />
-            </Pressable>
-            <Pressable
-              onPress={toggleSaved}
-              hitSlop={{ top: 10, right: 8, bottom: 10, left: 8 }}
-              style={styles.iconTap}
-              accessibilityRole="button"
-              accessibilityLabel={isSaved ? "Remove from Watch later" : "Add to Watch later"}
-            >
-              <SavedIcon
-                size={18}
-                color={isSaved ? colors.accent : colors.muted}
-                fill={isSaved ? colors.accent : "transparent"}
-                strokeWidth={2}
-              />
-            </Pressable>
-            <View style={styles.ratingGroup}>
-              <Pressable
-                onPress={toggleUpvote}
-                hitSlop={{ top: 10, right: 6, bottom: 10, left: 6 }}
-                style={styles.ratingTap}
-                accessibilityRole="button"
-                accessibilityLabel={vote === 1 ? "Remove upvote" : "Upvote"}
-              >
-                <ThumbsUp
-                  size={18}
-                  color={vote === 1 ? colors.accent : colors.muted}
-                  fill={vote === 1 ? colors.accent : "transparent"}
-                  strokeWidth={2}
+          {resource.link.thumbnail_url ? (
+            <>
+              {portrait ? (
+                <Image
+                  source={resource.link.thumbnail_url}
+                  style={styles.thumbnailBackdrop}
+                  contentFit="cover"
+                  blurRadius={16}
                 />
-              </Pressable>
-              {combinedScore !== null ? (
-                <Text
-                  style={[
-                    styles.scoreText,
-                    vote === 1 ? styles.scorePositive : vote === -1 ? styles.scoreNegative : null,
-                  ]}
-                  accessibilityLabel={`Score ${formatAggregateScore(combinedScore)}, from coach review and community votes`}
-                  accessibilityLiveRegion="polite"
-                >
-                  {formatAggregateScore(combinedScore)}
-                </Text>
               ) : null}
-              <Pressable
-                onPress={toggleDownvote}
-                hitSlop={{ top: 10, right: 6, bottom: 10, left: 6 }}
-                style={styles.ratingTap}
-                accessibilityRole="button"
-                accessibilityLabel={vote === -1 ? "Remove downvote" : "Downvote"}
-              >
-                <ThumbsDown
-                  size={18}
-                  color={vote === -1 ? colors.ink : colors.muted}
-                  fill={vote === -1 ? colors.ink : "transparent"}
-                  strokeWidth={2}
-                />
-              </Pressable>
+              <Image
+                source={resource.link.thumbnail_url}
+                style={[styles.thumbnail, dimmed && styles.dimmedMedia]}
+                contentFit={portrait ? "contain" : "cover"}
+                accessibilityLabel={resource.link.title ?? "Resource thumbnail"}
+              />
+            </>
+          ) : (
+            <View style={styles.thumbnailFallback} />
+          )}
+        </Pressable>
+        <View style={styles.body}>
+          <View style={styles.topRow}>
+            <View style={styles.dateGroup}>
+              <SourceIcon link={resource.link} />
+            </View>
+            <View style={styles.pillGroup}>
+              {catalogueStatus ? (
+                <View style={styles.statusPill}>
+                  <Text style={styles.statusText} numberOfLines={1}>
+                    {catalogueStatus}
+                  </Text>
+                </View>
+              ) : null}
+              {resource.skill_level ? (
+                <View style={styles.levelPill}>
+                  {/* numberOfLines guards against "Intermedi/ate" wrapping mid-word
+                      when the title row is tight on narrow screens. */}
+                  <Text style={styles.levelText} numberOfLines={1}>
+                    {capitalize(resource.skill_level)}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+          </View>
+          <Pressable
+            onPress={openResource}
+            onLongPress={openMenu}
+            delayLongPress={350}
+            style={({ pressed }) => [styles.titleTap, pressed && styles.pressed]}
+            accessibilityRole="button"
+            accessibilityLabel={resource.link.title ?? "Open resource"}
+            accessibilityHint="Long press for more actions"
+          >
+            <Text style={[styles.title, dimmed && styles.dimmedTitle]} numberOfLines={2}>
+              {resource.link.title ?? resource.link.url}
+            </Text>
+          </Pressable>
+          <View style={styles.bottomRow}>
+            <View style={styles.metaLine}>
+              {contributor ? (
+                <View style={styles.contributorPill}>
+                  <UserRound size={11} color={colors.muted} />
+                  <Text style={styles.contributorText} numberOfLines={1}>
+                    @{contributor.slug}
+                  </Text>
+                </View>
+              ) : null}
             </View>
           </View>
         </View>
       </View>
+
+      {/* Full-width action bar. It lives BELOW the thumbnail/body row rather than
+          inside the right-hand column because the column is only ~148pt wide at
+          360dp, and four 44pt targets plus the score need ~198pt. In-column it
+          could never reach the minimum target size — that constraint, not
+          styling taste, is why the row moved. */}
+      <View style={styles.actions}>
+        <Pressable
+          onPress={toggleSaved}
+          style={styles.iconTap}
+          accessibilityRole="button"
+          accessibilityLabel={isSaved ? "Remove from Watch later" : "Add to Watch later"}
+        >
+          <SavedIcon
+            size={20}
+            color={isSaved ? colors.accent : colors.muted}
+            fill={isSaved ? colors.accent : "transparent"}
+            strokeWidth={2}
+          />
+        </Pressable>
+        <Pressable
+          onPress={toggleCompleted}
+          style={styles.iconTap}
+          accessibilityRole="button"
+          accessibilityLabel={isCompleted ? "Mark not completed" : "Mark completed"}
+        >
+          <CircleCheck
+            size={20}
+            color={isCompleted ? colors.accent : colors.muted}
+            fill={isCompleted ? colors.accent : "transparent"}
+            stroke={isCompleted ? colors.surface : colors.muted}
+            strokeWidth={2}
+          />
+        </Pressable>
+        <View style={styles.actionSpacer} />
+        <Pressable
+          onPress={toggleUpvote}
+          style={styles.iconTap}
+          accessibilityRole="button"
+          accessibilityLabel={vote === 1 ? "Remove upvote" : "Upvote"}
+        >
+          <ThumbsUp
+            size={20}
+            color={vote === 1 ? colors.accent : colors.muted}
+            fill={vote === 1 ? colors.accent : "transparent"}
+            strokeWidth={2}
+          />
+        </Pressable>
+        {combinedScore !== null ? (
+          <Text
+            style={[
+              styles.scoreText,
+              vote === 1 ? styles.scorePositive : vote === -1 ? styles.scoreNegative : null,
+            ]}
+            accessibilityLabel={`Score ${formatAggregateScore(combinedScore)}, from coach review and community votes`}
+            accessibilityLiveRegion="polite"
+          >
+            {formatAggregateScore(combinedScore)}
+          </Text>
+        ) : null}
+        <Pressable
+          onPress={toggleDownvote}
+          style={styles.iconTap}
+          accessibilityRole="button"
+          accessibilityLabel={vote === -1 ? "Remove downvote" : "Downvote"}
+        >
+          <ThumbsDown
+            size={20}
+            color={vote === -1 ? colors.ink : colors.muted}
+            fill={vote === -1 ? colors.ink : "transparent"}
+            strokeWidth={2}
+          />
+        </Pressable>
+      </View>
+
+      <ResourceActionSheet
+        visible={menuOpen}
+        title={resource.link.title}
+        isSaved={isSaved}
+        isCompleted={isCompleted}
+        onToggleSaved={() => {
+          setMenuOpen(false);
+          toggleSaved();
+        }}
+        onToggleCompleted={() => {
+          setMenuOpen(false);
+          toggleCompleted();
+        }}
+        onReport={() => {
+          setMenuOpen(false);
+          reportResource();
+        }}
+        onClose={() => setMenuOpen(false)}
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  card: {
+    gap: spacing.xs,
+  },
   row: {
     flexDirection: "row",
     alignItems: "stretch",
@@ -584,27 +625,43 @@ const styles = StyleSheet.create({
     flexShrink: 0,
     flexDirection: "row",
     alignItems: "center",
-    gap: 2,
+    // No gap. Each target is a full 44pt wide and they sit flush, so the whole
+    // strip is live — there is no dead space between buttons for a tap to fall
+    // into, and no need for hitSlop to paper over one.
+    gap: 0,
   },
+  // 44x44 is the iOS HIG / Android Material minimum. The previous 20x28 relied
+  // on 8px of horizontal hitSlop to be usable, but the row's 2px gap meant
+  // neighbouring slop regions OVERLAPPED — and React Native resolves an
+  // overlapping touch by view order, not by proximity, so a tap between two
+  // icons activated an arbitrary one. That is almost certainly the Huawei
+  // "nothing happens when I tap Watch later" report (M119).
+  //
+  // Do not re-add horizontal hitSlop here. At 44pt the target is already the
+  // full recommended size, and slop would only recreate the overlap at a
+  // larger scale.
   iconTap: {
-    minWidth: 20,
-    minHeight: 28,
+    width: 44,
+    height: 44,
     alignItems: "center",
     justifyContent: "center",
   },
-  ratingGroup: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 2,
+  // 0.55 is the floor: below it the title stops passing contrast against the
+  // cream surface. The filled check icon still carries the state non-visually,
+  // so opacity is a redundant cue rather than the only one.
+  dimmedMedia: {
+    opacity: 0.55,
   },
-  ratingTap: {
-    minWidth: 20,
-    minHeight: 28,
-    alignItems: "center",
-    justifyContent: "center",
+  dimmedTitle: {
+    color: colors.muted,
+  },
+  // Pushes the voting cluster to the right edge, so save/watched and the vote
+  // controls read as two groups rather than one undifferentiated strip.
+  actionSpacer: {
+    flex: 1,
   },
   scoreText: {
-    minWidth: 24,
+    minWidth: 22,
     textAlign: "center",
     color: colors.muted,
     fontSize: 12,

@@ -111,7 +111,11 @@ export default function SavedTab() {
   return (
     <Screen edges={["top"]} padded={false}>
       <View style={styles.headerWrap}>
-        <PageHeader title="Library" subtitle="Watch later and watched resources" />
+        <PageHeader
+          title="Library"
+          subtitle="Watch later and watched resources"
+          rightAccessory={<SubmitLinkButton onPress={() => router.push("/suggest")} />}
+        />
         <View style={styles.tabs}>
           {(["saved", "watched"] as const).map((item) => (
             <Pressable
@@ -171,14 +175,6 @@ export default function SavedTab() {
             </View>
           }
           ItemSeparatorComponent={() => <View style={styles.divider} />}
-          ListFooterComponent={
-            <View style={styles.footerWrap}>
-              <View style={styles.divider} />
-              <View style={styles.footerInner}>
-                <SubmitLinkButton onPress={() => router.push("/suggest")} />
-              </View>
-            </View>
-          }
           renderItem={({ item, index }) => (
             <View style={styles.rowWrap}>
               <View style={styles.resourceRow}>
@@ -221,6 +217,9 @@ export default function SavedTab() {
                     resource={item}
                     initialSaved={view === "saved" || Boolean(item.personal_list_id)}
                     initialCompleted={view === "watched"}
+                    // Every row in the Watched tab is watched, so dimming them all
+                    // would make the whole tab look disabled (M128).
+                    dimWhenWatched={view !== "watched"}
                   />
                 </View>
               </View>
@@ -320,6 +319,14 @@ function SkillFilterChip({
   );
 }
 
+/**
+ * Header action, top right (M129). It used to be the list's ListFooterComponent,
+ * which put the one action that grows the catalogue behind a full scroll of the
+ * Watch later list — worst for exactly the new user we most want submitting.
+ *
+ * Icon-only: the header already has a title and subtitle competing for width at
+ * 320dp, and the accessibilityLabel carries the meaning for assistive tech.
+ */
 function SubmitLinkButton({ onPress }: { onPress: () => void }) {
   return (
     <Pressable
@@ -328,8 +335,7 @@ function SubmitLinkButton({ onPress }: { onPress: () => void }) {
       accessibilityRole="button"
       accessibilityLabel="Submit a new link"
     >
-      <PlusCircle size={18} color={colors.ink} />
-      <Text style={styles.submitLinkText}>Submit a new link</Text>
+      <PlusCircle size={22} color={colors.ink} />
     </Pressable>
   );
 }
@@ -451,28 +457,15 @@ const styles = StyleSheet.create({
   emptyWrap: {
     paddingHorizontal: spacing.page,
   },
-  footerWrap: {
-    paddingTop: spacing.md,
-  },
-  footerInner: {
-    paddingHorizontal: spacing.page,
-    paddingTop: spacing.lg,
-  },
   submitLink: {
-    minHeight: 44,
-    flexDirection: "row",
+    width: 44,
+    height: 44,
     alignItems: "center",
     justifyContent: "center",
-    gap: spacing.xs,
     borderRadius: 999,
     backgroundColor: colors.surface,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.divider,
-  },
-  submitLinkText: {
-    color: colors.ink,
-    fontSize: 14,
-    fontWeight: "800",
   },
   pressed: {
     opacity: 0.7,
