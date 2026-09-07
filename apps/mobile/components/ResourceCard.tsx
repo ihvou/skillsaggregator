@@ -225,7 +225,12 @@ export function ResourceCard({
 
   async function toggleCompleted() {
     if (!relationId) {
-      Alert.alert("Still in review", "This link can be marked watched after it joins the catalogue.");
+      Alert.alert(
+        resource.catalog_status === "private" ? "Private save" : "Still in review",
+        resource.catalog_status === "private"
+          ? "Marking watched needs a catalogue entry. Suggest this link to the catalogue to track it."
+          : "This link can be marked watched once it joins the catalogue.",
+      );
       return;
     }
     if (!(await ensureActionSession("mark_watched"))) return;
@@ -319,6 +324,13 @@ export function ResourceCard({
   // the controls still read as live and re-tappable — including the check that
   // undoes this state.
   const dimmed = dimWhenWatched && isCompleted;
+  // Voting needs a catalogue relation, and `relationId` is null for exactly the
+  // states that lack one: `private` (never submitted) and `in_review` (relation
+  // exists but is unpublished). Rendering thumbs there gives the user two buttons
+  // whose only effect is an alert, so hide the group and the score (M136). The
+  // card upgrades itself when the link publishes — catalog_status flips to
+  // `in_catalog`, relationId resolves, and these come back on their own.
+  const canVote = relationId !== null;
 
   return (
     <View style={styles.card}>
@@ -401,77 +413,84 @@ export function ResourceCard({
                 </View>
               ) : null}
             </View>
-            {/* The actions stay in the right-hand column and spread across its
-                full width: each button is flex:1 so they divide the available
-                space evenly, flush, with no gap for a tap to fall between.
-                Removing Report (M125) is what buys the room. */}
+            {/* Two groups inside the right-hand column: Watch later + Watched sit
+                left, next to the thumbnail; the vote cluster is pushed hard right
+                by actionSpacer. Buttons are 40pt wide, flush and shrinkable, so
+                there is no gap for a tap to fall between and a 320dp screen
+                compresses rather than overflows. Removing Report (M125) bought
+                the room. The vote cluster only renders when the link has a
+                catalogue relation to vote on (M136). */}
             <View style={styles.actions}>
-        <Pressable
-          onPress={toggleSaved}
-          style={styles.iconTap}
-          accessibilityRole="button"
-          accessibilityLabel={isSaved ? "Remove from Watch later" : "Add to Watch later"}
-        >
-          <SavedIcon
-            size={20}
-            color={isSaved ? colors.accent : colors.muted}
-            fill={isSaved ? colors.accent : "transparent"}
-            strokeWidth={2}
-          />
-        </Pressable>
-        <Pressable
-          onPress={toggleCompleted}
-          style={styles.iconTap}
-          accessibilityRole="button"
-          accessibilityLabel={isCompleted ? "Mark not completed" : "Mark completed"}
-        >
-          <CircleCheck
-            size={20}
-            color={isCompleted ? colors.accent : colors.muted}
-            fill={isCompleted ? colors.accent : "transparent"}
-            stroke={isCompleted ? colors.surface : colors.muted}
-            strokeWidth={2}
-          />
-        </Pressable>
-        <View style={styles.actionSpacer} />
-        <Pressable
-          onPress={toggleUpvote}
-          style={styles.iconTap}
-          accessibilityRole="button"
-          accessibilityLabel={vote === 1 ? "Remove upvote" : "Upvote"}
-        >
-          <ThumbsUp
-            size={20}
-            color={vote === 1 ? colors.accent : colors.muted}
-            fill={vote === 1 ? colors.accent : "transparent"}
-            strokeWidth={2}
-          />
-        </Pressable>
-        {combinedScore !== null ? (
-          <Text
-            style={[
-              styles.scoreText,
-              vote === 1 ? styles.scorePositive : vote === -1 ? styles.scoreNegative : null,
-            ]}
-            accessibilityLabel={`Score ${formatAggregateScore(combinedScore)}, from coach review and community votes`}
-            accessibilityLiveRegion="polite"
-          >
-            {formatAggregateScore(combinedScore)}
-          </Text>
-        ) : null}
-        <Pressable
-          onPress={toggleDownvote}
-          style={styles.iconTap}
-          accessibilityRole="button"
-          accessibilityLabel={vote === -1 ? "Remove downvote" : "Downvote"}
-        >
-          <ThumbsDown
-            size={20}
-            color={vote === -1 ? colors.ink : colors.muted}
-            fill={vote === -1 ? colors.ink : "transparent"}
-            strokeWidth={2}
-          />
+              <Pressable
+                onPress={toggleSaved}
+                style={styles.iconTap}
+                accessibilityRole="button"
+                accessibilityLabel={isSaved ? "Remove from Watch later" : "Add to Watch later"}
+              >
+                <SavedIcon
+                  size={20}
+                  color={isSaved ? colors.accent : colors.muted}
+                  fill={isSaved ? colors.accent : "transparent"}
+                  strokeWidth={2}
+                />
               </Pressable>
+              <Pressable
+                onPress={toggleCompleted}
+                style={styles.iconTap}
+                accessibilityRole="button"
+                accessibilityLabel={isCompleted ? "Mark not completed" : "Mark completed"}
+              >
+                <CircleCheck
+                  size={20}
+                  color={isCompleted ? colors.accent : colors.muted}
+                  fill={isCompleted ? colors.accent : "transparent"}
+                  stroke={isCompleted ? colors.surface : colors.muted}
+                  strokeWidth={2}
+                />
+              </Pressable>
+              <View style={styles.actionSpacer} />
+              {canVote ? (
+                <>
+                  <Pressable
+                    onPress={toggleUpvote}
+                    style={styles.iconTap}
+                    accessibilityRole="button"
+                    accessibilityLabel={vote === 1 ? "Remove upvote" : "Upvote"}
+                  >
+                    <ThumbsUp
+                      size={20}
+                      color={vote === 1 ? colors.accent : colors.muted}
+                      fill={vote === 1 ? colors.accent : "transparent"}
+                      strokeWidth={2}
+                    />
+                  </Pressable>
+                  {combinedScore !== null ? (
+                    <Text
+                      style={[
+                        styles.scoreText,
+                        vote === 1 ? styles.scorePositive : vote === -1 ? styles.scoreNegative : null,
+                      ]}
+                      accessibilityLabel={`Score ${formatAggregateScore(combinedScore)}, from coach review and community votes`}
+                      accessibilityLiveRegion="polite"
+                    >
+                      {formatAggregateScore(combinedScore)}
+                    </Text>
+                  ) : null}
+                  <Pressable
+                    onPress={toggleDownvote}
+                    style={styles.iconTap}
+                    accessibilityRole="button"
+                    accessibilityLabel={vote === -1 ? "Remove downvote" : "Downvote"}
+                  >
+                    <ThumbsDown
+                      size={20}
+                      color={vote === -1 ? colors.ink : colors.muted}
+                      fill={vote === -1 ? colors.ink : "transparent"}
+                      strokeWidth={2}
+                    />
+                  </Pressable>
+                </>
+              ) : null}
             </View>
           </View>
         </View>
