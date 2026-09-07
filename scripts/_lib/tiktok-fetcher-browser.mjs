@@ -255,15 +255,42 @@ export async function searchTikTok(ctx, q, { dumpHtml = true } = {}) {
 // "Please wait..." interstitial that resolves into the real video in ~3s. So this
 // is throttling, not a block, and it is worth backing off rather than giving up:
 // each lost detail fetch discards a candidate that already passed search.
+// The content that proves the page actually rendered. Kept here rather than
+// inline so the retry loop and the caller cannot drift apart.
+const DETAIL_CONTENT_SELECTOR =
+  'script#__UNIVERSAL_DATA_FOR_REHYDRATION__, video, [data-e2e="browse-video-desc"]';
+
+// A RESOLVED page.goto is not a rendered page. The failure this used to miss:
+// TikTok answers with an empty shell, `domcontentloaded` fires on it, goto
+// resolves, and the loop returned on attempt 0 having navigated to nothing. The
+// content check lived in the caller wrapped in `.catch(() => undefined)`, so the
+// one signal that detects a blank render was also the one signal that could not
+// trigger a retry — while a human watching the browser just hits refresh and
+// gets the video. That refresh is what this loop now performs.
+//
+// The swallowed catch was deliberate: it let a TikTok layout change degrade to
+// the old fixed wait instead of failing every fetch. That property is kept — the
+// selector wait is retried, but on the LAST attempt a miss no longer throws, it
+// returns `rendered: false` so the caller can proceed and the run can log it.
+// A blank render is retried; a DOM change is survived and made visible.
 async function gotoDetailWithRetry(page, videoUrl) {
   let lastError = null;
   for (let attempt = 0; attempt < config.detailRetryAttempts; attempt += 1) {
     if (attempt > 0) await sleep(config.detailRetryBackoffMs * attempt);
+    const isLastAttempt = attempt === config.detailRetryAttempts - 1;
     try {
       await page.goto(videoUrl, { waitUntil: "domcontentloaded", timeout: config.navTimeoutMs });
-      return attempt;
+      await page.waitForSelector(DETAIL_CONTENT_SELECTOR, { timeout: config.detailContentTimeoutMs });
+      return { attempt, rendered: true };
     } catch (error) {
       lastError = error;
+      // Navigation itself failed (throttling, ERR_HTTP_RESPONSE_CODE_FAILURE):
+      // always worth another attempt. Content missing after a good navigation is
+      // the blank render: also worth another attempt, but on the last one we let
+      // the caller carry on with whatever is there.
+      if (isLastAttempt && (await page.url()) !== "about:blank") {
+        return { attempt, rendered: false };
+      }
     }
   }
   throw lastError;
@@ -274,17 +301,12 @@ export async function fetchVideoDetail(ctx, videoUrl, { dumpHtml = false } = {})
   await page.bringToFront().catch(() => {});
 
   try {
-    await gotoDetailWithRetry(page, videoUrl);
+    // The content wait now lives inside the retry loop, so by here the page has
+    // either rendered or exhausted its attempts. `rendered` says which, and the
+    // caller surfaces it: a blank page that reaches extraction yields an object
+    // of nulls that used to be indistinguishable from a genuinely empty video.
+    const { attempt: detailAttempt, rendered } = await gotoDetailWithRetry(page, videoUrl);
     await page.bringToFront().catch(() => {});
-    // Wait for the real page rather than a fixed sleep: the challenge interstitial
-    // renders first and the SSR blob/video only appear once it clears. Falls back to
-    // the old fixed wait if neither selector shows up, so a layout change degrades
-    // to previous behaviour instead of failing outright.
-    await page
-      .waitForSelector('script#__UNIVERSAL_DATA_FOR_REHYDRATION__, video, [data-e2e="browse-video-desc"]', {
-        timeout: config.detailContentTimeoutMs,
-      })
-      .catch(() => undefined);
     await sleep(config.detailWaitMs);
 
     if (dumpHtml) {
@@ -389,6 +411,11 @@ export async function fetchVideoDetail(ctx, videoUrl, { dumpHtml = false } = {})
       thumbnail_dynamic_url: data.ssr.dynamicCover ?? null,
       _raw_text: flat,
       _selector_hits: hits,
+      // False when every retry produced an unrendered page. Without this the
+      // caller cannot tell "TikTok served us a blank shell" from "this video
+      // genuinely has no caption or stats", and the run silently submits nulls.
+      _rendered: rendered,
+      _detail_attempts: detailAttempt + 1,
     };
   } finally {
     await page.close().catch(() => {});

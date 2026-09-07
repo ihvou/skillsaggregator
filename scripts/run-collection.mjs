@@ -3394,7 +3394,25 @@ async function processTikTokCollection(selectedSkills, summary) {
         let detail = null;
         try {
           detail = await fetchVideoDetail(ctx, canonicalUrl, { dumpHtml: false });
-          stats.details_fetched += 1;
+          // An unrendered page is NOT a fetched detail. TikTok serves an empty
+          // shell often enough that a human watching the browser sees a blank
+          // tab and gets the video by hitting refresh; the fetcher now retries
+          // that internally, and `_rendered: false` means every retry still came
+          // back blank. Counting it as a success submitted a candidate whose
+          // caption, stats and creator were all null — scored on nothing, and
+          // indistinguishable from a video that genuinely has no engagement.
+          if (detail && detail._rendered === false) {
+            stats.errors += 1;
+            log("warn", "tiktok_detail_blank", "Detail page never rendered after retries", {
+              source_identifier: source.identifier,
+              skill: skill.slug,
+              canonical_url: canonicalUrl,
+              attempts: detail._detail_attempts ?? null,
+            });
+            detail = null;
+          } else {
+            stats.details_fetched += 1;
+          }
         } catch (error) {
           stats.errors += 1;
           log("warn", "tiktok_detail_failed", errorMessage(error), {
