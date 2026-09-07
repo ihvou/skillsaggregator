@@ -6,6 +6,7 @@ import { chooseInternalAuthor } from "../_shared/database.ts";
 import { callFunction, getServiceClient } from "../_shared/supabase.ts";
 import { cacheThumbnail } from "../_shared/thumbnail-storage.ts";
 import { tiktokVideoIdFromUrl } from "../_shared/tiktok-url.mjs";
+import { enrichLinkPayload, type LinkAddPayload } from "../_shared/link-enrichment.ts";
 import { finalSuggestionStatus, isInternalRequest, resolveSubmittedByUserId } from "./security.ts";
 
 const HUMAN_RATE_LIMIT_WINDOW_SECONDS = 60 * 60;
@@ -140,7 +141,7 @@ async function saveHumanLinkToWatchLater(
   supabase: ReturnType<typeof getServiceClient>,
   {
     submittedByUserId,
-    payload,
+    payload: inputPayload,
     targetSkillId,
     relationId = null,
     suggestionId = null,
@@ -152,6 +153,7 @@ async function saveHumanLinkToWatchLater(
     suggestionId?: string | null;
   },
 ) {
+  let payload = inputPayload;
   const canonicalUrl = String(payload.canonical_url ?? payload.url ?? "").trim();
   if (!canonicalUrl) throw new Error("canonical_url is required to save a link.");
 
@@ -164,6 +166,21 @@ async function saveHumanLinkToWatchLater(
 
   let linkId = existingLink?.id as string | undefined;
   if (!linkId) {
+    // M134: a pasted URL arrives with nothing but the URL, so without this the
+    // link lands in the user's Watch later as a blank card. Only needed when we
+    // are creating the row — an existing link already carries its metadata.
+    // enrichLinkPayload never throws and returns null on failure, so a slow or
+    // broken oEmbed degrades to the old behaviour instead of losing the save.
+    const enriched = await enrichLinkPayload(payload as LinkAddPayload);
+    if (enriched) {
+      payload = enriched as Record<string, unknown>;
+      console.info("submit_suggestion_watch_later_enriched", {
+        has_title: Boolean(enriched.title),
+        has_thumbnail: Boolean(enriched.thumbnail_url),
+        platform: enriched.creator_platform ?? null,
+      });
+    }
+
     const hasThumbnail =
       typeof payload.thumbnail_storage_path === "string" && payload.thumbnail_storage_path.trim()
         ? true

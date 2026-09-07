@@ -2,6 +2,13 @@ import { corsForbiddenResponse, errorResponse, isAllowedCorsOrigin, jsonResponse
 import { getServiceClient } from "../_shared/supabase.ts";
 import { cacheThumbnail } from "../_shared/thumbnail-storage.ts";
 import { tiktokVideoIdFromUrl } from "../_shared/tiktok-url.mjs";
+import {
+  enrichLinkPayload,
+  isInstagramPayload,
+  isTikTokPayload,
+  youtubeVideoIdFromUrl,
+  type LinkAddPayload,
+} from "../_shared/link-enrichment.ts";
 
 type SourceAddPayload = {
   source_type?: "youtube_channel" | "domain" | "rss" | "tiktok_search";
@@ -10,31 +17,6 @@ type SourceAddPayload = {
   category_id?: string | null;
   discovery_score?: number | null;
   discovery_evidence_json?: Record<string, unknown> | null;
-};
-
-type LinkAddPayload = {
-  url?: string;
-  canonical_url?: string;
-  title?: string | null;
-  description?: string | null;
-  content_type?: string | null;
-  thumbnail_url?: string | null;
-  thumbnail_dynamic_url?: string | null;
-  thumbnail_storage_path?: string | null;
-  thumbnail_cache_status?: "cached" | "failed" | null;
-  thumbnail_cache_error?: string | null;
-  thumbnail_cache_attempted_at?: string | null;
-  duration_seconds?: number | null;
-  like_count?: number | null;
-  comment_count?: number | null;
-  share_count?: number | null;
-  favorite_count?: number | null;
-  creator_handle?: string | null;
-  creator_url?: string | null;
-  creator_platform?: "youtube" | "tiktok" | "instagram" | null;
-  creator_profile?: Record<string, unknown> | null;
-  scoring_strategy?: "transcript_llm" | "engagement_authority";
-  review_lane?: "coach" | "founder" | "agent" | "private";
 };
 
 function isInternalApplyRequest(request: Request) {
@@ -46,27 +28,6 @@ function isInternalApplyRequest(request: Request) {
   return request.headers.get("x-internal-token") === expected;
 }
 
-function youtubeVideoIdFromUrl(value: string | null | undefined) {
-  if (!value) return null;
-  try {
-    const parsed = new URL(value);
-    const hostname = parsed.hostname.replace(/^www\./, "").toLowerCase();
-    if (hostname === "youtu.be") return parsed.pathname.split("/").filter(Boolean)[0] ?? null;
-    if (hostname === "youtube.com" || hostname.endsWith(".youtube.com")) {
-      if (parsed.pathname.startsWith("/shorts/")) return parsed.pathname.split("/")[2] ?? null;
-      if (parsed.pathname.startsWith("/embed/")) return parsed.pathname.split("/")[2] ?? null;
-      return parsed.searchParams.get("v");
-    }
-    if (hostname === "i.ytimg.com" || hostname.endsWith(".ytimg.com") || hostname === "img.youtube.com") {
-      const parts = parsed.pathname.split("/").filter(Boolean);
-      const videoIndex = parts.findIndex((part) => part === "vi");
-      return videoIndex >= 0 ? parts[videoIndex + 1] ?? null : null;
-    }
-  } catch {
-    return null;
-  }
-  return null;
-}
 
 function normalizeTranscriptText(value: unknown) {
   return String(value ?? "").replace(/\s+/g, " ").trim();
@@ -106,34 +67,8 @@ function storageKeyFromPublicUrl(value: string | null | undefined) {
   }
 }
 
-function isTikTokPayload(payload: LinkAddPayload) {
-  return payload.creator_platform === "tiktok"
-    || sourceFromUrl(payload.canonical_url) === "tiktok"
-    || sourceFromUrl(payload.url) === "tiktok"
-    || tiktokVideoIdFromUrl(payload.canonical_url)
-    || tiktokVideoIdFromUrl(payload.url);
-}
 
-function sourceFromUrl(value: string | null | undefined): "youtube" | "tiktok" | "instagram" | "other" {
-  if (!value) return "other";
-  try {
-    const hostname = new URL(value).hostname.replace(/^www\./, "").toLowerCase();
-    if (hostname === "youtu.be" || hostname === "youtube.com" || hostname.endsWith(".youtube.com")) {
-      return "youtube";
-    }
-    if (hostname === "tiktok.com" || hostname.endsWith(".tiktok.com")) return "tiktok";
-    if (hostname === "instagram.com" || hostname.endsWith(".instagram.com")) return "instagram";
-  } catch {
-    return "other";
-  }
-  return "other";
-}
 
-function isInstagramPayload(payload: LinkAddPayload) {
-  return payload.creator_platform === "instagram"
-    || sourceFromUrl(payload.canonical_url) === "instagram"
-    || sourceFromUrl(payload.url) === "instagram";
-}
 
 function isShortLivedSocialThumbnail(payload: LinkAddPayload) {
   return isTikTokPayload(payload) || isInstagramPayload(payload);
@@ -155,87 +90,10 @@ function stableSocialThumbnailKey(payload: LinkAddPayload, suggestionId: string)
   return `tiktok/${videoId}.jpg`;
 }
 
-function decodeHtmlEntities(value: string | null | undefined) {
-  if (!value) return null;
-  return value
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/\s+/g, " ")
-    .trim() || null;
-}
 
-function metaTagContent(html: string, keys: string[]) {
-  const wanted = new Set(keys.map((key) => key.toLowerCase()));
-  const tags = html.match(/<meta\b[^>]*>/gi) ?? [];
-  for (const tag of tags) {
-    const attrs = new Map<string, string>();
-    for (const match of tag.matchAll(/\s([a-zA-Z:-]+)\s*=\s*["']([^"']*)["']/g)) {
-      attrs.set(match[1].toLowerCase(), match[2]);
-    }
-    const key = attrs.get("property") ?? attrs.get("name");
-    if (key && wanted.has(key.toLowerCase())) {
-      return decodeHtmlEntities(attrs.get("content"));
-    }
-  }
-  return null;
-}
 
-function titleTagContent(html: string) {
-  const match = html.match(/<title\b[^>]*>([\s\S]*?)<\/title>/i);
-  return decodeHtmlEntities(match?.[1]);
-}
 
-async function fetchTikTokOEmbed(payload: LinkAddPayload) {
-  const url = payload.canonical_url ?? payload.url;
-  if (!url) return null;
-  const endpoint = `https://www.tiktok.com/oembed?url=${encodeURIComponent(url)}`;
-  const response = await fetch(endpoint, {
-    headers: { "user-agent": "Subskills/1.0 (+https://subskills.xyz)" },
-    signal: AbortSignal.timeout(10_000),
-  });
-  if (!response.ok) {
-    console.warn("apply_suggestion_tiktok_oembed_failed", {
-      status: response.status,
-      url,
-    });
-    return null;
-  }
-  return await response.json() as {
-    title?: string;
-    thumbnail_url?: string;
-    author_name?: string;
-    author_url?: string;
-  };
-}
 
-async function fetchOpenGraph(payload: LinkAddPayload) {
-  const url = payload.canonical_url ?? payload.url;
-  if (!url) return null;
-  const response = await fetch(url, {
-    headers: {
-      accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-      "user-agent": "Subskills/1.0 (+https://subskills.xyz)",
-    },
-    signal: AbortSignal.timeout(10_000),
-  });
-  if (!response.ok) {
-    console.warn("apply_suggestion_og_fetch_failed", {
-      status: response.status,
-      url,
-    });
-    return null;
-  }
-
-  const html = await response.text();
-  return {
-    title: metaTagContent(html, ["og:title", "twitter:title"]) ?? titleTagContent(html),
-    description: metaTagContent(html, ["og:description", "twitter:description", "description"]),
-    thumbnail_url: metaTagContent(html, ["og:image", "twitter:image", "twitter:image:src"]),
-  };
-}
 
 function cleanHandle(value: unknown) {
   if (typeof value !== "string") return null;
@@ -363,91 +221,19 @@ async function enrichBareLinkPayloadIfNeeded(suggestionId: string) {
   if (error) throw error;
   if (suggestion.type !== "LINK_ADD") return;
 
+  // The enrichment itself lives in _shared/link-enrichment.ts so that
+  // submit-suggestion's watch-later-only path can use it too (M134). This
+  // wrapper is only the suggestion-row read/write around it.
   const payload = suggestion.payload_json as LinkAddPayload;
-  // Anything the collector produced already has these; only bare human links need it.
-  if (payload.title && (payload.thumbnail_url || payload.thumbnail_storage_path)) return;
+  const enriched = await enrichLinkPayload(payload);
+  if (!enriched) return;
 
-  const videoId = youtubeVideoIdFromUrl(payload.canonical_url) ?? youtubeVideoIdFromUrl(payload.url);
-  if (!videoId && isTikTokPayload(payload)) {
-    const body = await fetchTikTokOEmbed(payload);
-    if (!body) return;
-    await updateSuggestionPayload(suggestionId, {
-      ...payload,
-      title: payload.title ?? body.title ?? null,
-      thumbnail_url: payload.thumbnail_url ?? body.thumbnail_url ?? null,
-      content_type: payload.content_type ?? "video",
-      creator_handle: payload.creator_handle ?? body.author_name ?? null,
-      creator_url: payload.creator_url ?? body.author_url ?? null,
-      creator_platform: payload.creator_platform ?? "tiktok",
-      scoring_strategy: payload.scoring_strategy ?? "engagement_authority",
-    });
-    console.info("apply_suggestion_tiktok_metadata_enriched", {
-      suggestion_id: suggestionId,
-      has_title: Boolean(payload.title ?? body.title),
-      has_thumbnail: Boolean(payload.thumbnail_url ?? body.thumbnail_url),
-    });
-    return;
-  }
-
-  if (!videoId && isInstagramPayload(payload)) {
-    const og = await fetchOpenGraph(payload);
-    if (!og) return;
-    await updateSuggestionPayload(suggestionId, {
-      ...payload,
-      title: payload.title ?? og.title,
-      description: payload.description ?? og.description,
-      thumbnail_url: payload.thumbnail_url ?? og.thumbnail_url,
-      content_type: payload.content_type ?? "video",
-      creator_platform: payload.creator_platform ?? "instagram",
-      scoring_strategy: payload.scoring_strategy ?? "engagement_authority",
-    });
-    console.info("apply_suggestion_instagram_metadata_enriched", {
-      suggestion_id: suggestionId,
-      has_title: Boolean(payload.title ?? og.title),
-      has_description: Boolean(payload.description ?? og.description),
-      has_thumbnail: Boolean(payload.thumbnail_url ?? og.thumbnail_url),
-    });
-    return;
-  }
-
-  if (!videoId) return;
-
-  const watchUrl = `https://www.youtube.com/watch?v=${videoId}`;
-  const endpoint = `https://www.youtube.com/oembed?url=${encodeURIComponent(watchUrl)}&format=json`;
-
-  const response = await fetch(endpoint, { signal: AbortSignal.timeout(10_000) });
-  if (!response.ok) {
-    // 404 here is meaningful: private, deleted or bogus video id.
-    console.warn("apply_suggestion_oembed_failed", {
-      suggestion_id: suggestionId,
-      video_id: videoId,
-      status: response.status,
-    });
-    return;
-  }
-
-  const body = await response.json() as {
-    title?: string;
-    thumbnail_url?: string;
-    author_name?: string;
-  };
-
-  await updateSuggestionPayload(suggestionId, {
-    ...payload,
-    title: body.title ?? null,
-    // Fall back to the deterministic thumbnail path; oEmbed always has one, but the
-    // link is useless without an image and this URL is derivable from the id alone.
-    thumbnail_url: body.thumbnail_url ?? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
-    content_type: "video",
-    creator_handle: payload.creator_handle ?? body.author_name ?? null,
-    creator_platform: payload.creator_platform ?? "youtube",
-    scoring_strategy: payload.scoring_strategy ?? "transcript_llm",
-  });
-
+  await updateSuggestionPayload(suggestionId, enriched);
   console.info("apply_suggestion_link_metadata_enriched", {
     suggestion_id: suggestionId,
-    video_id: videoId,
-    has_title: Boolean(body.title),
+    platform: enriched.creator_platform ?? null,
+    has_title: Boolean(enriched.title),
+    has_thumbnail: Boolean(enriched.thumbnail_url),
   });
 }
 
