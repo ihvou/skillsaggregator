@@ -44,12 +44,9 @@ interface ResourceCardProps {
 }
 
 /**
- * The right-hand metadata column owns this height (3 visual rows: source+pill,
- * title line 1, title line 2). The 16/9 thumbnail then stretches to match it via
- * `alignSelf: "stretch"` + `aspectRatio`, so 90 -> 160x90.
- *
- * The actions no longer live in this column — see the action-bar comment in the
- * render below for why they could not stay.
+ * The right-hand metadata column owns this height (4 visual rows: source+pill,
+ * title line 1, title line 2, contributor+actions). The 16/9 thumbnail then
+ * stretches to match it via `alignSelf: "stretch"` + `aspectRatio`, so 90 -> 160x90.
  */
 const BODY_HEIGHT = 90;
 
@@ -88,9 +85,9 @@ function statusLabel(status: SkillResource["catalog_status"]) {
 /**
  * Skill-screen resource row.
  *  - 16/9 thumbnail on the left at row height
- *  - Right column: top meta row (source + level pill), 2-line title, contributor
- *  - Full-width action bar underneath, in this order:
- *    Watch later | Watched | (spacer) | Upvote | score | Downvote
+ *  - Right column: top meta row (source + level pill), 2-line title, then the
+ *    action row in two groups —
+ *    Watch later | Watched  ......  Upvote | score | Downvote
  *  - Thumbnail/title taps open the URL; long-press opens the action sheet, which
  *    is where Report lives. Action buttons are siblings rather than nested inside
  *    a card-wide press handler.
@@ -404,16 +401,11 @@ export function ResourceCard({
                 </View>
               ) : null}
             </View>
-          </View>
-        </View>
-      </View>
-
-      {/* Full-width action bar. It lives BELOW the thumbnail/body row rather than
-          inside the right-hand column because the column is only ~148pt wide at
-          360dp, and four 44pt targets plus the score need ~198pt. In-column it
-          could never reach the minimum target size — that constraint, not
-          styling taste, is why the row moved. */}
-      <View style={styles.actions}>
+            {/* The actions stay in the right-hand column and spread across its
+                full width: each button is flex:1 so they divide the available
+                space evenly, flush, with no gap for a tap to fall between.
+                Removing Report (M125) is what buys the room. */}
+            <View style={styles.actions}>
         <Pressable
           onPress={toggleSaved}
           style={styles.iconTap}
@@ -479,7 +471,10 @@ export function ResourceCard({
             fill={vote === -1 ? colors.ink : "transparent"}
             strokeWidth={2}
           />
-        </Pressable>
+              </Pressable>
+            </View>
+          </View>
+        </View>
       </View>
 
       <ResourceActionSheet
@@ -506,9 +501,7 @@ export function ResourceCard({
 }
 
 const styles = StyleSheet.create({
-  card: {
-    gap: spacing.xs,
-  },
+  card: {},
   row: {
     flexDirection: "row",
     alignItems: "stretch",
@@ -597,11 +590,12 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.xs,
-    minHeight: 22,
+    minHeight: 36,
   },
   metaLine: {
-    flex: 1,
+    flexShrink: 1,
     minWidth: 0,
+    maxWidth: 92,
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
@@ -621,13 +615,13 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: "800",
   },
+  // Takes the rest of the column so the four buttons can divide it evenly.
   actions: {
-    flexShrink: 0,
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
-    // No gap. Each target is a full 44pt wide and they sit flush, so the whole
-    // strip is live — there is no dead space between buttons for a tap to fall
-    // into, and no need for hitSlop to paper over one.
+    // No gap: the buttons sit flush and each is flex:1, so the whole strip is
+    // live and there is no dead space between them for a tap to fall into.
     gap: 0,
   },
   // 44x44 is the iOS HIG / Android Material minimum. The previous 20x28 relied
@@ -641,10 +635,20 @@ const styles = StyleSheet.create({
   // full recommended size, and slop would only recreate the overlap at a
   // larger scale.
   iconTap: {
-    width: 44,
-    height: 44,
+    width: 40,
+    minHeight: 36,
+    // Fixed width so the two groups keep their shape, but shrinkable so a
+    // 320dp screen compresses them instead of overflowing the column.
+    flexShrink: 1,
     alignItems: "center",
     justifyContent: "center",
+  },
+  // Splits the row into two groups: Watch later + Watched sit left, next to the
+  // thumbnail; the vote cluster sits hard right. Reads as two intents rather
+  // than one undifferentiated strip.
+  actionSpacer: {
+    flex: 1,
+    minWidth: 4,
   },
   // 0.55 is the floor: below it the title stops passing contrast against the
   // cream surface. The filled check icon still carries the state non-visually,
@@ -654,11 +658,6 @@ const styles = StyleSheet.create({
   },
   dimmedTitle: {
     color: colors.muted,
-  },
-  // Pushes the voting cluster to the right edge, so save/watched and the vote
-  // controls read as two groups rather than one undifferentiated strip.
-  actionSpacer: {
-    flex: 1,
   },
   scoreText: {
     minWidth: 22,

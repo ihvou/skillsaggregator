@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check } from "lucide-react-native";
 import type { SkillLevel } from "@skillsaggregator/shared";
 import { PageHeader } from "@/components/PageHeader";
@@ -19,6 +19,7 @@ const LEVELS: Array<{ value: SkillLevel; label: string }> = [
 
 export default function SuggestScreen() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { category, skill, url: initialUrl } = useLocalSearchParams<{ category?: string; skill?: string; url?: string }>();
   const { profile, ensureSession } = useAuth();
   const [categorySlug, setCategorySlug] = useState(category ?? "badminton");
@@ -125,20 +126,26 @@ export default function SuggestScreen() {
       const body = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(body.error ?? "Suggestion failed.");
       const saved = Boolean(body.saved);
-      const message = body.duplicate && saved
-        ? "Already submitted; added to Watch later."
-        : body.duplicate
-          ? "Already submitted; the existing item is still in review."
-          : saved && suggestToCatalog
-            ? "Saved to Watch later and submitted for review."
-            : saved
-              ? "Saved to Watch later."
-              : "Submitted for review.";
-      Alert.alert(
-        "Thanks",
-        message,
-        [{ text: "OK", onPress: () => router.back() }],
-      );
+      // No success dialog. "Suggest" already tells the user the catalogue copy is
+      // reviewed rather than published, and a modal reading "Submitted for review"
+      // lands as a refusal even when the link WAS saved to their own list.
+      // Failures still alert, in the catch below.
+      if (saved) {
+        // Put it in Watch later now rather than on the next cold fetch, so the
+        // list the user checks immediately afterwards already has it.
+        void queryClient.invalidateQueries({ queryKey: ["user-library"] });
+      }
+      console.info("[suggest] submitted", {
+        saved,
+        suggestToCatalog,
+        duplicate: Boolean(body.duplicate),
+      });
+      // This screen is reachable with NO back stack — a share-target launch from
+      // another app, or a deep link — and router.back() is a no-op there, which
+      // strands the user on a form they have already submitted. Send them to the
+      // Library instead, which is also where a saved link just landed.
+      if (router.canGoBack()) router.back();
+      else router.replace("/(tabs)/library");
     } catch (error) {
       Alert.alert("Suggestion failed", error instanceof Error ? error.message : String(error));
     } finally {
@@ -186,7 +193,7 @@ export default function SuggestScreen() {
 
           <View style={styles.intentGroup}>
             <ToggleRow
-              label="Add to Watch later"
+              label="Add to my Watch later"
               value={addToWatchLater}
               onChange={() => setAddToWatchLater((current) => !current)}
             />
