@@ -21,6 +21,7 @@ import { SkeletonList } from "@/components/SkeletonList";
 import { SortFilterSheet } from "@/components/SortFilterSheet";
 import { getSkillResources } from "@/lib/data";
 import { setLastSeenSkill } from "@/lib/localState";
+import { readCachedSkillResources, writeCachedSkillResources } from "@/lib/categoryCache";
 import { colors, spacing } from "@/lib/theme";
 
 const SORT_LABELS: Record<ResourceSort, string> = {
@@ -58,14 +59,29 @@ export default function SkillDetailScreen() {
   const [source, setSource] = useState<ResourceSourceFilter>("all");
   const [menuVisible, setMenuVisible] = useState(false);
 
+  // Last payload from disk, so the screen paints instantly instead of showing a
+  // skeleton for the length of a cold round trip. The category screen has done
+  // this for a while; the skill screen did not, which is why it felt slower.
+  const cachedSkillData = useMemo(
+    () => readCachedSkillResources(categorySlug, skillSlug),
+    [categorySlug, skillSlug],
+  );
+
   const query = useQuery({
     queryKey: ["skill", categorySlug, skillSlug],
     queryFn: async () => {
       const data = await getSkillResources(categorySlug, skillSlug, "popular");
       if (data.skill) setLastSeenSkill(data.skill.id);
+      writeCachedSkillResources(categorySlug, skillSlug, data);
       return data;
     },
     staleTime: 120000,
+    ...(cachedSkillData
+      ? {
+          initialData: cachedSkillData.data as typeof cachedSkillData.data,
+          initialDataUpdatedAt: cachedSkillData.updatedAt,
+        }
+      : {}),
   });
 
   const resources = useMemo(() => {
@@ -78,11 +94,16 @@ export default function SkillDetailScreen() {
   const skillData = query.data?.skill ?? null;
   const summary = query.data?.summary ?? null;
 
+  // Only describe the view when it is NOT the default. "Popular" on every skill
+  // page told the user nothing and cost a line of vertical space on the screen
+  // where the resource list matters most; a non-default sort or an active filter
+  // still shows, so the header keeps signalling when the list is filtered.
   const headerSubtitle = useMemo(() => {
-    const parts: string[] = [SORT_LABELS[sort]];
+    const parts: string[] = [];
+    if (sort !== "popular") parts.push(SORT_LABELS[sort]);
     if (level !== "all") parts.push(LEVEL_LABELS[level]);
     if (source !== "all") parts.push(SOURCE_LABELS[source]);
-    return parts.join(" / ");
+    return parts.length > 0 ? parts.join(" / ") : undefined;
   }, [sort, level, source]);
 
   return (

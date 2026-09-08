@@ -19,7 +19,29 @@ export default function RootLayout() {
     track("app_open");
   }, []);
 
-  const [queryClient] = useState(() => new QueryClient());
+  const [queryClient] = useState(
+    () =>
+      new QueryClient({
+        defaultOptions: {
+          queries: {
+            // Measured against production: the SAME query costs 20-35ms on a warm
+            // connection and 480-1180ms cold, so what hurts is the number of cold
+            // round trips, not query cost. Defaults here cut the avoidable ones.
+            //
+            // v5 ships staleTime 0, which refetches on every mount — screens that
+            // did not set their own were re-hitting the network on each visit.
+            staleTime: 60_000,
+            // v5 ships 5 minutes, so navigating away for longer threw the payload
+            // out and the next visit paid full price. An hour costs only memory.
+            gcTime: 60 * 60 * 1000,
+            // A retry doubles the wait on a genuinely dead network, and the
+            // screens already render a cached or empty state.
+            retry: 1,
+            refetchOnReconnect: true,
+          },
+        },
+      }),
+  );
 
   return (
     <GestureHandlerRootView style={styles.root}>

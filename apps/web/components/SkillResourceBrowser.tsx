@@ -43,7 +43,10 @@ export function SkillResourceBrowser({ category, skill, resources, summarySlot }
     );
     return sortResources(next, sort);
   }, [level, resources, sort, source]);
-  const subtitleParts: string[] = [`${category.name}`, SORT_LABELS[sort]];
+  // Same as mobile: the default sort is not worth a line. Category stays because
+  // on the web the skill page can be entered straight from search or a link.
+  const subtitleParts: string[] = [`${category.name}`];
+  if (sort !== "popular") subtitleParts.push(SORT_LABELS[sort]);
   if (level) subtitleParts.push(LEVEL_LABELS[level]);
   if (source !== "all") subtitleParts.push(SOURCE_LABELS[source]);
 
