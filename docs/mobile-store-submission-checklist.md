@@ -331,6 +331,82 @@ copy on that page in step with `/privacy`; a mismatch between the two is what an
 Then do checklist item 11 — install from Play on a real device. That is the first time the
 minified release build runs from a Play-signed, per-device split APK.
 
+## App Store Connect — every value you get asked for
+
+The Play Console section above had this; the App Store side did not, which is
+why the **New App** dialog came up unanswered. Written down for the same reason:
+two of these are permanent.
+
+### The "New App" dialog
+
+| Field | Value | Notes |
+|---|---|---|
+| **Platforms** | ☑ **iOS** only | Leave macOS / tvOS / visionOS unticked. Adding a platform later is easy; a platform you never ship sits there looking unfinished. |
+| **Name** | `Subskills` | 30-char limit, 9 used. This is the App Store display name and must be unique across the whole store. Changeable later, but only between versions. |
+| **Primary Language** | **English (U.K.)** | Must match Play's default language, set to English (United Kingdom) for the same reason: the copy is British — `organised` ×2, `catalogue` ×4, `defence` ×2, and no American variants. Mixing en-GB on one store with en-US on the other means one listing reads as a typo to its own audience. |
+| **Bundle ID** | `xyz.subskills.app` | Must already be registered — see the trap below. |
+| **SKU** | `subskills-ios` | **Permanent, and never shown to anyone.** It is your own reference for reporting. Any stable string is fine; do not put anything secret in it. |
+| **User Access** | **Full Access** | Only matters on a team — it controls which members can see the app. On a one-person account either works; Full Access avoids surprises later. |
+
+### The trap: Bundle ID must exist before it appears
+
+The Bundle ID dropdown lists **only identifiers already registered** in
+Certificates, Identifiers & Profiles. On a fresh account `xyz.subskills.app`
+will not be there, and the dialog gives no hint why.
+
+Register it first — Certificates, Identifiers & Profiles → Identifiers → **+**
+→ App IDs → App → Description `Subskills`, Bundle ID **Explicit** =
+`xyz.subskills.app` — and **tick the "Sign in with Apple" capability while you
+are on that screen.** The app declares `usesAppleSignIn: true` and offers Google
+sign-in, which makes Sign in with Apple a hard App Review requirement; adding
+the capability afterwards means regenerating provisioning profiles.
+
+EAS can create the identifier itself on the first `eas build --platform ios`,
+which is the lower-effort path if you have not made it yet — but it will not
+retro-fit the capability onto an identifier you created by hand without it.
+
+### Capabilities: tick exactly one
+
+The Register-an-App-ID page lists ~150 capabilities. This app needs **one**.
+
+| Capability | Needed | Why |
+|---|---|---|
+| **Sign in with Apple** | **YES** | `usesAppleSignIn: true` + the `expo-apple-authentication` plugin, and App Review requires it once the app offers Google sign-in. |
+| App Groups | No | The iOS share extension builds a `subskills://` URL and opens the app with it (`plugins/withShareTargets.js:194`). It never writes to a shared container, so there is nothing to share a group for. |
+| Push Notifications | No | No `expo-notifications`, no push registration anywhere in the app. |
+| Associated Domains | No | Deep links use the custom `subskills://` scheme, not universal links. Revisit only if `applinks:` is ever added. |
+| everything else | No | Nothing in the config or code touches them. |
+
+Do not tick extras "just in case": several add entitlements that raise review
+questions, and a few (HealthKit, CarPlay) require a written justification.
+
+### Two App IDs, not one
+
+The share extension is a separate build target with its own identifier
+(`withShareTargets.js:288`), and it is easy to miss because the app builds fine
+locally without it registered:
+
+| Identifier | Capabilities |
+|---|---|
+| `xyz.subskills.app` | Sign in with Apple |
+| `xyz.subskills.app.share` | **none** |
+
+`eas build --platform ios` registers both and enables the capability itself,
+which is the lower-effort and less error-prone path. Registering by hand is only
+worth it if the records must exist before the first build.
+
+### Identifiers, and which of them are secret
+
+| | Value | Safe to commit? |
+|---|---|---|
+| Apple Team ID | `T3J6K9GV2B` | Yes — it appears in every provisioning profile. |
+| Bundle ID | `xyz.subskills.app` | Yes — user-visible. |
+| ASC App ID (`ascAppId`) | *(after the app record exists)* — App Store Connect → App Information → General → "Apple ID", a number like `6478123456` | Yes — it is in your public App Store URL. |
+| Apple ID (`appleId`) | the account email you enrolled with | **No.** This repo is public; an Apple ID email is half of an account-takeover attempt. Use the `EXPO_APPLE_ID` env var, or let `eas submit` prompt. |
+
+None of these are needed for `eas build --platform ios` — EAS handles
+certificates and profiles itself. They are only for `eas submit`.
+
 ## Runbook A — Android production AAB → Play
 
 Preview APKs (what we sideload) are **not** what Play accepts. Play requires an **AAB**; it generates per-device APKs from it. The `production` profile builds an AAB (`buildType: "app-bundle"`, `autoIncrement: true`) in *release* configuration — R8 minification, resource shrinking, Play App Signing. Genuinely different from the preview APK, so it must be smoke-tested even though the APK works. An AAB cannot be sideloaded, so building it and closed testing are one workflow.
