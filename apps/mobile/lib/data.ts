@@ -579,15 +579,40 @@ export async function getSkillsForCategory(categorySlug: string): Promise<{
     return { category, skills: category ? withResourceSummaries(fallbackSkillsForCategory(category.slug)) : [] };
   }
 
-  const category = await getCategory(categorySlug);
-  if (!category) return { category: null, skills: [] };
+  // One round trip for the category AND its skills, via an embedded inner join
+  // on the slug. This used to be two sequential queries — getCategory, then
+  // skills by category_id — and on this project each round trip costs 400-1200ms
+  // regardless of payload (measured: a 0.3KB category lookup took 776ms), so the
+  // extra hop was pure latency. The join costs ~19KB against 12KB for skills
+  // alone, which is nothing next to a whole round trip.
+  // supabase-js cannot infer the shape of an embedded select built from a
+  // string, so the row type is declared here rather than fought with generics.
+  type SkillRowWithCategory = {
+    id: string;
+    category_id: string;
+    slug: string;
+    name: string;
+    description: string | null;
+    subskill_difficulty: number | null;
+    learning_order: number | null;
+    updated_at: string | null;
+    category: CategorySummary | null;
+  };
 
-  const { data } = await supabase
+  const { data: rawRows } = await supabase
     .from("skills")
-    .select("id, category_id, slug, name, description, subskill_difficulty, learning_order, updated_at")
-    .eq("category_id", category.id)
+    .select(
+      "id, category_id, slug, name, description, subskill_difficulty, learning_order, updated_at," +
+        " category:categories!inner(id, slug, name, description, updated_at)",
+    )
+    .eq("category.slug", categorySlug)
     .eq("is_active", true)
     .order("name");
+
+  const data = (rawRows ?? []) as unknown as SkillRowWithCategory[];
+  const embeddedCategory = data[0]?.category ?? null;
+  const category = embeddedCategory ?? fallbackCategoryBySlug(categorySlug);
+  if (!category) return { category: null, skills: [] };
 
   const skillIds = (data ?? []).map((skill) => skill.id);
   const { data: resourceCounts } = skillIds.length
@@ -601,7 +626,7 @@ export async function getSkillsForCategory(categorySlug: string): Promise<{
 
   return {
     category,
-    skills: (data ?? []).map((skill) => ({
+    skills: data.map(({ category: _embedded, ...skill }) => ({
       ...skill,
       category_slug: category.slug,
       resource_count: counts.get(skill.id) ?? 0,
