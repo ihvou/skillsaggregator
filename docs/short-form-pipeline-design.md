@@ -222,7 +222,13 @@ the correct mechanism: the ranking answers "which is the better tutorial", the f
 answers "which suits me right now". Those are different questions and should not be
 conflated in one ordering.
 
-**One real gap if a duration filter is ever wanted:** `duration_seconds` is null on every
-YouTube link and set on only 114 of 142 TikToks. `yt-dlp` returns it, so it is cheap to
-capture going forward, but the existing catalogue has none of it — so "show me clips under
-2 minutes" is not currently answerable, on any platform.
+**A duration filter is explicitly out of scope.** The source filter already separates short
+from long in practice, because TikTok and Reels *are* the short ones — a duration control
+would only distinguish a 3-minute YouTube tutorial from a 12-minute one, which nobody has
+asked for.
+
+Worth knowing if it is ever wanted: `duration_seconds` is null on all 19,127 YouTube links
+and set on only 114 of 142 TikToks, so it is not answerable today on any platform. `yt-dlp`
+returns the field for free, so **populate it on new links as they are collected** — that
+costs nothing now and avoids a backfill over the whole catalogue later. Do not backfill the
+existing rows for this; there is no consumer.
