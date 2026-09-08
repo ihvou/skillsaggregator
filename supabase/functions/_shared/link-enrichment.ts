@@ -97,28 +97,44 @@ export function isInstagramPayload(payload: LinkAddPayload) {
 function decodeHtmlEntities(value: string | null | undefined) {
   if (!value) return null;
   return value
+    // Numeric entities first: Instagram encodes "@" as &#064; and the bullet in
+    // "… • Instagram reel" as &#x2022;. Without this the stored title carries raw
+    // entity text, which then renders literally on the card.
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCodePoint(parseInt(hex, 16)))
+    .replace(/&#(\d+);/g, (_, dec) => String.fromCodePoint(parseInt(dec, 10)))
     .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&amp;/g, "&")
+    .replace(/&apos;/g, "'")
+    .replace(/&nbsp;/g, " ")
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
+    // &amp; last, so "&amp;lt;" does not become "<".
+    .replace(/&amp;/g, "&")
     .replace(/\s+/g, " ")
     .trim() || null;
 }
 
 function metaTagContent(html: string, keys: string[]) {
-  const wanted = new Set(keys.map((key) => key.toLowerCase()));
   const tags = html.match(/<meta\b[^>]*>/gi) ?? [];
+  const found = new Map<string, string>();
   for (const tag of tags) {
     const attrs = new Map<string, string>();
     for (const match of tag.matchAll(/\s([a-zA-Z:-]+)\s*=\s*["']([^"']*)["']/g)) {
       attrs.set(match[1].toLowerCase(), match[2]);
     }
-    // Order is not guaranteed: Instagram emits content= before property= on some
-    // tags, so read the attribute map rather than assuming a sequence.
-    const key = attrs.get("property") ?? attrs.get("name");
-    if (key && wanted.has(key.toLowerCase())) {
-      return decodeHtmlEntities(attrs.get("content"));
+    // Attribute order is not guaranteed: Instagram emits content= before
+    // property= on some tags, so read the map rather than assuming a sequence.
+    const key = (attrs.get("property") ?? attrs.get("name"))?.toLowerCase();
+    const content = attrs.get("content");
+    if (key && content !== undefined && !found.has(key)) found.set(key, content);
+  }
+  // Walk the CALLER's preference order, not document order. Instagram emits
+  // twitter:title (just "Name (@handle) • Instagram reel") before og:title (the
+  // full caption); scanning document-first silently picked the weaker one.
+  for (const key of keys) {
+    const hit = found.get(key.toLowerCase());
+    if (hit !== undefined) {
+      const decoded = decodeHtmlEntities(hit);
+      if (decoded) return decoded;
     }
   }
   return null;
@@ -127,6 +143,28 @@ function metaTagContent(html: string, keys: string[]) {
 function titleTagContent(html: string) {
   const match = html.match(/<title\b[^>]*>([\s\S]*?)<\/title>/i);
   return decodeHtmlEntities(match?.[1]);
+}
+
+// A page that is gone, private or age-gated still returns 200 with the platform's
+// own app shell, whose <title> is just the brand — Instagram serves
+// "<title>Instagram</title>" for a deleted reel. Storing that is worse than
+// storing nothing: a card titled "Instagram" looks like real metadata, so
+// nothing downstream knows to retry or fall back (M135).
+const PLATFORM_SHELL_TITLES = new Set([
+  "instagram",
+  "tiktok",
+  "tiktok - make your day",
+  "youtube",
+  "facebook",
+  "x",
+  "twitter",
+]);
+
+function usableTitle(value: string | null | undefined) {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  return PLATFORM_SHELL_TITLES.has(trimmed.toLowerCase()) ? null : trimmed;
 }
 
 async function fetchTikTokOEmbed(payload: LinkAddPayload) {
@@ -165,7 +203,7 @@ async function fetchOpenGraph(payload: LinkAddPayload) {
   }
   const html = await response.text();
   return {
-    title: metaTagContent(html, ["og:title", "twitter:title"]) ?? titleTagContent(html),
+    title: usableTitle(metaTagContent(html, ["og:title", "twitter:title"]) ?? titleTagContent(html)),
     description: metaTagContent(html, ["og:description", "twitter:description", "description"]),
     thumbnail_url: metaTagContent(html, ["og:image", "twitter:image", "twitter:image:src"]),
   };
