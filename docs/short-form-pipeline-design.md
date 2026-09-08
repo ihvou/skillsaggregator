@@ -133,6 +133,37 @@ A clip that fails the gate is not discarded — it stores no transcript and degr
 existing `metadata_fallback` scoring mode, which already applies a reduced relevance
 threshold for caption-less YouTube videos. No new handling needed.
 
+## Share-in must converge too — it has the same workaround
+
+A shared link does NOT currently reach the coach unless it is YouTube.
+`submit-suggestion` routes by platform:
+
+```ts
+function reviewLaneForSource(source: HumanLinkSource): ReviewLane {
+  return source === "youtube" ? "coach" : "founder";
+}
+```
+
+`founder` is the human review queue, and `0057`'s coach queue filters
+`coalesce(lsr.review_lane, 'coach') = 'coach'`, so short-form shares are invisible to the
+coach by design. That is correct today — they could not be transcribed, so there was nothing
+for the coach to judge and a human was the only option. It is the third instance of the same
+workaround, after `engagement_authority` and the missing transcript branch.
+
+It collapses to `return "coach";` once transcription exists. A shared reel then follows the
+identical path to a shared YouTube link: link row created, gap-filler sees no transcript,
+fetches and transcribes by platform, coach scores on content, publish gate decides.
+
+**Order matters.** Do not flip the lane before transcription works. A shared reel reaching
+the coach with no transcript gets scored on its title alone — reintroducing the exact
+metadata-scoring problem this design removes, through the share-in door. Land them together,
+or flip the lane second.
+
+**Also on the path:** `apply-suggestion` hardcodes `source: "youtube"` when it upserts
+`link_transcripts`, and derives `video_id` with `youtubeVideoIdFromUrl`. A TikTok or
+Instagram transcript would be stored mislabelled with a null video id. The column already
+supports other sources; only the writer assumes YouTube.
+
 ## Operational findings — the expensive ones
 
 **Instagram serves metadata only to a bot user agent.** This single fact produced two
