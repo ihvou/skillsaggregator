@@ -190,11 +190,39 @@ returning two clips instead of nine is not a failure; those users have two short
 they did not have before. BJJ and chess learners get YouTube, which is where their
 instruction actually is.
 
-## Open decision
+## Ranking — score everything the same way, and let it rank where it lands
 
-`ResourceSourceFilter` (`"all" | "youtube" | "tiktok" | "instagram"`) already exists in the
-shared types, so the filter plumbing is there. But on a skill page with 25 YouTube videos
-and 3 TikToks ranked by `combined_score`, short-form will sit below the fold. **Diversity
-the user cannot see does not serve the goal**, and a filter they have to find and click is
-weaker than surfacing one short clip high on the page. Ranking/presentation decision, not
-made here.
+Short-form scores low, and that is allowed to stand. Measured across 24,535 reviewed
+YouTube relations, using transcript length as the duration proxy (`duration_seconds` is
+null on all 19,127 YouTube links):
+
+```
+<1.2k chars (~90s)   n=1731   avg 0.18   45% published
+1.2-3k  (~2-4 min)   n=4519   avg 0.85   57%
+3-8k    (~4-10 min)  n=9514   avg 1.02   58%   <- peak
+8k+     (10 min+)    n=8771   avg 0.63   51%
+```
+
+Short-form clips land in the bottom bucket: the six Instagram reels transcribed at
+567-1,745 chars, the TikToks at 241-2,121.
+
+**Do not compensate for this in the ranking.** The obvious worry is that 0.18 is an
+artifact — a short transcript gives the coach less to be convinced by, so it hedges. The
+curve says otherwise: it is not monotonic. 10-minute-plus content drops back to 0.63, so
+the coach is not rewarding length, it is rewarding substance, and it penalises a rambling
+long video the same way it penalises a thin short one. That is the rubric working.
+
+A 40-second clip covering one cue genuinely offers less than a good 6-minute breakdown, and
+`combined_score` should say so. Boosting short-form to make it visible would misreport
+quality to every user in order to serve some users' format preference.
+
+Format preference is a FILTER, not a ranking. `ResourceSourceFilter`
+(`"all" | "youtube" | "tiktok" | "instagram"`) already exists in the shared types, which is
+the correct mechanism: the ranking answers "which is the better tutorial", the filter
+answers "which suits me right now". Those are different questions and should not be
+conflated in one ordering.
+
+**One real gap if a duration filter is ever wanted:** `duration_seconds` is null on every
+YouTube link and set on only 114 of 142 TikToks. `yt-dlp` returns it, so it is cheap to
+capture going forward, but the existing catalogue has none of it — so "show me clips under
+2 minutes" is not currently answerable, on any platform.
