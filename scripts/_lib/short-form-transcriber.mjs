@@ -22,6 +22,7 @@ import { existsSync, mkdirSync, rmSync, readdirSync, statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { promisify } from "node:util";
+import { setTimeout as delay } from "node:timers/promises";
 
 const run = promisify(execFile);
 
@@ -47,6 +48,8 @@ export const config = {
   // 5.7 and a music-only demo at 0.8. The floor sits between those bands.
   minCharsPerSecond: Number(process.env.COLLECT_SHORTFORM_MIN_CHARS_PER_SEC ?? 8),
   minChars: Number(process.env.COLLECT_SHORTFORM_MIN_CHARS ?? 200),
+  downloadRetries: Number(process.env.COLLECT_SHORTFORM_DOWNLOAD_RETRIES ?? 3),
+  downloadRetryBackoffMs: Number(process.env.COLLECT_SHORTFORM_DOWNLOAD_BACKOFF_MS ?? 6000),
 };
 
 export function shortFormPlatform(url) {
@@ -84,6 +87,13 @@ export async function ensureWhisperModel({ log = () => {} } = {}) {
   return path;
 }
 
+/** execFile rejects with an Error whose useful detail is on .stderr, not .message. */
+function toolError(prefix, error) {
+  const stderr = String(error?.stderr ?? "").trim().split("\n").filter(Boolean).pop() ?? "";
+  const base = error instanceof Error ? error.message : String(error);
+  return new Error(`${prefix}: ${stderr || base}`.slice(0, 400));
+}
+
 /**
  * instaloader lives in a venv under .collection/ rather than on PATH, for the
  * same reason the whisper model does: it is a dependency of this pipeline, not
@@ -107,11 +117,16 @@ export async function ensureInstaloader({ log = () => {} } = {}) {
 }
 
 /**
- * TikTok: `-f download` is the combined video+audio format. NOT `-x`, which
- * fails postprocessing with "unable to obtain file audio codec with ffprobe" and
- * silently leaves a VIDEO-ONLY file; and not the numbered formats
- * (bytevc1_540p_792787-0), which are split streams despite the format table
- * listing `aac` on them.
+ * TikTok: ask for a format that HAS an audio codec, rather than naming one.
+ *
+ * Two dead ends, both of which look like they work:
+ *   -x            fails postprocessing with "unable to obtain file audio codec
+ *                 with ffprobe" and silently leaves a VIDEO-ONLY file.
+ *   -f download   the watermarked combined format. Serves audio for some videos
+ *                 and 403 Forbidden for others — 7 of 10 in the first backlog
+ *                 batch failed on it.
+ * `b[acodec!=none]` states the requirement instead of guessing at a format name,
+ * with bv*+ba as the merge fallback. Verified across h264 and h265 variants.
  *
  * Instagram: instaloader is the only downloader that works anonymously. yt-dlp
  * fails with "login required" and gallery-dl redirects to the login page;
@@ -122,18 +137,39 @@ async function downloadMedia(url, dir, { log } = {}) {
   mkdirSync(dir, { recursive: true });
 
   if (platform === "tiktok") {
-    await run(config.ytDlpBin, ["-f", "download", "--no-warnings", "-o", join(dir, "clip.%(ext)s"), url], {
-      timeout: config.downloadTimeoutMs,
-      maxBuffer: 8 * 1024 * 1024,
-    });
+    // TikTok throttles by returning HTTP errors on the media CDN rather than
+    // blocking outright, and it is not deterministic: the same URL can serve a
+    // clip, then 403, then 404 within minutes. Observed repeatedly while
+    // building this. Retry with linear backoff rather than treating a transient
+    // status as "this video is gone" — each abandoned download discards a
+    // candidate that already passed discovery.
+    let lastError = null;
+    for (let attempt = 0; attempt < config.downloadRetries; attempt += 1) {
+      if (attempt > 0) await delay(config.downloadRetryBackoffMs * attempt);
+      try {
+        await run(config.ytDlpBin, [
+          "-f", "b[acodec!=none]/bv*+ba/b", "--no-warnings",
+          "-o", join(dir, "clip.%(ext)s"), url,
+        ], { timeout: config.downloadTimeoutMs, maxBuffer: 8 * 1024 * 1024 });
+        lastError = null;
+        break;
+      } catch (error) {
+        lastError = toolError("yt-dlp", error);
+      }
+    }
+    if (lastError) throw lastError;
   } else if (platform === "instagram") {
     const code = instagramShortcode(url);
     if (!code) throw new Error(`no Instagram shortcode in ${url}`);
     const instaloader = await ensureInstaloader({ log });
-    await run(instaloader, [
-      "--no-metadata-json", "--no-compress-json", "--quiet",
-      `--dirname-pattern=${dir}`, "--", `-${code}`,
-    ], { timeout: config.downloadTimeoutMs, maxBuffer: 8 * 1024 * 1024 });
+    try {
+      await run(instaloader, [
+        "--no-metadata-json", "--no-compress-json", "--quiet",
+        `--dirname-pattern=${dir}`, "--", `-${code}`,
+      ], { timeout: config.downloadTimeoutMs, maxBuffer: 8 * 1024 * 1024 });
+    } catch (error) {
+      throw toolError("instaloader", error);
+    }
   } else {
     throw new Error(`unsupported short-form url: ${url}`);
   }
@@ -141,6 +177,21 @@ async function downloadMedia(url, dir, { log } = {}) {
   const media = readdirSync(dir).filter((name) => name.endsWith(".mp4")).sort();
   if (!media.length) throw new Error(`download produced no mp4 in ${dir}`);
   return join(dir, media[0]);
+}
+
+/**
+ * Whether the download actually contains sound. A video-only file is the
+ * signature failure here — ffmpeg produces an empty wav from it, whisper
+ * returns a few characters, and the clip gets rejected as "too_short" as though
+ * it were a silent demo. That misattributes a download bug as a content
+ * property, so check explicitly and fail with a distinguishable reason.
+ */
+async function hasAudioStream(mediaPath) {
+  const { stdout } = await run(config.ffprobeBin, [
+    "-v", "error", "-select_streams", "a",
+    "-show_entries", "stream=codec_type", "-of", "csv=p=0", mediaPath,
+  ], { timeout: 30_000 });
+  return String(stdout).includes("audio");
 }
 
 async function extractAudio(mediaPath, wavPath) {
@@ -187,6 +238,9 @@ export async function transcribeShortForm(url, { modelPath, log = () => {} } = {
 
   try {
     const media = await downloadMedia(url, dir, { log });
+    if (!(await hasAudioStream(media))) {
+      return { ok: false, reason: "download_had_no_audio", text: "", seconds: 0 };
+    }
     const wav = join(dir, "audio.wav");
     const seconds = await extractAudio(media, wav);
     if (!seconds) return { ok: false, reason: "no_audio_stream", text: "", seconds: 0 };
