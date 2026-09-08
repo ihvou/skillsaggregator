@@ -71,8 +71,22 @@ function supportedHumanLinkSource(value: string): HumanLinkSource | null {
   return null;
 }
 
-function reviewLaneForSource(source: HumanLinkSource): ReviewLane {
-  return source === "youtube" ? "coach" : "founder";
+function reviewLaneForSource(_source: HumanLinkSource): ReviewLane {
+  // Everything the coach can read goes to the coach.
+  //
+  // This used to be `source === "youtube" ? "coach" : "founder"`, routing every
+  // shared TikTok and Reel to manual review. That was correct while short-form
+  // could not be transcribed — the coach would have been judging a title — but
+  // it is the same workaround as the engagement_authority rubric, in a different
+  // place, and it dissolves for the same reason: short-form now gets a whisper
+  // transcript via scripts/fetch-shortform-transcripts.mjs.
+  //
+  // Safe only because 0058 landed first. Transcription happens out of band, so
+  // without it a reel shared at 10:00 could be served to the coach at 10:05 and
+  // scored on its title before the transcript arrived. 0058 holds short-form
+  // back until it has a transcript, bounded to 24h so a music-only clip that can
+  // never be transcribed still gets reviewed rather than parked forever.
+  return "coach";
 }
 
 function validateHumanLinkUrl(value: string) {

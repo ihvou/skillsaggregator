@@ -133,10 +133,23 @@ async function persistTranscriptFromEvidenceIfNeeded(suggestionId: string) {
   }
 
   const payload = suggestion.payload_json as LinkAddPayload;
+  // `source` used to be the literal "youtube" and `video_id` came only from the
+  // YouTube URL helpers — correct while YouTube was the only platform that could
+  // produce a transcript, wrong now that short-form can. A TikTok transcript
+  // arriving here would have been stored labelled "youtube" with a null id.
+  // Reuses the platform predicates the enrichment path already relies on rather
+  // than adding a second, drifting definition of "is this a TikTok".
+  const source = isTikTokPayload(payload)
+    ? "tiktok"
+    : isInstagramPayload(payload)
+      ? "instagram"
+      : "youtube";
   const videoId =
     evidenceString(evidence, "video_id")
     ?? youtubeVideoIdFromUrl(payload.canonical_url)
-    ?? youtubeVideoIdFromUrl(payload.url);
+    ?? youtubeVideoIdFromUrl(payload.url)
+    ?? tiktokVideoIdFromUrl(payload.canonical_url)
+    ?? tiktokVideoIdFromUrl(payload.url);
   const provider = transcriptProviderFromEvidence(evidence);
   const transcriptHash = await sha256Hex(transcriptText);
 
@@ -145,7 +158,7 @@ async function persistTranscriptFromEvidenceIfNeeded(suggestionId: string) {
     .upsert(
       {
         link_id: suggestion.link_id,
-        source: "youtube",
+        source,
         provider,
         video_id: videoId,
         language: "en",
