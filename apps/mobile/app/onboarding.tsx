@@ -10,6 +10,7 @@ import {
   setOnboardingInterests,
 } from "@/lib/localState";
 import { colors, radius, spacing, typography } from "@/lib/theme";
+import { track } from "@/lib/analytics";
 
 const slides = [
   {
@@ -59,6 +60,13 @@ export default function OnboardingScreen() {
   function finish(nextInterests = interests) {
     setOnboardingInterests(nextInterests);
     setOnboardingCompleted(true);
+    // `skipped` distinguishes "got through it" from "dismissed it", which is the
+    // difference between an onboarding that works and one people escape.
+    track(nextInterests.length > 0 ? "onboarding_completed" : "onboarding_skipped", {
+      categories: nextInterests.length,
+      last_slide: index + 1,
+    });
+    if (nextInterests.length > 0) track("categories_selected", { count: nextInterests.length });
     router.replace("/");
   }
 

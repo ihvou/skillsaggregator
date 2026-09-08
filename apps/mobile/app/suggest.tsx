@@ -10,6 +10,7 @@ import { SkeletonList } from "@/components/SkeletonList";
 import { getCategories, getSkillsForCategory } from "@/lib/data";
 import { useAuth } from "@/lib/auth";
 import { colors, radius, spacing, typography } from "@/lib/theme";
+import { track } from "@/lib/analytics";
 
 const LEVELS: Array<{ value: SkillLevel; label: string }> = [
   { value: "beginner", label: "Beginner" },
@@ -135,6 +136,11 @@ export default function SuggestScreen() {
         // list the user checks immediately afterwards already has it.
         void queryClient.invalidateQueries({ queryKey: ["user-library"] });
       }
+      track("suggestion_submitted", {
+        saved,
+        suggested_to_catalog: suggestToCatalog,
+        source: urlSource ?? "other",
+      });
       console.info("[suggest] submitted", {
         saved,
         suggestToCatalog,

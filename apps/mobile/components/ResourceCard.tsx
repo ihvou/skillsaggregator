@@ -28,6 +28,7 @@ import { colors, radius, shadows, spacing, typography } from "@/lib/theme";
 import { openTutorialResource } from "@/lib/tutorialReturnPrompt";
 import { ResourceActionSheet } from "./ResourceActionSheet";
 import { webUrl } from "@/lib/webLinks";
+import { track } from "@/lib/analytics";
 
 interface ResourceCardProps {
   resource: SkillResource;
@@ -220,6 +221,9 @@ export function ResourceCard({
       return;
     }
     triggerSelectionHaptic();
+    // Fired after the write succeeds, so the funnel counts real actions rather
+    // than taps that failed.
+    if (next) track("resource_saved", { source: getLinkSource(resource.link) });
     void queryClient.invalidateQueries({ queryKey: ["user-library"] });
   }
 
@@ -248,7 +252,10 @@ export function ResourceCard({
       console.warn("[resource-actions] Watched write failed", { relationId, error: error.message });
       return;
     }
-    if (next) void recordWatchedForReviewPrompt(relationId);
+    if (next) {
+      track("resource_watched", { source: getLinkSource(resource.link) });
+      void recordWatchedForReviewPrompt(relationId);
+    }
     triggerSelectionHaptic();
     void queryClient.invalidateQueries({ queryKey: ["user-library"] });
   }
@@ -289,6 +296,7 @@ export function ResourceCard({
     if (typeof row?.combined_score === "number" && typeof row?.user_score === "number") {
       setBaseScore(row.combined_score - boundedUserVoteWeight(row.user_score));
     }
+    if (nextVote !== 0) track("resource_voted", { direction: nextVote > 0 ? "up" : "down" });
     triggerSelectionHaptic();
   }
 
@@ -301,6 +309,7 @@ export function ResourceCard({
   }
 
   function openResource() {
+    track("resource_opened", { source: getLinkSource(resource.link), watched: isCompleted });
     void openTutorialResource(resource, { alreadyWatched: isCompleted });
   }
 

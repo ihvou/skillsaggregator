@@ -4,6 +4,7 @@ import * as AppleAuthentication from "expo-apple-authentication";
 import * as ExpoLinking from "expo-linking";
 import type { Session, User } from "@supabase/supabase-js";
 import { getSupabase } from "./supabase";
+import { flushQueuedEvents } from "./analytics";
 import { webUrl } from "./webLinks";
 
 export interface ContributorProfile {
@@ -148,6 +149,10 @@ export function AuthProvider({ children }: PropsWithChildren) {
             userId: data.session.user.id,
             reason,
           });
+          // Events recorded before the user had an identity (app_open,
+          // onboarding) are queued locally rather than creating a session just
+          // to log them. Attribute them now that one exists.
+          flushQueuedEvents(data.session.user.id);
           setSession(data.session);
           await refreshProfileForSession(data.session);
           return data.session;

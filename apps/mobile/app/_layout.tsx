@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { StyleSheet } from "react-native";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
@@ -7,6 +7,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider, initialWindowMetrics } from "react-native-safe-area-context";
 import { AuthProvider } from "@/lib/auth";
 import { useTutorialReturnPrompt } from "@/lib/tutorialReturnPrompt";
+import { track } from "@/lib/analytics";
 
 function TutorialReturnPromptGate() {
   useTutorialReturnPrompt();
@@ -14,6 +15,10 @@ function TutorialReturnPromptGate() {
 }
 
 export default function RootLayout() {
+  useEffect(() => {
+    track("app_open");
+  }, []);
+
   const [queryClient] = useState(() => new QueryClient());
 
   return (
