@@ -204,7 +204,9 @@ const styles = StyleSheet.create({
   introWrap: {
     gap: spacing.md,
     paddingHorizontal: spacing.page,
-    paddingTop: spacing.md,
+    // No paddingTop: PageHeader already ends with paddingBottom md. While the
+    // header still said "Popular" the two paddings sat either side of that text;
+    // once it went, they stacked into a 32px empty band under the title.
     paddingBottom: spacing.sm,
   },
   skillDescription: {

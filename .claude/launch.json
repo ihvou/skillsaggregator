@@ -10,6 +10,19 @@
       ],
       "port": 3000,
       "autoPort": true
+    },
+    {
+      "name": "metro",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": [
+        "--yes",
+        "expo",
+        "start",
+        "--port",
+        "8081"
+      ],
+      "cwd": "apps/mobile",
+      "port": 8081
     }
   ]
 }
