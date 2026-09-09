@@ -279,6 +279,11 @@ function withIosShareExtensionTarget(config) {
     const project = modConfig.modResults;
     const bundleIdentifier = modConfig.ios?.bundleIdentifier ?? "xyz.subskills.app";
     const marketingVersion = modConfig.version ?? "1.0";
+    // Single source of truth: app.json extra.appleTeamId. Also see
+    // extra.eas.build.experimental.ios.appExtensions, which is what tells EAS to
+    // provision a profile for this target — without it there are no credentials
+    // for the extension's bundle id and the archive cannot be signed.
+    const appleTeamId = modConfig.extra?.appleTeamId;
     if (nativeTargetByName(project, SHARE_EXTENSION_NAME)) return modConfig;
 
     const target = project.addTarget(
@@ -299,14 +304,16 @@ function withIosShareExtensionTarget(config) {
       if (!buildConfig || key.endsWith("_comment") || buildConfig.isa !== "XCBuildConfiguration") continue;
       const settings = buildConfig.buildSettings ?? {};
       if (settings.PRODUCT_BUNDLE_IDENTIFIER !== `"${bundleIdentifier}.share"`) continue;
-      // The value MUST carry literal quotes. pbxproj is a property-list dialect:
-      // an unquoted value containing "(" is a syntax error, and CocoaPods refuses
-      // to parse the project with:
-      //   Dictionary missing ';' after key-value pair for "DEVELOPMENT_TEAM", found "("
-      // which fails the EAS "Install pods" phase ~50s into an iOS build. Same
-      // convention as PRODUCT_BUNDLE_IDENTIFIER just above, which is also stored
-      // with embedded quotes.
-      settings.DEVELOPMENT_TEAM = settings.DEVELOPMENT_TEAM ?? '"$(DEVELOPMENT_TEAM)"';
+      // A literal team, never "$(DEVELOPMENT_TEAM)". That placeholder expands to
+      // an empty string on EAS — nothing there defines the variable — and the
+      // archive dies with:
+      //   error: Signing for "SubskillsShareExtension" requires a development team.
+      // EAS reports that as XCODE_RESOURCE_BUNDLE_CODE_SIGNING_ERROR, which is a
+      // misclassification: read the raw xcodebuild log, not the error code.
+      //
+      // Stored with embedded quotes to match PRODUCT_BUNDLE_IDENTIFIER above;
+      // pbxproj is a property-list dialect and strips them on read.
+      settings.DEVELOPMENT_TEAM = appleTeamId ? `"${appleTeamId}"` : settings.DEVELOPMENT_TEAM;
       settings.IPHONEOS_DEPLOYMENT_TARGET = settings.IPHONEOS_DEPLOYMENT_TARGET ?? "15.1";
       settings.SWIFT_VERSION = settings.SWIFT_VERSION ?? "5.0";
       settings.APPLICATION_EXTENSION_API_ONLY = "YES";
