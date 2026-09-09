@@ -616,9 +616,33 @@ field without opening a browser.
 | **Internal** | People with a role on your App Store Connect account | **None** — installable as soon as the build is `VALID` | 100 |
 | **External** | Anyone, by email or public link | **Beta App Review** required on the first build | 10,000 |
 
-Internal testing is the fast path and needs no approval, so add yourself as an internal tester and
-install immediately. External testing needs Beta App Review, which is a real review with a real
-queue — start it early if outside testers are the point.
+⚠️ **You cannot add a friend as an internal tester.** Internal testers are picked from *Users and
+Access* — they must already hold a role on your App Store Connect account, so adding one means
+granting a stranger access to the account that ships your app. Internal is for you and anyone
+genuinely on the team. **Every outside tester is an external tester**, and external means Beta App
+Review. Hit 2026-09-09 trying to add a friend internally.
+
+So the practical sequence is: install internally yourself the moment the build is `VALID`, and in
+the same sitting push it to an external group so its review queues while you smoke-test. Beta App
+Review is a real review with a real queue, lighter than App Store review but not instant, and only
+the *first* build of a version normally needs it — later builds go to external testers directly
+unless something significant changed.
+
+Watch the state rather than the email; `WAITING_FOR_REVIEW` is queued, not stuck:
+
+```bash
+# betaReviewState, plus internal/external build state, in one call
+GET /v1/builds?filter[app]=<ASC_APP_ID>&include=betaAppReviewSubmission,buildBetaDetail
+```
+
+Observed 2026-09-09 for build 11: `processingState=VALID`,
+`betaReviewState=WAITING_FOR_REVIEW`, `internalBuildState=IN_BETA_TESTING`,
+`externalBuildState=WAITING_FOR_BETA_REVIEW`.
+
+**The likeliest thing to fail this review is the sign-in answer**, the same trap as checklist item
+12. The app does not require an account — M120 creates an anonymous identity lazily — so the honest
+answer to "sign-in required" is **no**, and no demo account is needed. Do not offer magic-link
+credentials a reviewer cannot complete.
 
 There is **no** iOS equivalent of Play's 12-tester / 14-day gate. That gate is Google's alone;
 nothing about TestFlight blocks an App Store submission, so the two platforms are not on the same
