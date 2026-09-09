@@ -384,23 +384,76 @@ via the OS is explicitly exempt.
 Re-check this if MMKV is ever given an `encryptionKey`, or if any custom crypto
 is added; the answer would stop being automatic.
 
-### Building iOS needs a human at the keyboard
+### iOS credentials: use the API key, not an Apple ID
 
-`eas build --platform ios --profile production --non-interactive` fails with:
-
-> `Distribution Certificate is not validated for non-interactive builds.`
-> `Credentials are not set up. Run this command again in interactive mode.`
-
-The first iOS build has to run **interactively** so Apple can take the account
-password and a 2FA code. Run it yourself:
+Signing in with an Apple ID needs a 2FA code, which on this account has failed
+to arrive on device or by SMS. Skip it entirely — an App Store Connect API key
+authenticates non-interactively:
 
 ```bash
-cd apps/mobile && npx eas-cli build --platform ios --profile production
+export EXPO_ASC_API_KEY_PATH=~/.appstoreconnect/private_keys/AuthKey_V6K82APH6K.p8
+export EXPO_ASC_KEY_ID=V6K82APH6K
+export EXPO_ASC_ISSUER_ID=d4169cf2-b171-4bae-9a3e-c49b88b92ee1
+export EXPO_APPLE_TEAM_ID=T3J6K9GV2B
+export EXPO_APPLE_TEAM_TYPE=INDIVIDUAL
 ```
 
-EAS then registers both identifiers, enables Sign in with Apple from
-`usesAppleSignIn`, creates the distribution certificate and provisioning
-profiles, and stores them server-side — so later builds can run non-interactively.
+`~/.appstoreconnect/private_keys/` is the conventional location, and the `.p8`
+never enters the repo (`.gitignore` blocks `*.p8`). Set `EXPO_APPLE_TEAM_TYPE`
+alongside the team id or the CLI stops to ask for it.
+
+Creating a *new* provisioning profile still needs interactive confirmation even
+with the key — `--non-interactive` refuses with "Distribution Certificate is not
+validated for non-interactive builds". So when a target has no profile yet, run:
+
+```bash
+cd apps/mobile && npx eas-cli credentials:configure-build -p ios -e production
+```
+
+Answer **yes** to "Reuse this distribution certificate?" — reusing is right, and
+generating a second one is how you invalidate the profile that already works.
+Then yes to "Generate a new Apple Provisioning Profile?". Once it prints *All
+credentials are ready to build*, every later `eas build` runs non-interactively.
+
+Apple's Developer Portal returns a plain 500 on profile creation often enough
+that eas-cli's three retries can all miss. It is not a config error. Re-run.
+
+### Every target needs its own provisioning profile
+
+The share extension is a separate bundle id and needs its own profile. EAS only
+provisions targets it is told about, via `app.json`:
+
+```json
+"extra": { "eas": { "build": { "experimental": { "ios": {
+  "appExtensions": [
+    { "targetName": "SubskillsShareExtension",
+      "bundleIdentifier": "xyz.subskills.app.share" }
+  ] } } } } }
+```
+
+Without it, EAS silently provisions only the main app and the archive dies with
+`Signing for "SubskillsShareExtension" requires a development team`.
+
+### Read the xcodebuild log, not the error code
+
+EAS reported that failure as `XCODE_RESOURCE_BUNDLE_CODE_SIGNING_ERROR`, whose
+message tells you to downgrade Xcode or upgrade to SDK 46 — advice that is
+irrelevant on SDK 54 and cost three builds. Expo's classifier matches "requires
+a development team" to the resource-bundle case. **Treat the error code as a
+hint, never as the diagnosis.** Get the real log:
+
+```bash
+# builds.byId.logFiles from the GraphQL API; needs the session token from
+# ~/.expo/state.json and a CLI user-agent (plain requests get Cloudflare 1010).
+# The files are brotli-encoded — decompress them, do not decode as text.
+curl -s https://api.expo.dev/graphql -H "expo-session: $TOKEN" \
+  -H "User-Agent: eas-cli/16.7.0 darwin-arm64 node-v22" \
+  -H "Content-Type: application/json" \
+  -d '{"query":"query($id:ID!){builds{byId(buildId:$id){logFiles}}}","variables":{"id":"<BUILD_ID>"}}'
+```
+
+Then `zlib.brotliDecompressSync` the result and grep for `error:`. The whole
+failure was one line in a 989-line log.
 
 ### Capabilities: tick exactly one
 
