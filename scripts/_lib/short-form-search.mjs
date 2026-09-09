@@ -9,13 +9,21 @@
  * component that produced the blank-render bug, so moving to search removes a
  * fragility rather than working around it. Neither path touches an account.
  *
- * ONE QUERY, BOTH PLATFORMS. The `OR` filter works and the engine returns a
- * single page of ~10 results split between the domains by its own ranking. Two
- * queries would return more — but the goal is CONTENT DIVERSITY, a handful of
- * short clips per sub-skill so people who prefer them have something, not a
- * maximal harvest. One query is the right cost for that, and the platforms turn
- * out to be complementary anyway: climbing scores 5/10 on Instagram and 9/10 on
- * TikTok, table tennis doubles on TikTok.
+ * ONE QUERY, BOTH PLATFORMS — BUT THE SPLIT IS NOT OURS TO CONTROL. The `OR`
+ * filter works, and combining was meant to halve the query cost. Measured
+ * against Tavily it does not deliver both platforms: five sub-skills across five
+ * categories returned 25 TikTok candidates and ZERO Instagram, because the
+ * engine ranks TikTok higher for that phrasing and the per-skill cap then takes
+ * the top N. Queried alone, the same skills return 15-19 Instagram posts, so
+ * both platforms are indexed perfectly well — the combined query simply hides
+ * one of them.
+ *
+ * Since the whole point is DIVERSITY — a handful of short clips per sub-skill so
+ * people who prefer them have something — silently collecting one platform
+ * defeats it. So the cap is applied PER PLATFORM and the combined query falls
+ * back to a platform-specific one only for a platform that came back empty.
+ * Typical cost stays near one query per sub-skill for balanced results and rises
+ * to two only where it has to.
  *
  * NO PRE-DOWNLOAD GATE. Deliberate. A result that ranks for
  * "muay thai teep technique" has already been filtered for relevance and
@@ -36,6 +44,8 @@
  * after that only new skills need one. Serper's 2,500 free queries cover the
  * initial pass five times over.
  */
+import { setTimeout as delay } from "node:timers/promises";
+
 const PROVIDERS = {
   serper: {
     env: "SERPER_API_KEY",
@@ -100,7 +110,9 @@ export const config = {
   // Free tiers rate limit to roughly one query per second.
   queryGapMs: Number(process.env.COLLECT_SEARCH_QUERY_GAP_MS ?? 1_200),
   resultsPerQuery: Number(process.env.COLLECT_SEARCH_RESULTS ?? 20),
-  maxPerSkill: Number(process.env.COLLECT_SHORTFORM_MAX_PER_SKILL ?? 5),
+  // Per platform, so one cannot crowd out the other. Total per skill is at
+  // most twice this.
+  maxPerPlatform: Number(process.env.COLLECT_SHORTFORM_MAX_PER_PLATFORM ?? 3),
 };
 
 /**
@@ -148,9 +160,14 @@ export function classifyResultUrl(rawUrl) {
  * "tubeless tyre" returns motorcycles. run-collection.mjs already prefixes
  * category on open search for the same reason.
  */
-export function shortFormQuery(skill) {
+export function shortFormQuery(skill, platform = null) {
   const category = skill?.category_name ? `${skill.category_name} ` : "";
-  return `${category}${skill.name} technique (site:tiktok.com OR site:instagram.com)`;
+  const site = platform === "tiktok"
+    ? "site:tiktok.com"
+    : platform === "instagram"
+      ? "site:instagram.com"
+      : "(site:tiktok.com OR site:instagram.com)";
+  return `${category}${skill.name} technique ${site}`;
 }
 
 export function isSearchConfigured() {
@@ -182,39 +199,71 @@ async function runSearch(query) {
  * transcription and coach time proportional to what is actually wanted.
  */
 export async function discoverShortForm(skill, { log = () => {} } = {}) {
-  const query = shortFormQuery(skill);
-  const raw = await runSearch(query);
-
   const seen = new Set();
-  const candidates = [];
-  let rejected = 0;
+  const perPlatform = { tiktok: [], instagram: [] };
+  const queries = [];
 
-  for (const result of raw) {
-    const classified = classifyResultUrl(result?.url);
-    if (!classified) { rejected += 1; continue; }
-    if (seen.has(classified.canonicalUrl)) continue;
-    seen.add(classified.canonicalUrl);
+  const absorb = (results) => {
+    let rejected = 0;
+    for (const result of results) {
+      const classified = classifyResultUrl(result?.url);
+      if (!classified) { rejected += 1; continue; }
+      if (seen.has(classified.canonicalUrl)) continue;
+      const bucket = perPlatform[classified.platform];
+      // Cap PER PLATFORM, not overall: a shared cap lets whichever platform the
+      // engine ranks higher consume every slot, which is exactly what produced
+      // 25 TikTok and 0 Instagram before.
+      if (!bucket || bucket.length >= config.maxPerPlatform) continue;
+      seen.add(classified.canonicalUrl);
+      bucket.push({
+        ...classified,
+        // The engine's description: for TikTok the full caption, for Instagram a
+        // templated title. Kept as submission metadata, NOT used to filter.
+        title: String(result?.title ?? "").trim().slice(0, 180),
+        description: String(result?.description ?? "").trim().slice(0, 600) || null,
+      });
+    }
+    return rejected;
+  };
 
-    candidates.push({
-      ...classified,
-      // Brave returns the page description, which for TikTok is the full
-      // caption and for Instagram a templated title. Kept as submission
-      // metadata, NOT used to filter — see the header.
-      title: String(result?.title ?? "").trim().slice(0, 180),
-      description: String(result?.description ?? "").trim().slice(0, 600) || null,
-    });
-    if (candidates.length >= config.maxPerSkill) break;
+  // One query per platform, not a combined one.
+  //
+  // The combined `(site:a OR site:b)` query was meant to halve the cost, and it
+  // does not: measured against Tavily it returned zero Instagram on five of five
+  // sub-skills, so the per-platform fallback fired every time and the combined
+  // result was discarded wholesale. That is two queries for the value of one.
+  // Asking each platform directly costs the same two and returns a balanced set,
+  // so the combined form is not worth keeping for this provider.
+  //
+  // COLLECT_SHORTFORM_PLATFORMS narrows this — set it to one platform to halve
+  // the spend where only one is wanted.
+  let rejectedNonPost = 0;
+  const platforms = (process.env.COLLECT_SHORTFORM_PLATFORMS ?? "tiktok,instagram")
+    .split(",").map((value) => value.trim()).filter(Boolean);
+
+  for (const [index, platform] of platforms.entries()) {
+    if (!perPlatform[platform]) continue;
+    const query = shortFormQuery(skill, platform);
+    queries.push(query);
+    if (index > 0) await delay(config.queryGapMs);
+    try {
+      rejectedNonPost += absorb(await runSearch(query));
+    } catch (error) {
+      log("warn", "shortform_search_failed", String(error?.message ?? error), {
+        skill: skill?.slug ?? null, platform,
+      });
+    }
   }
 
+  const candidates = [...perPlatform.tiktok, ...perPlatform.instagram];
   log("info", "shortform_search_completed", "Short-form search for skill", {
     skill: skill?.slug ?? null,
     provider: activeProvider()?.name ?? null,
-    query,
-    returned: raw.length,
+    queries: queries.length,
     accepted: candidates.length,
-    rejected_non_post: rejected,
-    tiktok: candidates.filter((c) => c.platform === "tiktok").length,
-    instagram: candidates.filter((c) => c.platform === "instagram").length,
+    rejected_non_post: rejectedNonPost,
+    tiktok: perPlatform.tiktok.length,
+    instagram: perPlatform.instagram.length,
   });
 
   return candidates;
