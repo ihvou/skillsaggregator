@@ -380,16 +380,31 @@ The Register-an-App-ID page lists ~150 capabilities. This app needs **one**.
 Do not tick extras "just in case": several add entitlements that raise review
 questions, and a few (HealthKit, CarPlay) require a written justification.
 
-### Two App IDs, not one
+### Two *identifiers*, but only ONE App Store Connect app
+
+"App ID" means two different things on Apple's site, and confusing them is easy:
+
+| Thing | Where it lives | How many we need |
+|---|---|---|
+| **Identifier** (bundle ID registration) | developer.apple.com → Certificates, Identifiers & Profiles → Identifiers | **two** |
+| **App record** (the listing) | App Store Connect → Apps | **one** |
+
+There is exactly **one app** — `xyz.subskills.app`, ASC App ID `6810049311`. One
+listing, one price, one review, one `ascAppId`.
+
+The second identifier exists only so the share-extension target can be
+code-signed. The extension ships **inside** the main app's binary; it is never a
+separate App Store Connect app, never has its own listing, and users never see
+it as a separate app.
 
 The share extension is a separate build target with its own identifier
 (`withShareTargets.js:288`), and it is easy to miss because the app builds fine
 locally without it registered:
 
-| Identifier | Capabilities |
+| Identifier (NOT an App Store Connect app) | Capabilities |
 |---|---|
 | `xyz.subskills.app` | Sign in with Apple |
-| `xyz.subskills.app.share` | **none** |
+| `xyz.subskills.app.share` | **none** — signing only |
 
 `eas build --platform ios` registers both and enables the capability itself,
 which is the lower-effort and less error-prone path. Registering by hand is only
