@@ -43,3 +43,9 @@ credentials.json
 **/credentials.json
 *.jks
 *.keystore
+
+# Apple credentials. An App Store Connect API key (.p8) can upload builds and
+# change app metadata; this repo is public, so these must never be committed.
+# Keep them in ~/.appstoreconnect/private_keys/ instead.
+*.p8
+AuthKey_*.p8
