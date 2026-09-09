@@ -299,7 +299,14 @@ function withIosShareExtensionTarget(config) {
       if (!buildConfig || key.endsWith("_comment") || buildConfig.isa !== "XCBuildConfiguration") continue;
       const settings = buildConfig.buildSettings ?? {};
       if (settings.PRODUCT_BUNDLE_IDENTIFIER !== `"${bundleIdentifier}.share"`) continue;
-      settings.DEVELOPMENT_TEAM = settings.DEVELOPMENT_TEAM ?? "$(DEVELOPMENT_TEAM)";
+      // The value MUST carry literal quotes. pbxproj is a property-list dialect:
+      // an unquoted value containing "(" is a syntax error, and CocoaPods refuses
+      // to parse the project with:
+      //   Dictionary missing ';' after key-value pair for "DEVELOPMENT_TEAM", found "("
+      // which fails the EAS "Install pods" phase ~50s into an iOS build. Same
+      // convention as PRODUCT_BUNDLE_IDENTIFIER just above, which is also stored
+      // with embedded quotes.
+      settings.DEVELOPMENT_TEAM = settings.DEVELOPMENT_TEAM ?? '"$(DEVELOPMENT_TEAM)"';
       settings.IPHONEOS_DEPLOYMENT_TARGET = settings.IPHONEOS_DEPLOYMENT_TARGET ?? "15.1";
       settings.SWIFT_VERSION = settings.SWIFT_VERSION ?? "5.0";
       settings.APPLICATION_EXTENSION_API_ONLY = "YES";
