@@ -2032,6 +2032,27 @@ function unscoredCandidate() {
   };
 }
 
+/**
+ * The scoring decision, for every source. YouTube, TikTok and Instagram all
+ * arrive here; only how the transcript was obtained differs, and by this point
+ * that has already happened.
+ *
+ * This exists as ONE function because it was previously stated twice — once in
+ * processSkill and once in processShortFormCollection — and the two disagreed.
+ * The short-form copy called the scorer unconditionally, so under the nightly
+ * default (nightly-collect.sh exports COLLECT_SCORING=off, making the run a pure
+ * collector with the Routine Coach as the only judge) it would have invoked a
+ * scorer the operator had deliberately unwired, and lost every candidate to a
+ * connection error on any night Ollama was not running. A policy written in two
+ * places will eventually be two policies.
+ */
+async function scoreCandidate(skill, candidate, transcript, scoringMode = "transcript") {
+  // COLLECT_SCORING=off: submit unscored and let the coaches judge.
+  if (!config.scoringEnabled) return unscoredCandidate();
+  if (scoringMode === "metadata_fallback") return scoreMetadataFallbackWithOllama(skill, candidate);
+  return scoreWithOllama(skill, candidate, transcript);
+}
+
 function scoreThresholdStatus(score) {
   const relevanceThreshold = score.scoring_mode === "metadata_fallback"
     ? config.relevanceThreshold * clampScore(config.transcriptFallbackRelevanceMultiplier, 0.7)
@@ -2322,8 +2343,16 @@ async function postShortFormSuggestion(skill, candidate, transcript, score, dura
       content_type: "video",
       language: "en",
       target_skill_id: skill.id,
+      // Do NOT print "Auto-scored relevance=1.00" when nothing scored it.
+      // unscoredCandidate() returns 1/1 as a pass-through, not as a judgement,
+      // and this string is public. Under the nightly default (COLLECT_SCORING=off)
+      // that is every short-form link. The YouTube path has the same template and
+      // does print it — worth fixing there too, but it would rewrite the note on
+      // a path shared with 19k existing links, so it is not changed here.
       public_note: score.public_note
-        || `Auto-scored relevance=${score.relevance.toFixed(2)}, quality=${score.teaching_quality.toFixed(2)}.`,
+        || (score.scoring_mode === "unscored"
+          ? "Collected for coach review."
+          : `Auto-scored relevance=${score.relevance.toFixed(2)}, quality=${score.teaching_quality.toFixed(2)}.`),
       skill_level: score.level,
       // Measured from the downloaded audio, so it is the real clip length rather
       // than a number scraped off a card. Nothing filters on it yet — the coach
@@ -2909,23 +2938,16 @@ async function processSkill(skill, summary) {
       }
 
       let score;
-      if (config.scoringEnabled) {
-        try {
-          score = scoringMode === "metadata_fallback"
-            ? await scoreMetadataFallbackWithOllama(skill, candidate)
-            : await scoreWithOllama(skill, candidate, transcript);
-          if (score.scoring_mode === "metadata_fallback") metadataFallbackScoredCount += 1;
-        } catch (error) {
-          log("warn", "score_failed", errorMessage(error), {
-            video_id: candidate.video_id,
-            scoring_mode: scoringMode,
-            transcript_fetcher: config.transcriptFetcher,
-          });
-          continue;
-        }
-      } else {
-        // COLLECT_SCORING=off: collect this candidate unscored; coaches judge it later.
-        score = unscoredCandidate();
+      try {
+        score = await scoreCandidate(skill, candidate, transcript, scoringMode);
+        if (score.scoring_mode === "metadata_fallback") metadataFallbackScoredCount += 1;
+      } catch (error) {
+        log("warn", "score_failed", errorMessage(error), {
+          video_id: candidate.video_id,
+          scoring_mode: scoringMode,
+          transcript_fetcher: config.transcriptFetcher,
+        });
+        continue;
       }
 
       log("info", "candidate_scored", "Candidate scored", {
@@ -3253,7 +3275,7 @@ async function processShortFormCollection(selectedSkills, summary) {
     transcribed: 0,
     no_speech: 0,
     download_failed: 0,
-    metadata_fallback: 0,
+    metadata_only: 0,
     rejected: 0,
     submitted: 0,
     errors: 0,
@@ -3267,6 +3289,9 @@ async function processShortFormCollection(selectedSkills, summary) {
       search_provider: shortFormSearchProvider()?.name ?? null,
       skills: skills.length,
       gap_ms: config.shortFormGapMs,
+      // Off under nightly-collect.sh: the Routine Coach is the only scorer.
+      scoring_enabled: config.scoringEnabled,
+      scoring_model: config.scoringEnabled ? config.ollamaModel : null,
     });
 
     // Download the whisper model once for the whole run rather than per clip;
@@ -3354,24 +3379,34 @@ async function processShortFormCollection(selectedSkills, summary) {
           ? { ...candidate, description: candidate.description ?? transcription.caption }
           : candidate;
 
-        // SCORE. Identical to YouTube: transcript prompt when there is a
-        // transcript, the conservative metadata prompt when there is not.
-        let score;
-        try {
-          if (transcript) {
-            score = await scoreWithOllama(skill, scored, transcript);
-          } else if (fallbacksUsed < config.shortFormFallbackCandidates) {
-            fallbacksUsed += 1;
-            stats.metadata_fallback += 1;
-            score = await scoreMetadataFallbackWithOllama(skill, scored);
-            score.evidence_quote = fallbackEvidenceQuote(scored, score.evidence_quote);
-          } else {
-            log("debug", "shortform_fallback_budget_spent", "Skipping metadata-only clip; fallback budget spent", {
+        // A clip with no usable speech carries only its title and caption. Cap
+        // how many of those one sub-skill contributes, in EITHER scoring mode —
+        // with the local scorer off there is nothing else holding them back, and
+        // a skill whose clips are all music would otherwise hand the coach a
+        // queue of candidates with nothing to read.
+        if (!transcript) {
+          if (fallbacksUsed >= config.shortFormFallbackCandidates) {
+            log("debug", "shortform_metadata_budget_spent", "Skipping clip with no transcript; per-skill budget spent", {
               skill: skill.slug,
               canonical_url: candidate.canonicalUrl,
               reason: transcription.reason,
             });
             continue;
+          }
+          fallbacksUsed += 1;
+          stats.metadata_only += 1;
+        }
+
+        // SCORE — through scoreCandidate(), the same call processSkill makes.
+        // Not a copy of the YouTube logic: the same function. Whether the local
+        // scorer runs at all is the operator's setting, and it is answered in
+        // one place for every source.
+        const scoringMode = transcript ? "transcript" : "metadata_fallback";
+        let score;
+        try {
+          score = await scoreCandidate(skill, scored, transcript, scoringMode);
+          if (score.scoring_mode === "metadata_fallback") {
+            score.evidence_quote = fallbackEvidenceQuote(scored, score.evidence_quote);
           }
         } catch (error) {
           stats.errors += 1;

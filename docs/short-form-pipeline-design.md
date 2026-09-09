@@ -270,9 +270,22 @@ The collector no longer has a TikTok path. `processTikTokCollection` is gone, al
 `postTikTokSuggestion`, the `engagement_authority` rubric it applied, the CDP
 `searchTikTok` call, and the `tiktok_search` rows in `trusted_sources` that drove it.
 `processShortFormCollection` replaces all of it: per sub-skill it searches, downloads,
-transcribes with whisper, scores the transcript with the same Ollama prompt YouTube uses,
-and submits through the same `submit-suggestion` call. Nothing downstream of the submit
-knows the platform.
+transcribes with whisper, and submits through the same `submit-suggestion` call. Nothing
+downstream of the submit knows the platform.
+
+**Who scores it: the Routine Coach, not the collector.** `nightly-collect.sh` exports
+`COLLECT_SCORING=off`, so the nightly run is a pure collector for every source — candidates
+are submitted unscored and the relevance and value coaches are the only things that judge
+them. The local Ollama scorer exists but is unwired outside debugging.
+
+That decision is now stated in exactly one place, `scoreCandidate()`, which both
+`processSkill` and `processShortFormCollection` call. It was previously written twice and
+the copies disagreed: the short-form one called the scorer unconditionally, so under the
+real nightly settings it would have invoked a scorer the operator had deliberately unwired
+and lost every candidate to a connection error on any night Ollama was not running. Two
+implementations of one policy is what made that possible — an earlier revision of this
+document claimed short-form "scores the transcript with the same Ollama prompt YouTube
+uses", which described a debugging path, not production.
 
 Two scoped runs against hosted, one sub-skill each:
 
@@ -283,8 +296,18 @@ muay-thai/sweeps-trips-...     6 candidates (3 TikTok, 3 IG)  → 1 submitted (I
 
 Transcription: 6 of 12 clips produced usable speech, at 10.1–18.4 chars/sec and 30–79
 seconds. The rest were rejected by the density gate, one download carried no audio stream,
-and one `/reel/` URL turned out to be a photo post. Scores ran 0.1 to 0.8 relevance and the
-threshold rejected six — the gate is doing work, not rubber-stamping.
+and one `/reel/` URL turned out to be a photo post.
+
+Those two runs invoked `run-collection.mjs` directly, which leaves `COLLECT_SCORING`
+unset and therefore ON — so their local relevance scores (0.1 to 0.8, six rejections) are
+**not** what nightly does. Re-verified through `nightly-collect.sh` on two further
+sub-skills: `scoring_enabled: false`, every candidate `unscored`, nothing rejected locally,
+everything handed to the coach.
+
+A clip with no usable speech is still capped per sub-skill (`COLLECT_SHORTFORM_FALLBACK_CANDIDATES`,
+default 2) in both modes. Verified: of 6 candidates for `muay-thai/elbow-strikes`, 2 with
+transcripts (19.8 and 23.6 chars/sec) and 2 without were submitted, and 2 more without were
+skipped once the budget was spent.
 
 ### Three bugs the runs exposed, all now fixed
 
