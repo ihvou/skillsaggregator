@@ -66,12 +66,14 @@
  *   COLLECT_TRANSCRIPT_FALLBACK_CANDIDATES default 5
  *   COLLECT_TRANSCRIPT_FALLBACK_RELEVANCE_MULTIPLIER default 0.7
  *   COLLECT_SUBMIT_TIMEOUT_MS     default 15000
- *   COLLECT_TIKTOK_SEARCH_LIMIT   default 12
- *   COLLECT_TIKTOK_QUERY_GAP_MS   default 60000
- *   COLLECT_TIKTOK_PROBE_GAP_MS   default 1500
- *   COLLECT_TIKTOK_SEARCH_RETRIES default 2 (retries when a search returns 0 cards — cold-session warm-up)
- *   COLLECT_TIKTOK_SEARCH_RETRY_GAP_MS default 5000
- *   COLLECT_PARALLEL_SOURCES      default 1 (set to 0 to run YouTube then TikTok sequentially)
+ *   COLLECT_SHORTFORM_ENABLED     default 1 (falls back to COLLECT_TIKTOK_ENABLED)
+ *   COLLECT_SHORTFORM_SKILLS_PER_RUN default 20
+ *   COLLECT_SHORTFORM_GAP_MS      default 4000 (between short-form candidates)
+ *   COLLECT_SHORTFORM_FALLBACK_CANDIDATES default 2 (per skill, clips with no usable speech)
+ *   COLLECT_SHORTFORM_MAX_PER_PLATFORM default 3 (see _lib/short-form-search.mjs)
+ *   COLLECT_SHORTFORM_PLATFORMS   default tiktok,instagram
+ *   SERPER_API_KEY | TAVILY_API_KEY | BRAVE_SEARCH_API_KEY — short-form discovery
+ *   COLLECT_PARALLEL_SOURCES      default 1 (set to 0 to run YouTube then short-form sequentially)
  */
 import { execFile, spawn } from "node:child_process";
 import { mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
@@ -92,24 +94,36 @@ import {
   transcriptProviderFromFetcher,
 } from "./_lib/link-transcripts.mjs";
 import {
-  closeTikTokBrowser,
-  fetchCreatorProfile,
-  fetchVideoDetail,
-  getTikTokBrowserContext,
-  preflightTikTokBrowser,
-  searchTikTok,
-} from "./_lib/tiktok-fetcher-browser.mjs";
+  discoverShortForm,
+  activeProvider as shortFormSearchProvider,
+  isSearchConfigured as isShortFormSearchConfigured,
+} from "./_lib/short-form-search.mjs";
 import {
-  mergeTikTokCardDetail,
-  scoreTikTokCandidate,
-  VERTICALS,
-} from "./_lib/tiktok-scoring.mjs";
-import { tiktokVideoIdFromUrl } from "../supabase/functions/_shared/tiktok-url.mjs";
+  ensureWhisperModel,
+  transcribeShortForm,
+} from "./_lib/short-form-transcriber.mjs";
 
-// TikTok scoring stays local in the collector for the same reason YouTube
-// transcript fetching does: nightly collection should survive Edge/runtime
-// hiccups until the final submit call. The Edge TS scorer mirrors this module
-// and is fixture-tested for parity.
+// Short-form (TikTok, Instagram Reels) no longer has a pipeline of its own.
+//
+// It used to: TikTok was searched through a CDP-attached browser and scored by
+// an engagement_authority rubric — likes, follower count, creator bio — because
+// a clip had no transcript and engagement was the only signal available. That
+// rubric was a workaround for a missing transcript, not a judgement about
+// content, and it is now retired. Local whisper transcribes a clip in a few
+// seconds, so short-form is scored on what it actually teaches, by the same
+// Ollama pass and the same coach as YouTube.
+//
+// What remains platform-specific is exactly one step: how the transcript is
+// obtained. YouTube pulls captions; short-form downloads the clip and
+// transcribes the audio. Discovery moved to a search engine (see
+// _lib/short-form-search.mjs), which removes the CDP browser dependency and
+// covers Instagram at the same time — Instagram cannot be enumerated
+// anonymously at all.
+//
+// The browser fetcher and the engagement rubric are still in the tree; they are
+// used by scripts/poc-tiktok-browser.mjs, scripts/score-tiktok-cards.mjs and the
+// Edge link-checker, and the historical scores they produced are still on
+// 141 links.
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const execFileP = promisify(execFile);
@@ -295,16 +309,21 @@ const config = {
   ytdlpTranscriptTimeoutMs: Number(process.env.COLLECT_YTDLP_TRANSCRIPT_TIMEOUT_MS ?? 15_000),
   ollamaTimeoutMs: Number(process.env.COLLECT_OLLAMA_TIMEOUT_MS ?? 90_000),
   submitTimeoutMs: Number(process.env.COLLECT_SUBMIT_TIMEOUT_MS ?? 15_000),
-  tiktokEnabled: envFlag("COLLECT_TIKTOK_ENABLED", true),
-  tiktokSearchLimit: Number(process.env.COLLECT_TIKTOK_SEARCH_LIMIT ?? 12),
-  tiktokQueryGapMs: Number(process.env.COLLECT_TIKTOK_QUERY_GAP_MS ?? 60_000),
-  tiktokProbeGapMs: Number(process.env.COLLECT_TIKTOK_PROBE_GAP_MS ?? 1_500),
-  // A freshly-spawned CDP Chrome serves 0 search cards until the TikTok session
-  // warms up (observed: first query/queries return empty, a retry succeeds).
-  // Retry zero-card results before giving up so a cold start at 3 AM doesn't
-  // silently collect nothing.
-  tiktokSearchRetries: Number(process.env.COLLECT_TIKTOK_SEARCH_RETRIES ?? 2),
-  tiktokSearchRetryGapMs: Number(process.env.COLLECT_TIKTOK_SEARCH_RETRY_GAP_MS ?? 5_000),
+  // COLLECT_TIKTOK_ENABLED is still honoured: the nightly launchd plist and the
+  // runbooks set it, and short-form is what that switch always meant.
+  shortFormEnabled: envFlag("COLLECT_SHORTFORM_ENABLED", envFlag("COLLECT_TIKTOK_ENABLED", true)),
+  // Deliberately far below the YouTube skill count. Short-form is seeding, not a
+  // feed: a sub-skill needs a handful of clips once, and every candidate costs a
+  // download plus a whisper pass. 20 skills/night walks the whole catalogue in
+  // about a month and then only new skills need anything.
+  shortFormSkillsPerRun: Number(process.env.COLLECT_SHORTFORM_SKILLS_PER_RUN ?? 20),
+  // Between candidates. TikTok's media CDN throttles by returning 403/404 on the
+  // same URL it served a minute earlier, so pacing matters more than throughput.
+  shortFormGapMs: Number(process.env.COLLECT_SHORTFORM_GAP_MS ?? 4_000),
+  // Per skill, matching the YouTube fallback cap: clips with no usable speech
+  // may still be submitted on metadata, but only a few, so a skill whose clips
+  // are all music does not fill the coach queue with unreadable candidates.
+  shortFormFallbackCandidates: Number(process.env.COLLECT_SHORTFORM_FALLBACK_CANDIDATES ?? 2),
   parallelSources: envFlag("COLLECT_PARALLEL_SOURCES", true),
   submit503CircuitThreshold: Number(process.env.COLLECT_SUBMIT_503_CIRCUIT_THRESHOLD ?? 5),
   preflightTimeoutMs: Number(process.env.COLLECT_PREFLIGHT_TIMEOUT_MS ?? 15_000),
@@ -903,8 +922,6 @@ async function loadChannels(categoryId, skillId) {
   // simply unused instead of silently polluting all 13 categories — which
   // mattered when trusted_sources was bulk-expanded from research on 2026-08-12
   // (61 -> 243 channels); every imported row carries a category_id.
-  // loadTikTokSources() is unaffected: it filters by category only when the
-  // operator passes --category, which is a deliberate scoping flag.
   // Bounded, rotated slice rather than the whole category. Ordering:
   //   1. channels this skill has never been searched against (last_searched_at null)
   //   2. then the ones it searched longest ago
@@ -947,34 +964,6 @@ async function recordChannelSearched(skillId, sourceId) {
     // Non-fatal: losing a rotation stamp costs one repeated search, never the run.
     log("warn", "channel_rotation_stamp_failed", errorMessage(error), { skill_id: skillId, source_id: sourceId });
   }
-}
-
-async function loadTikTokSources() {
-  const params = categorySlugFilter ? [categorySlugFilter] : [];
-  const rows = await dbQuery(
-    `select
-       ts.identifier,
-       ts.display_name,
-       ts.category_id,
-       c.slug,
-       c.name,
-       coalesce(ts.discovery_evidence_json ->> 'target_skill_slug', '')
-     from public.trusted_sources ts
-     left join public.categories c on c.id = ts.category_id
-     where ts.source_type = 'tiktok_search'
-       and ts.is_active
-       ${categorySlugFilter ? "and c.slug = $1" : ""}
-     order by c.slug nulls last, ts.display_name`,
-    params,
-  );
-  return rows.map(([identifier, display_name, categoryId, categorySlug, categoryName, targetSkillSlug]) => ({
-    identifier,
-    display_name,
-    category_id: categoryId,
-    category_slug: categorySlug,
-    category_name: categoryName,
-    target_skill_slug: targetSkillSlug || null,
-  }));
 }
 
 async function loadKnownCanonicalUrls(skillId) {
@@ -1457,26 +1446,6 @@ function termsForSkill(skill) {
   ])].filter(Boolean);
 }
 
-function normalizedTokens(value) {
-  return normalizeSearchQuery(value).split(" ").filter(Boolean);
-}
-
-function tiktokSkillMatchScore(source, skill) {
-  if (source.target_skill_slug && source.target_skill_slug === skill.slug) return 100;
-  const queryTokens = new Set(normalizedTokens(source.identifier));
-  const skillTokens = normalizedTokens(`${skill.name} ${skill.slug}`);
-  return skillTokens.reduce((score, token) => score + (queryTokens.has(token) ? 1 : 0), 0);
-}
-
-function matchTikTokSourceSkill(source, categorySkills, selectedSkillIds) {
-  const candidates = categorySkills
-    .filter((skill) => !selectedSkillIds || selectedSkillIds.has(skill.id))
-    .map((skill) => ({ skill, score: tiktokSkillMatchScore(source, skill) }))
-    .sort((a, b) => b.score - a.score || a.skill.name.localeCompare(b.skill.name));
-  const best = candidates[0];
-  return best && best.score > 0 ? best.skill : null;
-}
-
 function relevanceForQuery(candidate, terms) {
   if (!terms.length) return 1;
   const haystack = `${candidate.title}`.toLowerCase();
@@ -1952,7 +1921,7 @@ function functionUrl(path) {
 
 function submitFailureStatus(error) {
   const message = errorMessage(error);
-  const status = message.match(/submit-(?:suggestion|secondary|tiktok)\s+(\d{3})/)?.[1];
+  const status = message.match(/submit-(?:suggestion|secondary|shortform)\s+(\d{3})/)?.[1];
   return status ? Number(status) : null;
 }
 
@@ -2315,84 +2284,98 @@ async function persistAcceptedTranscript(candidate, result, transcript) {
   return { link_id: linkId, transcript_hash: hash };
 }
 
-function tiktokConfidence(verdict) {
-  if (verdict.verdict !== "ACCEPT") return 0;
-  const raw = 0.72 + (verdict.authority_total ?? 0) * 0.025 + (verdict.ranking_total ?? 0) * 0.015;
-  return Math.max(0.7, Math.min(0.98, Math.round(raw * 1000) / 1000));
-}
-
-function tiktokPublicNote(verdict, candidate) {
-  if (verdict.verdict !== "ACCEPT") return "Rejected by TikTok engagement-authority rubric.";
-  const handle = candidate.creator_handle ? `@${candidate.creator_handle}` : "creator";
-  return `${handle}: authority ${verdict.authority_total}, rank ${verdict.ranking_total}.`.slice(0, 140);
-}
-
-async function postTikTokSuggestion(skill, source, candidate, profile, verdict) {
-  const confidence = tiktokConfidence(verdict);
+/**
+ * Submit a short-form clip through the SAME path a YouTube video takes.
+ *
+ * There is no short-form branch after this call. submit-suggestion routes it to
+ * the coach lane (it stopped sending non-YouTube to `founder` in 0058's
+ * companion change), apply-suggestion writes the transcript to link_transcripts
+ * with the platform as its source, and get_unscored_for_coach hands the coach a
+ * transcript it cannot tell apart from a caption track. The `scoring_strategy`
+ * says transcript_llm rather than engagement_authority because that is now
+ * literally true.
+ *
+ * `transcript` may be null. A clip whose audio is music produces no usable
+ * speech, and the caller has already scored it on metadata — the same treatment
+ * a YouTube video with no captions gets, via the same prompt.
+ */
+async function postShortFormSuggestion(skill, candidate, transcript, score, durationSeconds) {
+  const confidence = Math.min(score.relevance, score.teaching_quality);
+  const scoringMode = score.scoring_mode ?? "transcript";
+  const hasTranscript = typeof transcript === "string" && transcript.length > 0;
   const requestAutoApply =
     config.autoApply && Boolean(config.internalFunctionToken) && confidence >= config.autoApplyConfidenceFloor;
-  const canonicalUrl = candidate.url ?? candidate.href;
-  const videoId = tiktokVideoIdFromUrl(canonicalUrl);
-  const title = String(candidate.caption ?? `${skill.name} TikTok tutorial`).replace(/\s+/g, " ").trim().slice(0, 180);
+  const isTikTok = candidate.platform === "tiktok";
+
   const payload = {
     type: "LINK_ADD",
     origin_type: "agent",
-    origin_name: "local-collection-tiktok",
+    origin_name: "local-collection-shortform",
     category_id: skill.category_id,
     skill_id: skill.id,
     payload_json: {
-      url: canonicalUrl,
-      canonical_url: canonicalUrl,
-      domain: "tiktok.com",
-      title,
-      description: candidate.caption ?? null,
-      thumbnail_url: candidate.thumbnail_url ?? null,
-      thumbnail_dynamic_url: candidate.thumbnail_dynamic_url ?? null,
+      url: candidate.canonicalUrl,
+      canonical_url: candidate.canonicalUrl,
+      domain: isTikTok ? "tiktok.com" : "instagram.com",
+      title: candidate.title || `${skill.name} ${candidate.platform} clip`,
+      description: candidate.description ?? null,
       content_type: "video",
       language: "en",
       target_skill_id: skill.id,
-      public_note: tiktokPublicNote(verdict, candidate),
-      skill_level: null,
-      duration_seconds: candidate.duration_seconds ?? null,
-      like_count: candidate.like_count ?? null,
-      comment_count: candidate.comment_count ?? null,
-      share_count: candidate.share_count ?? null,
-      favorite_count: candidate.favorite_count ?? null,
-      creator_handle: candidate.creator_handle ?? candidate.handle ?? profile?.handle ?? null,
-      creator_url: candidate.creator_url ?? profile?.url ?? null,
-      creator_platform: "tiktok",
-      creator_profile: profile ? {
-        ...profile,
-        authority_score: verdict.authority_total ?? null,
-      } : null,
-      scoring_strategy: "engagement_authority",
+      public_note: score.public_note
+        || `Auto-scored relevance=${score.relevance.toFixed(2)}, quality=${score.teaching_quality.toFixed(2)}.`,
+      skill_level: score.level,
+      // Measured from the downloaded audio, so it is the real clip length rather
+      // than a number scraped off a card. Nothing filters on it yet — the coach
+      // scores substance, and a 30s clip that teaches something scored 1.02
+      // against a 3-minute one at 0.63 — but the column has been empty for every
+      // short-form link so far, which makes the question unanswerable.
+      duration_seconds: durationSeconds ?? null,
+      creator_handle: candidate.creatorHandle ?? null,
+      creator_url: candidate.creatorHandle && isTikTok
+        ? `https://www.tiktok.com/@${candidate.creatorHandle}`
+        : candidate.creatorHandle
+          ? `https://www.instagram.com/${candidate.creatorHandle}/`
+          : null,
+      creator_platform: candidate.platform,
+      scoring_strategy: "transcript_llm",
     },
     evidence_json: {
-      source: "tiktok_local_collection",
-      source_identifier: source.identifier,
-      source_display_name: source.display_name,
-      video_id: videoId,
-      scoring_strategy: "engagement_authority",
-      verdict,
-      creator_profile_available: Boolean(profile && !profile.error),
-      raw_candidate: candidate,
+      source: scoringMode === "metadata_fallback"
+        ? "shortform_local_collection_metadata_fallback"
+        : "shortform_local_collection",
+      platform: candidate.platform,
+      video_id: candidate.externalId,
+      creator_handle: candidate.creatorHandle ?? null,
+      // How it was found, mirroring the YouTube field: channel_search |
+      // fresh_uploads | open_search there, shortform_search here.
+      discovery_source: "shortform_search",
+      search_provider: shortFormSearchProvider()?.name ?? null,
+      scoring_mode: scoringMode,
+      transcript_fetcher: "whisper",
+      transcript_available: hasTranscript,
+      duration_seconds: durationSeconds ?? null,
+      score,
+      transcript_excerpt: hasTranscript ? transcript.slice(0, 600) : null,
+      // apply-suggestion moves this into link_transcripts once the link row
+      // exists, stamped with the platform rather than 'youtube'.
+      transcript_full: hasTranscript ? transcript : null,
     },
     confidence,
     ...(requestAutoApply ? { requested_status: "auto_approved" } : {}),
   };
 
-  const headers = {
-    Authorization: `Bearer ${config.serviceRoleKey}`,
-    "Content-Type": "application/json",
-    ...(config.internalFunctionToken ? { "x-internal-token": config.internalFunctionToken } : {}),
-  };
   const response = await fetchWithTimeout(`${config.supabaseUrl}/functions/v1/submit-suggestion`, {
     method: "POST",
-    headers,
+    headers: {
+      Authorization: `Bearer ${config.serviceRoleKey}`,
+      "Content-Type": "application/json",
+      ...(config.internalFunctionToken ? { "x-internal-token": config.internalFunctionToken } : {}),
+    },
     body: JSON.stringify(payload),
-  }, config.submitTimeoutMs, "submit_tiktok");
+  }, config.submitTimeoutMs, "submit_shortform");
   const text = await response.text();
-  if (!response.ok) throw new Error(`submit-tiktok ${response.status}: ${text}`);
+  if (!response.ok) throw new Error(`submit-shortform ${response.status}: ${text}`);
   return JSON.parse(text);
 }
 
@@ -2519,7 +2502,7 @@ async function preflightCheck() {
       // preflight time out even after retries, but that must NOT kill the whole
       // 6h run — the actual transcript fetches happen over hours with their own
       // retry + consecutive-failure circuit breaker, and the network usually
-      // recovers. Warn and continue (TikTok + YouTube discovery still run; a
+      // recovers. Warn and continue (short-form + YouTube discovery still run; a
       // genuinely dead browser self-limits via the transcript circuit breaker).
       browserTranscriptPreflight = { ok: false, error: errorMessage(error) };
       log("warn", "browser_transcript_preflight_failed_nonfatal",
@@ -2614,10 +2597,7 @@ function installTerminationHandlers() {
       if (shuttingDown) process.exit(signal === "SIGTERM" ? 143 : 130);
       shuttingDown = true;
       abortActiveRun(signal.toLowerCase()).finally(() => {
-        Promise.all([
-          closeTranscriptBrowser().catch(() => undefined),
-          closeTikTokBrowser().catch(() => undefined),
-        ])
+        closeTranscriptBrowser()
           .catch(() => undefined)
           .then(() => finalizeCollectionCache())
           .catch(() => undefined)
@@ -3221,287 +3201,237 @@ async function processSkill(skill, summary) {
   }
 }
 
-async function processTikTokCollection(selectedSkills, summary) {
-  if (!config.tiktokEnabled) {
-    log("info", "tiktok_collection_disabled", "TikTok collection disabled by COLLECT_TIKTOK_ENABLED=0");
+/**
+ * Short-form collection: TikTok and Instagram Reels, one pass over sub-skills.
+ *
+ * Structurally this is processSkill() with a different transcript source. For
+ * each sub-skill it asks a search engine for clips, downloads and transcribes
+ * each one locally, scores the transcript with the same Ollama prompt YouTube
+ * uses, and submits what passes the same thresholds. Nothing downstream knows
+ * the platform.
+ *
+ * WHAT THIS REPLACED, AND WHY. The old path iterated `tiktok_search` rows in
+ * trusted_sources, drove TikTok's own search through a CDP browser, and scored
+ * candidates on engagement and creator authority. Three separate problems:
+ * it could not reach Instagram at all, its search step produced the blank-render
+ * bug, and its rubric judged popularity rather than teaching. All three
+ * disappear when a clip can simply be transcribed.
+ *
+ * SCALE IS DELIBERATELY SMALL. The point is diversity, not volume — people who
+ * prefer short clips should find some on a page, so a handful per sub-skill is
+ * the whole goal. Discovery caps at 3 per platform, and this walks
+ * shortFormSkillsPerRun sub-skills a night.
+ */
+async function processShortFormCollection(selectedSkills, summary) {
+  if (!config.shortFormEnabled) {
+    log("info", "shortform_collection_disabled", "Short-form collection disabled by COLLECT_SHORTFORM_ENABLED=0");
     return { status: "skipped_disabled" };
   }
-
-  const selectedSkillIds = new Set(selectedSkills.map((skill) => skill.id));
-  const sources = await loadTikTokSources();
-  if (!sources.length) {
-    log("info", "tiktok_sources_empty", "No active TikTok search sources found", {
-      category: categorySlugFilter,
+  if (!isShortFormSearchConfigured()) {
+    // Not an error: a machine without a search key still collects YouTube.
+    log("warn", "shortform_search_unconfigured", "No short-form search provider key set; skipping short-form collection", {
+      expected_env: "SERPER_API_KEY | TAVILY_API_KEY | BRAVE_SEARCH_API_KEY",
     });
-    return { status: "skipped_no_sources" };
+    summary.push({ source: "shortform", status: "skipped_no_search_key" });
+    return { status: "skipped_no_search_key" };
+  }
+
+  const skills = selectedSkills.slice(0, config.shortFormSkillsPerRun);
+  if (!skills.length) {
+    log("info", "shortform_no_skills", "No skills selected for short-form collection");
+    return { status: "skipped_no_skills" };
   }
 
   const runId = await startAgentRun();
   activeRunId = runId;
-  activeRunState = { runId, phase: "tiktok_collection", suggestionsCreated: 0, finalized: false };
+  activeRunState = { runId, phase: "shortform_collection", suggestionsCreated: 0, finalized: false };
 
   const stats = {
-    queries_attempted: 0,
+    skills_searched: 0,
     candidates_seen: 0,
-    details_fetched: 0,
-    creators_probed: 0,
-    accepted: 0,
-    submitted: 0,
     duplicates: 0,
+    transcribed: 0,
+    no_speech: 0,
+    download_failed: 0,
+    metadata_fallback: 0,
     rejected: 0,
-    rejected_by_reason: {},
+    submitted: 0,
     errors: 0,
-    candidates_by_query: {},
+    by_platform: { tiktok: 0, instagram: 0 },
+    no_speech_by_reason: {},
   };
-  const knownBySkillId = new Map();
-  const categorySkillsById = new Map();
 
   try {
-    log("info", "tiktok_collection_started", "Starting TikTok search collection", {
+    log("info", "shortform_collection_started", "Starting short-form collection", {
       run_id: runId,
-      source_count: sources.length,
-      selected_skill_count: selectedSkillIds.size,
-      search_limit: config.tiktokSearchLimit,
-      query_gap_ms: config.tiktokQueryGapMs,
-      probe_gap_ms: config.tiktokProbeGapMs,
+      search_provider: shortFormSearchProvider()?.name ?? null,
+      skills: skills.length,
+      gap_ms: config.shortFormGapMs,
     });
 
-    let preflight;
+    // Download the whisper model once for the whole run rather than per clip;
+    // it is ~1.6 GB and already on disk after the first night.
+    let modelPath;
     try {
-      preflight = await preflightTikTokBrowser();
+      modelPath = await ensureWhisperModel({ log });
     } catch (error) {
-      log("warn", "tiktok_preflight_failed", "TikTok browser preflight failed; skipping TikTok collection", {
-        cause: errorMessage(error),
+      const message = errorMessage(error);
+      log("warn", "shortform_whisper_unavailable", "Whisper model unavailable; skipping short-form collection", {
+        cause: message,
       });
       await finishAgentRun(runId, { suggestionsCreated: 0 });
       if (activeRunState) activeRunState.finalized = true;
-      summary.push({ source: "tiktok", status: "skipped_preflight_failed", ...stats, error: errorMessage(error) });
-      return { status: "skipped_preflight_failed" };
+      summary.push({ source: "shortform", status: "skipped_no_whisper", error: message, ...stats });
+      return { status: "skipped_no_whisper" };
     }
 
-    log("info", "tiktok_preflight_completed", "TikTok browser preflight completed", preflight);
-    if (preflight.auth_wall || preflight.captcha || preflight.logged_in === false) {
-      log("warn", "tiktok_preflight_auth_required", "TikTok session needs login or captcha before collection can run", {
-        auth_wall: preflight.auth_wall,
-        captcha: preflight.captcha,
-        logged_in: preflight.logged_in,
-      });
-      await finishAgentRun(runId, { suggestionsCreated: 0 });
-      if (activeRunState) activeRunState.finalized = true;
-      summary.push({ source: "tiktok", status: "skipped_auth_required", ...stats, preflight });
-      return { status: "skipped_auth_required" };
-    }
-
-    const ctx = await getTikTokBrowserContext();
     const seenUrls = new Set();
-    const creatorProfileCache = new Map();
-    const warnedUnmappedVerticals = new Set();
-    let firstQuery = true;
 
-    for (const source of sources) {
-      if (!source.category_id) {
-        log("warn", "tiktok_source_missing_category", "TikTok source has no category; skipping", {
-          source_identifier: source.identifier,
-        });
+    for (const skill of skills) {
+      await checkKillSwitch(skill, null);
+
+      let candidates = [];
+      try {
+        candidates = await discoverShortForm(skill, { log });
+      } catch (error) {
+        stats.errors += 1;
+        log("warn", "shortform_search_error", errorMessage(error), { skill: skill.slug });
         continue;
       }
-      let categorySkills = categorySkillsById.get(source.category_id);
-      if (!categorySkills) {
-        categorySkills = await loadCategorySkills(source.category_id);
-        categorySkillsById.set(source.category_id, categorySkills);
-      }
-      const skill = matchTikTokSourceSkill(source, categorySkills, selectedSkillIds);
-      if (!skill) {
-        log("warn", "tiktok_source_skill_unmatched", "Could not map TikTok query to an active selected skill", {
-          source_identifier: source.identifier,
-          target_skill_slug: source.target_skill_slug,
-          category_slug: source.category_slug,
-        });
-        continue;
-      }
-      if (source.category_slug && !VERTICALS[source.category_slug] && !warnedUnmappedVerticals.has(source.category_slug)) {
-        warnedUnmappedVerticals.add(source.category_slug);
-        log("warn", "tiktok_vertical_unmapped", "TikTok category has no explicit engagement scoring vertical; using generic fallback", {
-          category_slug: source.category_slug,
-          source_identifier: source.identifier,
-        });
-      }
+      stats.skills_searched += 1;
+      if (!candidates.length) continue;
 
-      if (!firstQuery) await sleep(config.tiktokQueryGapMs);
-      firstQuery = false;
-      stats.queries_attempted += 1;
+      const knownCanonicalUrls = await loadKnownCanonicalUrls(skill.id);
+      // Per skill, matching the YouTube fallback budget: once this many clips
+      // for one sub-skill have come back without usable speech, stop paying for
+      // metadata-only submissions and move on.
+      let fallbacksUsed = 0;
 
-      // Retry on zero cards: a cold CDP session returns empty until it warms
-      // up. Re-running the search (the same thing we do manually) succeeds.
-      let searchResult = null;
-      const maxSearchAttempts = 1 + config.tiktokSearchRetries;
-      for (let attempt = 1; attempt <= maxSearchAttempts; attempt += 1) {
-        try {
-          searchResult = await searchTikTok(ctx, source.identifier, { dumpHtml: false });
-        } catch (error) {
-          stats.errors += 1;
-          log("warn", "tiktok_search_failed", errorMessage(error), {
-            source_identifier: source.identifier,
-            skill: skill.slug,
-            attempt,
-          });
-          searchResult = null;
-          break;
-        }
-        if (searchResult.cards.length > 0) break;
-        if (attempt < maxSearchAttempts) {
-          log("info", "tiktok_search_retry", "TikTok search returned 0 cards; warming up and retrying (cold-session hiccup)", {
-            source_identifier: source.identifier,
-            skill: skill.slug,
-            attempt,
-            next_attempt_in_ms: config.tiktokSearchRetryGapMs,
-          });
-          await sleep(config.tiktokSearchRetryGapMs);
-        }
-      }
-      if (!searchResult) continue;
-
-      const cards = searchResult.cards.slice(0, config.tiktokSearchLimit);
-      stats.candidates_by_query[source.identifier] = cards.length;
-      log("info", "tiktok_search_completed", "TikTok search completed", {
-        source_identifier: source.identifier,
-        skill: skill.slug,
-        total_cards: searchResult.cards.length,
-        will_probe: cards.length,
-        wall: searchResult.wall,
-      });
-
-      if (!knownBySkillId.has(skill.id)) {
-        knownBySkillId.set(skill.id, await loadKnownCanonicalUrls(skill.id));
-      }
-      const knownCanonicalUrls = knownBySkillId.get(skill.id);
-
-      for (let index = 0; index < cards.length; index += 1) {
-        const card = cards[index];
-        const canonicalUrl = card.href;
+      for (const candidate of candidates) {
         stats.candidates_seen += 1;
-        if (!canonicalUrl || seenUrls.has(canonicalUrl) || knownCanonicalUrls.has(canonicalUrl)) {
+        if (seenUrls.has(candidate.canonicalUrl) || knownCanonicalUrls.has(candidate.canonicalUrl)) {
           stats.duplicates += 1;
-          log("debug", "tiktok_candidate_skipped_known_url", "TikTok candidate already seen or known", {
-            source_identifier: source.identifier,
+          continue;
+        }
+        seenUrls.add(candidate.canonicalUrl);
+
+        await sleep(config.shortFormGapMs);
+        await ensureSystemHealthy(skill, candidate);
+
+        // TRANSCRIBE. `ok: false` is an ordinary outcome (music, a song, a
+        // silent demo), distinct from a thrown error (download blocked, tool
+        // missing) — they are counted apart because they mean different things:
+        // one is a property of the clip, the other of this machine's access.
+        let transcription;
+        try {
+          transcription = await transcribeShortForm(candidate.canonicalUrl, { modelPath, log });
+        } catch (error) {
+          stats.download_failed += 1;
+          log("warn", "shortform_transcribe_failed", errorMessage(error), {
             skill: skill.slug,
-            canonical_url: canonicalUrl,
+            platform: candidate.platform,
+            canonical_url: candidate.canonicalUrl,
           });
           continue;
         }
-        seenUrls.add(canonicalUrl);
 
-        let detail = null;
+        const transcript = transcription.ok ? transcription.text : null;
+        if (transcription.ok) {
+          stats.transcribed += 1;
+        } else {
+          stats.no_speech += 1;
+          stats.no_speech_by_reason[transcription.reason] =
+            (stats.no_speech_by_reason[transcription.reason] ?? 0) + 1;
+        }
+
+        // Instagram's caption arrives with the download, not with the search
+        // result — instaloader writes it to disk beside the mp4, and it is the
+        // only real text Instagram gives us. Without it a music-only reel had
+        // nothing to score against but a templated title, which is why the first
+        // run rejected one at relevance 0. TikTok already carries its caption in
+        // the search description, so this only fills a gap.
+        const scored = transcription.caption
+          ? { ...candidate, description: candidate.description ?? transcription.caption }
+          : candidate;
+
+        // SCORE. Identical to YouTube: transcript prompt when there is a
+        // transcript, the conservative metadata prompt when there is not.
+        let score;
         try {
-          detail = await fetchVideoDetail(ctx, canonicalUrl, { dumpHtml: false });
-          // An unrendered page is NOT a fetched detail. TikTok serves an empty
-          // shell often enough that a human watching the browser sees a blank
-          // tab and gets the video by hitting refresh; the fetcher now retries
-          // that internally, and `_rendered: false` means every retry still came
-          // back blank. Counting it as a success submitted a candidate whose
-          // caption, stats and creator were all null — scored on nothing, and
-          // indistinguishable from a video that genuinely has no engagement.
-          if (detail && detail._rendered === false) {
-            stats.errors += 1;
-            log("warn", "tiktok_detail_blank", "Detail page never rendered after retries", {
-              source_identifier: source.identifier,
-              skill: skill.slug,
-              canonical_url: canonicalUrl,
-              attempts: detail._detail_attempts ?? null,
-            });
-            detail = null;
+          if (transcript) {
+            score = await scoreWithOllama(skill, scored, transcript);
+          } else if (fallbacksUsed < config.shortFormFallbackCandidates) {
+            fallbacksUsed += 1;
+            stats.metadata_fallback += 1;
+            score = await scoreMetadataFallbackWithOllama(skill, scored);
+            score.evidence_quote = fallbackEvidenceQuote(scored, score.evidence_quote);
           } else {
-            stats.details_fetched += 1;
+            log("debug", "shortform_fallback_budget_spent", "Skipping metadata-only clip; fallback budget spent", {
+              skill: skill.slug,
+              canonical_url: candidate.canonicalUrl,
+              reason: transcription.reason,
+            });
+            continue;
           }
         } catch (error) {
           stats.errors += 1;
-          log("warn", "tiktok_detail_failed", errorMessage(error), {
-            source_identifier: source.identifier,
+          log("warn", "shortform_score_failed", errorMessage(error), {
             skill: skill.slug,
-            canonical_url: canonicalUrl,
+            canonical_url: candidate.canonicalUrl,
           });
-        }
-        if (index < cards.length - 1) await sleep(config.tiktokProbeGapMs);
-
-        const candidate = mergeTikTokCardDetail(card, detail);
-        let profile = null;
-        const handle = candidate.creator_handle ?? candidate.handle;
-        if (handle) {
-          const cacheKey = String(handle).replace(/^@/, "").trim().toLowerCase();
-          if (creatorProfileCache.has(cacheKey)) {
-            profile = creatorProfileCache.get(cacheKey);
-            log("debug", "tiktok_creator_profile_cache_hit", "Reused TikTok creator profile probe result", {
-              source_identifier: source.identifier,
-              skill: skill.slug,
-              handle,
-              cached: Boolean(profile),
-            });
-          } else {
-            try {
-              profile = await fetchCreatorProfile(ctx, handle);
-              creatorProfileCache.set(cacheKey, profile);
-              stats.creators_probed += 1;
-            } catch (error) {
-              stats.errors += 1;
-              creatorProfileCache.set(cacheKey, null);
-              log("warn", "tiktok_creator_profile_failed", errorMessage(error), {
-                source_identifier: source.identifier,
-                skill: skill.slug,
-                handle,
-                canonical_url: canonicalUrl,
-              });
-            }
-            if (index < cards.length - 1) await sleep(config.tiktokProbeGapMs);
-          }
-        }
-
-        const verdict = scoreTikTokCandidate(candidate, profile, {
-          query: source.identifier,
-          categorySlug: source.category_slug,
-        });
-        log("info", "tiktok_candidate_scored", "TikTok candidate scored", {
-          source_identifier: source.identifier,
-          skill: skill.slug,
-          canonical_url: canonicalUrl,
-          handle,
-          verdict,
-          duration_seconds: candidate.duration_seconds,
-          like_count: candidate.like_count,
-          followers_count: profile?.followers_count ?? null,
-        });
-
-        if (verdict.verdict !== "ACCEPT") {
-          stats.rejected += 1;
-          const reason = verdict.layer === 1
-            ? verdict.reasons.join(",")
-            : `authority_below_gate:${verdict.authority_total}<${verdict.gate}`;
-          stats.rejected_by_reason[reason] = (stats.rejected_by_reason[reason] ?? 0) + 1;
           continue;
         }
 
-        stats.accepted += 1;
+        const threshold = scoreThresholdStatus(score);
+        log("info", "shortform_candidate_scored", "Short-form candidate scored", {
+          skill: skill.slug,
+          platform: candidate.platform,
+          canonical_url: candidate.canonicalUrl,
+          scoring_mode: score.scoring_mode,
+          relevance: score.relevance,
+          teaching_quality: score.teaching_quality,
+          passes: threshold.passes,
+          seconds: transcription.seconds ?? null,
+          chars_per_second: transcription.charsPerSecond ?? null,
+          transcript_reason: transcription.ok ? null : transcription.reason,
+        });
+        if (!threshold.passes) {
+          stats.rejected += 1;
+          continue;
+        }
+
         try {
-          const result = await postTikTokSuggestion(skill, source, candidate, profile, verdict);
+          // Only a POSITIVE duration is a measurement. transcribeShortForm
+          // reports seconds: 0 for a download that carried no audio stream,
+          // which is the absence of a measurement, not a zero-length clip —
+          // storing it wrote duration_seconds 0.00 on a real 30-second TikTok.
+          const measuredSeconds = Number(transcription.seconds) > 0 ? Number(transcription.seconds) : null;
+          const result = await postShortFormSuggestion(
+            skill, scored, transcript, score, measuredSeconds,
+          );
           if (result.duplicate) {
             stats.duplicates += 1;
           } else {
             stats.submitted += 1;
+            stats.by_platform[candidate.platform] = (stats.by_platform[candidate.platform] ?? 0) + 1;
             if (activeRunState) activeRunState.suggestionsCreated = stats.submitted;
-            knownCanonicalUrls.add(canonicalUrl);
+            knownCanonicalUrls.add(candidate.canonicalUrl);
           }
-          log("info", "tiktok_suggestion_submitted", "TikTok suggestion submitted", {
+          log("info", "shortform_suggestion_submitted", "Short-form suggestion submitted", {
             collect_target: config.collectTarget,
             suggestion_id: result.suggestion_id,
             duplicate: Boolean(result.duplicate),
             skill: skill.slug,
-            canonical_url: canonicalUrl,
+            platform: candidate.platform,
+            canonical_url: candidate.canonicalUrl,
+            transcript_available: Boolean(transcript),
           });
         } catch (error) {
           stats.errors += 1;
-          log("error", "tiktok_submit_failed", errorMessage(error), {
-            source_identifier: source.identifier,
+          log("error", "shortform_submit_failed", errorMessage(error), {
             skill: skill.slug,
-            canonical_url: canonicalUrl,
+            platform: candidate.platform,
+            canonical_url: candidate.canonicalUrl,
             http_status: submitFailureStatus(error),
           });
         }
@@ -3510,18 +3440,18 @@ async function processTikTokCollection(selectedSkills, summary) {
 
     await finishAgentRun(runId, { suggestionsCreated: stats.submitted });
     if (activeRunState) activeRunState.finalized = true;
-    const item = { source: "tiktok", status: "completed", ...stats };
+    const item = { source: "shortform", status: "completed", ...stats };
     summary.push(item);
-    log("info", "tiktok_collection_completed", "TikTok collection completed", item);
+    log("info", "shortform_collection_completed", "Short-form collection completed", item);
     await flushAgentRunEvents();
     return item;
   } catch (error) {
     const message = errorMessage(error);
     stats.errors += 1;
-    log("error", "tiktok_collection_failed", message, stats);
+    log("error", "shortform_collection_failed", message, stats);
     await finishAgentRun(runId, { status: "failed", suggestionsCreated: stats.submitted, errorMessage: message });
     if (activeRunState) activeRunState.finalized = true;
-    const item = { source: "tiktok", status: "failed", error: message, ...stats };
+    const item = { source: "shortform", status: "failed", error: message, ...stats };
     summary.push(item);
     await flushAgentRunEvents();
     return item;
@@ -3581,15 +3511,15 @@ async function main() {
     const summary = [];
     let consecutiveRateLimitCircuits = 0;
     let stoppedByRateLimitCircuit = false;
-    // YouTube and TikTok talk to different external services, different cookies,
-    // different DOM, and different DB writers — so they're naturally parallelizable.
-    // CAVEAT: both share one CDP-attached Chrome and both call page.bringToFront().
-    // The YouTube transcript fetcher comment in scripts/_lib/transcript-fetcher-browser.mjs
-    // explicitly says focus is required for get_transcript to return 200 — if
-    // TikTok's bringToFront races and steals focus mid-transcript, a YouTube fetch
-    // can 4xx. If you see a spike in transcript failures after enabling parallel
-    // sources, set COLLECT_PARALLEL_SOURCES=0 to fall back to sequential (YouTube
-    // → TikTok). Promise.allSettled keeps a crash in one path from killing the other.
+    // YouTube and short-form talk to different external services and different
+    // DB writers, so they're naturally parallelizable. The old caveat about both
+    // sharing one CDP-attached Chrome — where TikTok's bringToFront could steal
+    // focus mid-transcript and 4xx a YouTube fetch — no longer applies: short-form
+    // discovery is an HTTP search call and its transcripts come from local
+    // whisper, so it never touches the browser. What they do still share is this
+    // machine: whisper saturates the CPU, so COLLECT_PARALLEL_SOURCES=0 remains
+    // the escape hatch if YouTube transcript timeouts climb.
+    // Promise.allSettled keeps a crash in one path from killing the other.
     const runYouTubeCollection = async () => {
       for (const skill of skills) {
         try {
@@ -3612,14 +3542,14 @@ async function main() {
     };
 
     if (config.parallelSources) {
-      log("info", "source_collection_mode", "Running YouTube and TikTok collections in parallel", {
+      log("info", "source_collection_mode", "Running YouTube and short-form collections in parallel", {
         parallel: true,
       });
       const results = await Promise.allSettled([
         runYouTubeCollection(),
-        processTikTokCollection(skills, summary),
+        processShortFormCollection(skills, summary),
       ]);
-      const labels = ["youtube", "tiktok"];
+      const labels = ["youtube", "shortform"];
       results.forEach((r, i) => {
         if (r.status === "rejected") {
           log("error", "source_collection_failed", errorMessage(r.reason), {
@@ -3628,11 +3558,11 @@ async function main() {
         }
       });
     } else {
-      log("info", "source_collection_mode", "Running YouTube then TikTok collection sequentially (COLLECT_PARALLEL_SOURCES=0)", {
+      log("info", "source_collection_mode", "Running YouTube then short-form collection sequentially (COLLECT_PARALLEL_SOURCES=0)", {
         parallel: false,
       });
       await runYouTubeCollection();
-      await processTikTokCollection(skills, summary);
+      await processShortFormCollection(skills, summary);
     }
 
     const outputPath = join(config.outputDir, `${new Date().toISOString().replace(/[:.]/g, "-")}.json`);
@@ -3661,14 +3591,6 @@ async function main() {
         ts: new Date().toISOString(),
         level: "warn",
         event: "browser_transcript_close_failed",
-        message: errorMessage(error),
-      }));
-    });
-    await closeTikTokBrowser().catch((error) => {
-      console.warn(JSON.stringify({
-        ts: new Date().toISOString(),
-        level: "warn",
-        event: "browser_tiktok_close_failed",
         message: errorMessage(error),
       }));
     });

@@ -263,3 +263,85 @@ and set on only 114 of 142 TikToks, so it is not answerable today on any platfor
 returns the field for free, so **populate it on new links as they are collected** — that
 costs nothing now and avoids a backfill over the whole catalogue later. Do not backfill the
 existing rows for this; there is no consumer.
+
+## Implemented — verified end to end 2026-09-09
+
+The collector no longer has a TikTok path. `processTikTokCollection` is gone, along with
+`postTikTokSuggestion`, the `engagement_authority` rubric it applied, the CDP
+`searchTikTok` call, and the `tiktok_search` rows in `trusted_sources` that drove it.
+`processShortFormCollection` replaces all of it: per sub-skill it searches, downloads,
+transcribes with whisper, scores the transcript with the same Ollama prompt YouTube uses,
+and submits through the same `submit-suggestion` call. Nothing downstream of the submit
+knows the platform.
+
+Two scoped runs against hosted, one sub-skill each:
+
+```
+muay-thai/switch-kick          6 candidates (3 TikTok, 3 IG)  → 3 submitted
+muay-thai/sweeps-trips-...     6 candidates (3 TikTok, 3 IG)  → 1 submitted (Instagram)
+```
+
+Transcription: 6 of 12 clips produced usable speech, at 10.1–18.4 chars/sec and 30–79
+seconds. The rest were rejected by the density gate, one download carried no audio stream,
+and one `/reel/` URL turned out to be a photo post. Scores ran 0.1 to 0.8 relevance and the
+threshold rejected six — the gate is doing work, not rubber-stamping.
+
+### Three bugs the runs exposed, all now fixed
+
+**`link_transcripts` could not physically hold a short-form transcript.** Two check
+constraints from when YouTube was the only source: `CHECK (source = 'youtube')` and a
+provider list without `whisper`. `apply-suggestion` wraps its transcript persist in
+try/catch, so the violation surfaced as a warning in a log nobody reads and the result
+looked completely normal — link created, relation created, suggestion `auto_approved`,
+`link_transcripts` empty. Indistinguishable from a clip with no speech. Migration `0059`
+widens both. `scripts/fetch-shortform-transcripts.mjs` writes the same two values, so the
+141-clip backfill could never have landed either; that was read as TikTok throttling.
+
+**`whisper` was being recorded as `ytdlp`.** Both provider mappers tested only for
+`"browser"` and defaulted everything else to `ytdlp`, so a locally transcribed clip would
+have claimed the platform supplied captions — which TikTok and Instagram do not do at all.
+Now a distinct provider in both writers.
+
+**Instagram canonical URLs never matched on dedupe.** `classifyResultUrl` emitted
+`/reel/<code>/` while `_shared/normalization.ts` strips trailing slashes, so a reel already
+in the catalogue was invisible to `loadKnownCanonicalUrls` and would be re-downloaded and
+re-transcribed on every pass. The two duplicate rows the catalogue already holds for one
+reel, differing only by that slash, are the same mismatch reaching the database.
+
+### Instagram's caption comes from the download, not the search result
+
+The first run rejected a reel at relevance 0 with nothing to judge it on: no speech, and
+Instagram's only metadata is a templated `twitter:title` that the search engine echoes back
+as its description. But instaloader writes the caption to a `.txt` beside the mp4 as a side
+effect of the download already being paid for. `transcribeShortForm` now returns it, on
+every outcome including the failures — a clip with no usable speech is precisely the one
+whose caller needs something to score against. TikTok needs none of this; its caption
+arrives in the search result.
+
+### Serplify cannot be used — it returns the domain, not the post
+
+Tested against the live API. It is DataForSEO-shaped (`POST /v3/serp/google/organic/live/advanced`,
+tasks envelope, $0.005/query) and it answers, but every organic result carries
+`"url": "https://www.tiktok.com"` — the domain alone, with the path only hinted at in a
+`breadcrumb` field (`https://www.tiktok.com › video`). Its `short_videos` block gives a
+`/goto?url=<opaque>` redirect rather than a link. Without a post URL there is no video id,
+so nothing downstream can act on it. **Tavily is the working provider** and is what both
+verified runs used. The key stays in `.env.hosted` and is simply unread.
+
+### Still open
+
+- **A rejected clip leaves no trace, so it is retried forever.** The gap-filler
+  re-downloaded and re-transcribed the same two music-only TikToks on two consecutive runs.
+  Over ~150 short-form links with no usable speech that is roughly 12 minutes of wasted
+  download every night, and it never converges. This needs recording before
+  `fetch-shortform-transcripts.mjs` is put on a cron, not after. A zero-length row is not an
+  option: `char_count > 0` is enforced, and storing the few characters whisper did return
+  would feed the coach a Spanish song as surfing technique, which is the exact harm the
+  density gate exists to prevent.
+- **Short-form links have no thumbnail.** 135 of 155 TikToks and both Instagram links are
+  already missing one, so this predates the new path, but new links inherit it. TikTok's CDN
+  thumbnail URLs expire, so the durable answer is the existing `cacheThumbnailIfNeeded`
+  storage path rather than storing the remote URL.
+- `duration_seconds` is now populated from the decoded audio on every short-form link that
+  transcribes — a real measurement rather than a scraped card value. Still null on all
+  YouTube links.

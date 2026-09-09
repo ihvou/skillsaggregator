@@ -49,8 +49,21 @@ function evidenceString(
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
+/**
+ * How the transcript text was obtained. `whisper` is distinct from the caption
+ * fetchers on purpose: ytdlp and browser both read the platform's own caption
+ * track, whisper transcribes the audio locally. Collapsing whisper into ytdlp —
+ * which this did while `!== "browser"` was the whole test — records short-form
+ * as though the platform had supplied captions, which is not something TikTok or
+ * Instagram do at all. The allowed set is pinned by the check constraint in
+ * migration 0059; anything unrecognised falls back to ytdlp rather than failing
+ * the insert.
+ */
 function transcriptProviderFromEvidence(evidence: Record<string, unknown> | null | undefined) {
-  return evidenceString(evidence, "transcript_fetcher") === "browser" ? "browser" : "ytdlp";
+  const fetcher = evidenceString(evidence, "transcript_fetcher")?.toLowerCase();
+  if (fetcher === "browser") return "browser";
+  if (fetcher === "whisper") return "whisper";
+  return "ytdlp";
 }
 
 function storageKeyFromPublicUrl(value: string | null | undefined) {

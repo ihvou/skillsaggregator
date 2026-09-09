@@ -54,7 +54,13 @@ export function transcriptLanguageFromFilename(filename) {
 }
 
 export function transcriptProviderFromFetcher(fetcher) {
-  return String(fetcher ?? "").toLowerCase() === "browser" ? "browser" : "ytdlp";
+  const value = String(fetcher ?? "").toLowerCase();
+  if (value === "browser") return "browser";
+  // Local audio transcription, not a platform caption track. Kept distinct so a
+  // later question about transcript accuracy can separate the two. Allowed set
+  // is pinned by the check constraint in migration 0059.
+  if (value === "whisper") return "whisper";
+  return "ytdlp";
 }
 
 /**

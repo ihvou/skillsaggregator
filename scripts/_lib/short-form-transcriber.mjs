@@ -18,7 +18,7 @@
  * obtain a 43-second voice track, against ~4s of CPU. Prefer small formats.
  */
 import { execFile } from "node:child_process";
-import { existsSync, mkdirSync, rmSync, readdirSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, readdirSync, statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { promisify } from "node:util";
@@ -175,8 +175,36 @@ async function downloadMedia(url, dir, { log } = {}) {
   }
 
   const media = readdirSync(dir).filter((name) => name.endsWith(".mp4")).sort();
-  if (!media.length) throw new Error(`download produced no mp4 in ${dir}`);
-  return join(dir, media[0]);
+  // No mp4 is an ordinary outcome, not a failure. Instagram serves photo posts
+  // and carousels under /p/ and sometimes /reel/, and a search engine cannot
+  // tell them apart from a video — instaloader downloads the jpg and there is
+  // nothing to transcribe. Reporting it as a thrown error made a routine
+  // not-a-video look like broken tooling in the run stats.
+  if (!media.length) return { media: null, caption: readCaption(dir) };
+  return { media: join(dir, media[0]), caption: readCaption(dir) };
+}
+
+/**
+ * The caption instaloader already wrote to disk.
+ *
+ * Worth reading because Instagram gives us nothing else. Its meta tags carry no
+ * caption (only a templated twitter:title), and the search engine's description
+ * for a reel is that same template — so a reel whose audio is music had literally
+ * no text to score against and was correctly, but uselessly, rejected at
+ * relevance 0. instaloader fetches the caption as a side effect of the download
+ * we are already paying for, so this costs one file read.
+ *
+ * TikTok needs none of this: its caption comes back in the search result.
+ */
+function readCaption(dir) {
+  const file = readdirSync(dir).filter((name) => name.endsWith(".txt")).sort()[0];
+  if (!file) return null;
+  try {
+    const text = readFileSync(join(dir, file), "utf8").trim();
+    return text ? text.slice(0, 2000) : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -237,26 +265,30 @@ export async function transcribeShortForm(url, { modelPath, log = () => {} } = {
   const dir = join(config.workDir, `sf-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
 
   try {
-    const media = await downloadMedia(url, dir, { log });
+    const { media, caption } = await downloadMedia(url, dir, { log });
+    // The caption rides along on every outcome, including the failures: a clip
+    // with no usable speech is exactly the one whose caller needs something to
+    // score against.
+    if (!media) return { ok: false, reason: "not_a_video", text: "", seconds: 0, caption, platform };
     if (!(await hasAudioStream(media))) {
-      return { ok: false, reason: "download_had_no_audio", text: "", seconds: 0 };
+      return { ok: false, reason: "download_had_no_audio", text: "", seconds: 0, caption, platform };
     }
     const wav = join(dir, "audio.wav");
     const seconds = await extractAudio(media, wav);
-    if (!seconds) return { ok: false, reason: "no_audio_stream", text: "", seconds: 0 };
+    if (!seconds) return { ok: false, reason: "no_audio_stream", text: "", seconds: 0, caption, platform };
 
     const text = await runWhisper(model, wav, join(dir, "out"));
     const chars = text.length;
     const charsPerSecond = seconds > 0 ? chars / seconds : 0;
 
     if (chars < config.minChars) {
-      return { ok: false, reason: "too_short", text, seconds, chars, charsPerSecond };
+      return { ok: false, reason: "too_short", text, seconds, chars, charsPerSecond, caption, platform };
     }
     if (charsPerSecond < config.minCharsPerSecond) {
       // Music, a song, or a silent demo with a soundtrack.
-      return { ok: false, reason: "low_speech_density", text, seconds, chars, charsPerSecond };
+      return { ok: false, reason: "low_speech_density", text, seconds, chars, charsPerSecond, caption, platform };
     }
-    return { ok: true, text, seconds, chars, charsPerSecond, platform };
+    return { ok: true, text, seconds, chars, charsPerSecond, caption, platform };
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

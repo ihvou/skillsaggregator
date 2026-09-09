@@ -141,11 +141,18 @@ export function classifyResultUrl(rawUrl) {
   if (instagram) {
     return {
       platform: "instagram",
-      // Normalise to the bare /reel/<code>/ form. The handle-qualified variant
-      // addresses the same post, and keeping both would create duplicate links
-      // — the catalogue already holds two rows for one reel that differ only by
-      // a trailing slash.
-      canonicalUrl: `https://www.instagram.com/reel/${instagram[2]}/`,
+      // Normalise to the bare /reel/<code> form, with NO trailing slash.
+      //
+      // Two separate normalisations, both required. The handle-qualified variant
+      // (/<handle>/reel/<code>) addresses the same post, so it collapses here.
+      // And the slash must go because _shared/normalization.ts strips it —
+      // whatever we send, the pipeline stores the slash-less form. Emitting the
+      // slash meant the collector's knownCanonicalUrls check never matched a
+      // reel it had already collected, so every night would re-download and
+      // re-transcribe the same clips before the submit deduped them. The
+      // catalogue already holds two rows for one reel differing only by that
+      // slash, which is the same mismatch reaching the database.
+      canonicalUrl: `https://www.instagram.com/reel/${instagram[2]}`,
       creatorHandle: instagram[1] ?? null,
       externalId: instagram[2],
     };

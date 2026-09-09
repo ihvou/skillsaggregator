@@ -38,8 +38,24 @@ import {
 } from "./_lib/link-transcripts.mjs";
 import {
   ensureWhisperModel,
+  instagramShortcode,
   transcribeShortForm,
 } from "./_lib/short-form-transcriber.mjs";
+import { tiktokVideoIdFromUrl } from "../supabase/functions/_shared/tiktok-url.mjs";
+
+/**
+ * The platform's own id for the clip. Stored for the same reason the YouTube
+ * video id is: link_transcripts is indexed on it, and it is the only stable
+ * handle on a transcript once a URL changes shape. The first short-form row
+ * written here landed with a null id because nothing derived one.
+ */
+function shortFormVideoId(...urls) {
+  for (const url of urls.filter(Boolean)) {
+    const id = tiktokVideoIdFromUrl(url) ?? instagramShortcode(url);
+    if (id) return id;
+  }
+  return null;
+}
 
 await loadCollectionEnv({ preferHosted: process.env.COLLECT_TARGET === "hosted" });
 
@@ -137,6 +153,7 @@ async function main() {
         transcriptText: result.text,
         provider: "whisper",
         source: transcriptSourceFromUrl(link.canonical_url, link.url),
+        videoId: shortFormVideoId(link.canonical_url, link.url),
         language: "en",
       });
       stats.stored += 1;
