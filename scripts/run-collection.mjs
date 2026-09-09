@@ -2320,6 +2320,46 @@ async function persistAcceptedTranscript(candidate, result, transcript) {
  * speech, and the caller has already scored it on metadata — the same treatment
  * a YouTube video with no captions gets, via the same prompt.
  */
+/**
+ * Record that a collected clip produced no usable transcript (0060).
+ *
+ * Without this the gap-filler re-downloads and re-transcribes a clip the
+ * collector transcribed minutes earlier: the collector submits a no-speech clip
+ * anyway (metadata is all it has), which creates a link row with no transcript,
+ * which is exactly what the gap-filler selects on. The work would be done twice
+ * the first night and then nightly forever.
+ *
+ * Best-effort. A clip is already collected by this point and failing to note the
+ * attempt is not a reason to lose it.
+ */
+async function recordShortFormTranscriptAttempt(linkId, transcription) {
+  if (!linkId || !transcription?.reason) return;
+  try {
+    await dbQuery(
+      `insert into public.link_transcript_attempts
+         (link_id, reason, attempts, seconds, chars, chars_per_second, last_attempt_at)
+       values ($1, $2, 1, $3, $4, $5, now())
+       on conflict (link_id) do update set
+         reason = excluded.reason,
+         attempts = public.link_transcript_attempts.attempts + 1,
+         seconds = excluded.seconds,
+         chars = excluded.chars,
+         chars_per_second = excluded.chars_per_second,
+         last_attempt_at = excluded.last_attempt_at,
+         updated_at = now()`,
+      [
+        linkId,
+        transcription.reason,
+        Number.isFinite(transcription.seconds) ? transcription.seconds : null,
+        Number.isFinite(transcription.chars) ? transcription.chars : null,
+        Number.isFinite(transcription.charsPerSecond) ? transcription.charsPerSecond : null,
+      ],
+    );
+  } catch (error) {
+    log("warn", "shortform_attempt_record_failed", errorMessage(error), { link_id: linkId });
+  }
+}
+
 async function postShortFormSuggestion(skill, candidate, transcript, score, durationSeconds) {
   const confidence = Math.min(score.relevance, score.teaching_quality);
   const scoringMode = score.scoring_mode ?? "transcript";
@@ -3451,6 +3491,9 @@ async function processShortFormCollection(selectedSkills, summary) {
             stats.by_platform[candidate.platform] = (stats.by_platform[candidate.platform] ?? 0) + 1;
             if (activeRunState) activeRunState.suggestionsCreated = stats.submitted;
             knownCanonicalUrls.add(candidate.canonicalUrl);
+          }
+          if (!transcript) {
+            await recordShortFormTranscriptAttempt(linkIdFromSubmitResult(result), transcription);
           }
           log("info", "shortform_suggestion_submitted", "Short-form suggestion submitted", {
             collect_target: config.collectTarget,

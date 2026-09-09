@@ -362,16 +362,38 @@ tasks envelope, $0.005/query) and it answers, but every organic result carries
 so nothing downstream can act on it. **Tavily is the working provider** and is what both
 verified runs used. The key stays in `.env.hosted` and is simply unread.
 
+### Rejected clips are remembered, so the gap-filler converges
+
+A clip that cannot be transcribed stores nothing — storing what whisper returns for a song
+would feed the coach a Spanish lyric as surfing technique. But "stored nothing" read
+identically to "never attempted", so `fetch-shortform-transcripts.mjs` re-downloaded and
+re-transcribed the same clips on every run; two consecutive runs were observed processing
+the identical two TikToks. Migration `0060` adds `link_transcript_attempts`, written by both
+the gap-filler and the collector.
+
+The cooldown depends on what the reason is *about*. `too_short` and `low_speech_density`
+describe the clip — a music-only demo will still be music-only next month — so 90 days, and
+`not_a_video` 180. `download_had_no_audio` and download failures describe our access, and
+that distinction is not theoretical: that verdict was firing on roughly half of TikToks
+purely because of the h265 format bug above. Those wait 3 days, so a tooling fix reclaims
+the backlog on its own. Nothing is permanent; a reel can be reuploaded with sound and the
+density gate may be retuned.
+
+The collector records too, not just the gap-filler. A no-speech clip is still submitted on
+its metadata, which creates a link row with no transcript — precisely what the gap-filler
+selects on. Without recording at collection time the same clip would be transcribed twice
+the first night and nightly thereafter.
+
+Verified: two `--limit 3` runs back to back. The first rejected and recorded three clips;
+the second selected three different links and stored two transcripts.
+
+**One gap remains.** A clip rejected *before* submission — beyond the per-skill
+`metadata_only` budget — has no link row, so there is nowhere to record it. It will be
+rediscovered and re-downloaded when that sub-skill next comes round, roughly monthly. That
+is a far smaller waste than the nightly loop and there is no row to hang the attempt on.
+
 ### Still open
 
-- **A rejected clip leaves no trace, so it is retried forever.** The gap-filler
-  re-downloaded and re-transcribed the same two music-only TikToks on two consecutive runs.
-  Over ~150 short-form links with no usable speech that is roughly 12 minutes of wasted
-  download every night, and it never converges. This needs recording before
-  `fetch-shortform-transcripts.mjs` is put on a cron, not after. A zero-length row is not an
-  option: `char_count > 0` is enforced, and storing the few characters whisper did return
-  would feed the coach a Spanish song as surfing technique, which is the exact harm the
-  density gate exists to prevent.
 - `duration_seconds` is now populated from the decoded audio on every short-form link that
   transcribes — a real measurement rather than a scraped card value. Still null on all
   YouTube links.

@@ -33,6 +33,8 @@ import { loadCollectionEnv } from "./_lib/script-env.mjs";
 import {
   createServiceRoleSupabaseClient,
   listActiveShortFormLinksMissingTranscripts,
+  recordTranscriptAttempt,
+  transcriptAttemptCooldownDays,
   transcriptSourceFromUrl,
   upsertLinkTranscript,
 } from "./_lib/link-transcripts.mjs";
@@ -140,10 +142,20 @@ async function main() {
       if (!result.ok) {
         stats.rejected += 1;
         stats.by_reason[result.reason] = (stats.by_reason[result.reason] ?? 0) + 1;
+        // 0060: remember the attempt, or this exact clip is downloaded and
+        // transcribed again on the next run, and every run after that.
+        await recordTranscriptAttempt(supabase, {
+          linkId: link.id,
+          reason: result.reason,
+          seconds: result.seconds,
+          chars: result.chars,
+          charsPerSecond: result.charsPerSecond,
+        });
         log("warn", "shortform_transcript_rejected", {
           link_id: link.id, platform: link.platform, reason: result.reason,
           chars: result.chars ?? 0, chars_per_second: Number((result.charsPerSecond ?? 0).toFixed(1)),
           seconds: Math.round(result.seconds ?? 0),
+          retry_after_days: transcriptAttemptCooldownDays(result.reason),
         });
         continue;
       }
@@ -164,8 +176,11 @@ async function main() {
       });
     } catch (error) {
       stats.failed += 1;
+      await recordTranscriptAttempt(supabase, { linkId: link.id, reason: "download_failed" })
+        .catch(() => undefined);
       log("warn", "shortform_transcript_failed", {
         link_id: link.id, platform: link.platform, message: errorMessage(error).slice(0, 200),
+        retry_after_days: transcriptAttemptCooldownDays("download_failed"),
       });
     }
 

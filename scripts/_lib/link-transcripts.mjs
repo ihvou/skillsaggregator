@@ -221,6 +221,76 @@ async function collectActiveYoutubeLinksMissingTranscripts(supabase, {
  * requires a parseable YouTube video id and returns null without one, which
  * would silently drop every short-form row.
  */
+/**
+ * How long a failed transcription attempt suppresses the next one.
+ *
+ * Split by what the reason is ABOUT. too_short / low_speech_density /
+ * not_a_video describe the clip, and a music-only demo will still be music-only
+ * next month. download_had_no_audio and the download failures describe our
+ * access to it — and that distinction is not theoretical: that verdict was
+ * firing on roughly half of TikToks purely because yt-dlp preferred the h265
+ * renditions, whose format table advertises aac and which deliver video only.
+ * Once that was fixed by preferring h264, every clip written off under it
+ * deserved another try. A short cooldown lets a tooling fix reclaim the backlog
+ * without anyone having to remember to clear anything.
+ *
+ * Nothing is permanent: a reel can be reuploaded with sound, and the density
+ * gate may be retuned.
+ */
+export const TRANSCRIPT_ATTEMPT_COOLDOWN_DAYS = {
+  too_short: 90,
+  low_speech_density: 90,
+  not_a_video: 180,
+  unsupported_platform: 180,
+  download_had_no_audio: 3,
+  no_audio_stream: 3,
+  download_failed: 3,
+};
+const DEFAULT_ATTEMPT_COOLDOWN_DAYS = 7;
+
+export function transcriptAttemptCooldownDays(reason) {
+  return TRANSCRIPT_ATTEMPT_COOLDOWN_DAYS[reason] ?? DEFAULT_ATTEMPT_COOLDOWN_DAYS;
+}
+
+/** Whether a recorded attempt still suppresses a retry. */
+export function transcriptAttemptIsCoolingDown(attempt, now = Date.now()) {
+  if (!attempt?.last_attempt_at) return false;
+  const days = transcriptAttemptCooldownDays(attempt.reason);
+  const elapsedMs = now - new Date(attempt.last_attempt_at).getTime();
+  return elapsedMs < days * 24 * 60 * 60 * 1000;
+}
+
+/**
+ * Record that a clip could not be transcribed. `attempts` counts up so a clip
+ * that keeps failing for a reason we thought was transient becomes visible as
+ * one that is not.
+ */
+export async function recordTranscriptAttempt(supabase, { linkId, reason, seconds, chars, charsPerSecond }) {
+  if (!linkId) throw new Error("link_transcript_attempt_link_id_required");
+  if (!reason) throw new Error("link_transcript_attempt_reason_required");
+
+  const { data: existing, error: readError } = await supabase
+    .from("link_transcript_attempts")
+    .select("attempts")
+    .eq("link_id", linkId)
+    .maybeSingle();
+  if (readError) throw readError;
+
+  const { error } = await supabase
+    .from("link_transcript_attempts")
+    .upsert({
+      link_id: linkId,
+      reason,
+      attempts: (existing?.attempts ?? 0) + 1,
+      seconds: Number.isFinite(seconds) ? seconds : null,
+      chars: Number.isFinite(chars) ? chars : null,
+      chars_per_second: Number.isFinite(charsPerSecond) ? charsPerSecond : null,
+      last_attempt_at: new Date().toISOString(),
+    }, { onConflict: "link_id" });
+  if (error) throw error;
+  return { link_id: linkId, reason, attempts: (existing?.attempts ?? 0) + 1 };
+}
+
 export async function listActiveShortFormLinksMissingTranscripts(supabase, {
   limit = 25,
   pageSize = 1000,
@@ -236,7 +306,7 @@ export async function listActiveShortFormLinksMissingTranscripts(supabase, {
   while (max === Infinity || rows.length < max) {
     const { data, error } = await supabase
       .from("links")
-      .select("id, url, canonical_url, title, domain, link_skill_relations!inner(id, created_at, submitted_by_user_id), link_transcripts(link_id)")
+      .select("id, url, canonical_url, title, domain, link_skill_relations!inner(id, created_at, submitted_by_user_id), link_transcripts(link_id), link_transcript_attempts(reason, attempts, last_attempt_at)")
       .eq("is_active", true)
       .eq("link_skill_relations.is_active", true)
       .or("url.ilike.%tiktok.com%,url.ilike.%instagram.com%")
@@ -247,6 +317,13 @@ export async function listActiveShortFormLinksMissingTranscripts(supabase, {
     for (const row of data) {
       if (hasTranscriptRelation(row.link_transcripts)) continue;
       if (seen.has(row.id)) continue;
+      // 0060: a clip that already failed is not re-downloaded until its
+      // reason-dependent cooldown expires. Without this the same music-only
+      // clips are fetched and transcribed on every single run, forever.
+      const attempt = Array.isArray(row.link_transcript_attempts)
+        ? row.link_transcript_attempts[0]
+        : row.link_transcript_attempts;
+      if (transcriptAttemptIsCoolingDown(attempt)) continue;
       const source = transcriptSourceFromUrl(row.canonical_url, row.url);
       if (source === "youtube") continue;
       if (platform && source !== platform) continue;
