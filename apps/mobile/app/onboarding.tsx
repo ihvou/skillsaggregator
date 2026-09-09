@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { useRouter } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 import Svg, {
@@ -61,10 +61,30 @@ const STAT_FILLS = [0.66, 1, 0.33, 0, 0, 0];
 
 const MAX_STAT_ROWS = 6;
 
+/**
+ * Height of the scrolling chip window on screen 1.
+ *
+ * Fixed at 124 it showed three rows on every device and left a large dead band
+ * above the frame on a big phone, which made the area look complete rather than
+ * scrollable. This spends that band instead: the rest of the slide — header,
+ * ladder, title, copy, frame chrome, button, dots — is roughly 600pt, so give
+ * the window what is left of the screen, bounded so it stays a window rather
+ * than becoming a full list on a tall phone or a slot on a short one. The
+ * bottom bound is a floor, not a guarantee: chipScrollWrap can shrink past it
+ * when a small screen genuinely has no room.
+ */
+const CHIP_WINDOW_MIN = 124;
+const CHIP_WINDOW_MAX = 260;
+const SLIDE_ONE_FURNITURE = 600;
+
 export default function OnboardingScreen() {
   const router = useRouter();
   const [index, setIndex] = useState(0);
   const [interests, setInterests] = useState<string[]>([]);
+  const { height: screenHeight } = useWindowDimensions();
+  const chipWindow = Math.round(
+    Math.min(CHIP_WINDOW_MAX, Math.max(CHIP_WINDOW_MIN, screenHeight - SLIDE_ONE_FURNITURE)),
+  );
 
   const categoriesQuery = useQuery({
     queryKey: ["onboarding-categories"],
@@ -183,9 +203,8 @@ export default function OnboardingScreen() {
             {/* All 20 categories wrap to far more rows than fit, so this is a
                 fixed window that scrolls, with the count above carrying the
                 total and a fade marking that there is more below. */}
-            <View style={styles.chipScrollWrap}>
+            <View style={[styles.chipScrollWrap, { maxHeight: chipWindow }]}>
               <ScrollView
-                style={styles.chipScroll}
                 contentContainerStyle={styles.chips}
                 showsVerticalScrollIndicator={false}
               >
@@ -206,15 +225,25 @@ export default function OnboardingScreen() {
                   );
                 })}
               </ScrollView>
+              {/* Softens the clipped row into "there is more below" rather than
+                  a hard cut that reads as a rendering glitch.
+                  StyleSheet.absoluteFill + a unit viewBox, NOT width="100%":
+                  a percentage-sized Svg here measures as zero and paints
+                  nothing at all. preserveAspectRatio="none" lets the unit
+                  square stretch to whatever the layout gives it. */}
               <View pointerEvents="none" style={styles.chipFade}>
-                <Svg width="100%" height="100%">
+                <Svg
+                  style={StyleSheet.absoluteFill}
+                  viewBox="0 0 1 1"
+                  preserveAspectRatio="none"
+                >
                   <Defs>
                     <LinearGradient id="chipFade" x1="0" y1="0" x2="0" y2="1">
                       <Stop offset="0" stopColor={colors.surface} stopOpacity="0" />
                       <Stop offset="1" stopColor={colors.surface} stopOpacity="1" />
                     </LinearGradient>
                   </Defs>
-                  <Rect x="0" y="0" width="100%" height="100%" fill="url(#chipFade)" />
+                  <Rect x="0" y="0" width="1" height="1" fill="url(#chipFade)" />
                 </Svg>
               </View>
             </View>
@@ -653,6 +682,7 @@ const styles = StyleSheet.create({
   // Screen 1 choice frame -----------------------------------------------
   choiceFrame: {
     marginTop: "auto",
+    flexShrink: 1,
     backgroundColor: colors.surface,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: HAIRLINE,
@@ -676,11 +706,11 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     color: colors.accent,
   },
+  // maxHeight is applied inline from the screen height. flexShrink lets it give
+  // way when a short device leaves less room than even the floor asks for,
+  // rather than pushing the button off the bottom.
   chipScrollWrap: {
-    maxHeight: 124,
-  },
-  chipScroll: {
-    maxHeight: 124,
+    flexShrink: 1,
   },
   chips: {
     flexDirection: "row",
