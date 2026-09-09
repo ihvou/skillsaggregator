@@ -365,6 +365,43 @@ EAS can create the identifier itself on the first `eas build --platform ios`,
 which is the lower-effort path if you have not made it yet — but it will not
 retro-fit the capability onto an identifier you created by hand without it.
 
+### Export compliance, and why the build warned about it
+
+The first `eas build --platform ios` printed:
+
+> `app.json is missing ios.infoPlist.ITSAppUsesNonExemptEncryption boolean.`
+> `Manual configuration is required in App Store Connect before the app can be tested.`
+
+Without it, App Store Connect asks the export-compliance question by hand on
+**every** upload, and the build sits un-testable until someone answers it.
+
+Set to **`false`** in `app.json`, which is the correct answer here: `false` means
+"uses no *non-exempt* encryption". The app makes HTTPS calls to Supabase and
+stores local state in MMKV **without an encryption key** (`new MMKV({ id })`,
+`lib/localState.ts:9`) — no custom cryptography anywhere in the app code. HTTPS
+via the OS is explicitly exempt.
+
+Re-check this if MMKV is ever given an `encryptionKey`, or if any custom crypto
+is added; the answer would stop being automatic.
+
+### Building iOS needs a human at the keyboard
+
+`eas build --platform ios --profile production --non-interactive` fails with:
+
+> `Distribution Certificate is not validated for non-interactive builds.`
+> `Credentials are not set up. Run this command again in interactive mode.`
+
+The first iOS build has to run **interactively** so Apple can take the account
+password and a 2FA code. Run it yourself:
+
+```bash
+cd apps/mobile && npx eas-cli build --platform ios --profile production
+```
+
+EAS then registers both identifiers, enables Sign in with Apple from
+`usesAppleSignIn`, creates the distribution certificate and provisioning
+profiles, and stores them server-side — so later builds can run non-interactively.
+
 ### Capabilities: tick exactly one
 
 The Register-an-App-ID page lists ~150 capabilities. This app needs **one**.

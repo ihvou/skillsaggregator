@@ -22,7 +22,8 @@
         "NSAppTransportSecurity": {
           "NSAllowsArbitraryLoads": false,
           "NSExceptionDomains": {}
-        }
+        },
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
