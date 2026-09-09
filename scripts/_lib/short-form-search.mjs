@@ -23,14 +23,81 @@
  * title string adds noise to a decision already made better upstream. Instagram
  * could not support a gate anyway — its meta tags carry no caption, only a
  * templated twitter:title.
+ *
+ * PROVIDER-AGNOSTIC ON PURPOSE. The free-tier landscape moved under this work:
+ * Brave withdrew its free tier in February 2026 (now $5/month metered, card
+ * required) and Google's Custom Search JSON API closed to new customers. Rather
+ * than bind to one vendor, the query and the result shape are ours and only the
+ * transport differs. Set whichever key you have.
+ *
+ * BUDGET. Smaller than it first appears, because discovery here is seeding, not
+ * a feed. Once a sub-skill has a few short clips it is done — the goal is
+ * presence, not freshness. One pass over the whole catalogue is ~492 queries;
+ * after that only new skills need one. Serper's 2,500 free queries cover the
+ * initial pass five times over.
  */
-const BRAVE_ENDPOINT = "https://api.search.brave.com/res/v1/web/search";
+const PROVIDERS = {
+  serper: {
+    env: "SERPER_API_KEY",
+    endpoint: "https://google.serper.dev/search",
+    async call(query, { apiKey, endpoint, count, timeoutMs }) {
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: { "X-API-KEY": apiKey, "content-type": "application/json" },
+        body: JSON.stringify({ q: query, num: count }),
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+      if (!response.ok) throw new Error(`serper ${response.status}: ${(await response.text()).slice(0, 200)}`);
+      const body = await response.json();
+      return (body?.organic ?? []).map((r) => ({ url: r.link, title: r.title, description: r.snippet }));
+    },
+  },
+  tavily: {
+    env: "TAVILY_API_KEY",
+    endpoint: "https://api.tavily.com/search",
+    async call(query, { apiKey, endpoint, count, timeoutMs }) {
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
+        body: JSON.stringify({ query, max_results: count }),
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+      if (!response.ok) throw new Error(`tavily ${response.status}: ${(await response.text()).slice(0, 200)}`);
+      const body = await response.json();
+      return (body?.results ?? []).map((r) => ({ url: r.url, title: r.title, description: r.content }));
+    },
+  },
+  brave: {
+    env: "BRAVE_SEARCH_API_KEY",
+    endpoint: "https://api.search.brave.com/res/v1/web/search",
+    async call(query, { apiKey, endpoint, count, timeoutMs }) {
+      const url = new URL(endpoint);
+      url.searchParams.set("q", query);
+      url.searchParams.set("count", String(count));
+      const response = await fetch(url, {
+        headers: { accept: "application/json", "x-subscription-token": apiKey },
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+      if (!response.ok) throw new Error(`brave ${response.status}: ${(await response.text()).slice(0, 200)}`);
+      const body = await response.json();
+      return (body?.web?.results ?? []).map((r) => ({ url: r.url, title: r.title, description: r.description }));
+    },
+  },
+};
+
+/** First provider with a key present, unless one is named explicitly. */
+export function activeProvider() {
+  const named = (process.env.COLLECT_SEARCH_PROVIDER ?? "").trim().toLowerCase();
+  if (named) return PROVIDERS[named] ? { name: named, ...PROVIDERS[named] } : null;
+  for (const [name, provider] of Object.entries(PROVIDERS)) {
+    if (process.env[provider.env]) return { name, ...provider };
+  }
+  return null;
+}
 
 export const config = {
-  apiKey: process.env.BRAVE_SEARCH_API_KEY ?? "",
-  endpoint: process.env.BRAVE_SEARCH_ENDPOINT ?? BRAVE_ENDPOINT,
   timeoutMs: Number(process.env.COLLECT_SEARCH_TIMEOUT_MS ?? 20_000),
-  // Brave's free tier is rate limited to roughly one query per second.
+  // Free tiers rate limit to roughly one query per second.
   queryGapMs: Number(process.env.COLLECT_SEARCH_QUERY_GAP_MS ?? 1_200),
   resultsPerQuery: Number(process.env.COLLECT_SEARCH_RESULTS ?? 20),
   maxPerSkill: Number(process.env.COLLECT_SHORTFORM_MAX_PER_SKILL ?? 5),
@@ -87,27 +154,26 @@ export function shortFormQuery(skill) {
 }
 
 export function isSearchConfigured() {
-  return Boolean(config.apiKey);
+  const provider = activeProvider();
+  return Boolean(provider && process.env[provider.env]);
 }
 
-async function braveSearch(query) {
-  if (!config.apiKey) throw new Error("BRAVE_SEARCH_API_KEY is not set");
-  const url = new URL(config.endpoint);
-  url.searchParams.set("q", query);
-  url.searchParams.set("count", String(config.resultsPerQuery));
-
-  const response = await fetch(url, {
-    headers: {
-      accept: "application/json",
-      "x-subscription-token": config.apiKey,
-    },
-    signal: AbortSignal.timeout(config.timeoutMs),
-  });
-  if (!response.ok) {
-    throw new Error(`brave search ${response.status}: ${(await response.text()).slice(0, 200)}`);
+async function runSearch(query) {
+  const provider = activeProvider();
+  if (!provider) {
+    throw new Error(
+      `no search provider configured — set one of: ${Object.values(PROVIDERS).map((p) => p.env).join(", ")}`,
+    );
   }
-  const body = await response.json();
-  return Array.isArray(body?.web?.results) ? body.web.results : [];
+  const apiKey = process.env[provider.env];
+  if (!apiKey) throw new Error(`${provider.env} is not set`);
+
+  return provider.call(query, {
+    apiKey,
+    endpoint: process.env.COLLECT_SEARCH_ENDPOINT ?? provider.endpoint,
+    count: config.resultsPerQuery,
+    timeoutMs: config.timeoutMs,
+  });
 }
 
 /**
@@ -117,7 +183,7 @@ async function braveSearch(query) {
  */
 export async function discoverShortForm(skill, { log = () => {} } = {}) {
   const query = shortFormQuery(skill);
-  const raw = await braveSearch(query);
+  const raw = await runSearch(query);
 
   const seen = new Set();
   const candidates = [];
@@ -142,6 +208,7 @@ export async function discoverShortForm(skill, { log = () => {} } = {}) {
 
   log("info", "shortform_search_completed", "Short-form search for skill", {
     skill: skill?.slug ?? null,
+    provider: activeProvider()?.name ?? null,
     query,
     returned: raw.length,
     accepted: candidates.length,
