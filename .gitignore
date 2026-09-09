@@ -49,3 +49,9 @@ credentials.json
 # Keep them in ~/.appstoreconnect/private_keys/ instead.
 *.p8
 AuthKey_*.p8
+
+# Store credentials referenced by eas.json submit profiles by path. The paths
+# are committed so submissions run unattended; the keys never are. Whole
+# directory, not a pattern per file type — a Play service account is .json,
+# which is far too common an extension to blocklist safely.
+apps/mobile/credentials/

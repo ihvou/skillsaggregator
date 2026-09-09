@@ -331,6 +331,29 @@ copy on that page in step with `/privacy`; a mismatch between the two is what an
 Then do checklist item 11 — install from Play on a real device. That is the first time the
 minified release build runs from a Play-signed, per-device split APK.
 
+### Uploading with `eas submit` instead (optional)
+
+The steps above are a manual upload, which is what the first release needs anyway — Play will not
+accept an API upload for a package it has never seen. Once the app exists on Play, later releases
+can go with one command, but only after a **Google service account key** exists:
+
+1. Play Console → **Setup → API access** → link (or create) a Google Cloud project.
+2. In that project, create a service account, then **Grant access** back in Play Console with the
+   *Release manager* role limited to this app.
+3. Download its JSON key. It is a credential with upload rights — treat it like the Apple `.p8`.
+4. Put it at `apps/mobile/credentials/play-service-account.json` and add
+   `"serviceAccountKeyPath": "./credentials/play-service-account.json"` under
+   `submit.production.android` in `eas.json`.
+
+`credentials/` holds secrets and nothing in it is committed — `.gitignore` blocks `*.p8`, and the
+Play JSON needs its own rule before you save one there. Without the key,
+`eas submit --platform android --non-interactive` fails with *"Google Service Account Keys cannot
+be set up in --non-interactive mode"*, which is this step missing, not a build problem.
+
+The iOS equivalent is already wired: `submit.production.ios.ascApiKeyPath` points at
+`./credentials/asc-api-key.p8`, so `eas submit --platform ios` runs unattended. Only the path is in
+the repo; the key itself is ignored.
+
 ## App Store Connect — every value you get asked for
 
 The Play Console section above had this; the App Store side did not, which is
