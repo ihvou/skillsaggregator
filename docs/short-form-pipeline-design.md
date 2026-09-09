@@ -188,6 +188,17 @@ Instagram reel"`. Useful for creator identity, useless as caption text.
 looks identical to a real one — the test that produced the "provably dead" conclusion was
 comparing two unavailable pages.
 
+**TikTok's h265 formats lie about carrying audio.** Every `bytevc1_*` row in the format
+table advertises `aac`; ffprobe on the delivered file finds one hevc video stream and no
+audio at all. Reproduced on three videos. `-f b[acodec!=none]` therefore does not do what it
+says — the requirement is evaluated against TikTok's metadata, and that metadata is false —
+and because the h265 renditions are the smallest, yt-dlp preferred them. Roughly half the
+clips in a nightly run were being discarded as `download_had_no_audio`, recorded as a
+property of the clip when it was a property of the format. The `h264_*` rows are honest:
+3 of 3 delivered audio, including the two videos that had just failed. Selector is now
+`b[vcodec*=264]/download/b[acodec!=none]/bv*+ba/b`. Verified through `nightly-collect.sh`
+on `muay-thai/clinch-basics`: 3 TikToks, zero no-audio downloads, 2 transcribed.
+
 **yt-dlp's `-x` flag silently fails on TikTok.** It downloads, fails postprocessing with
 `unable to obtain file audio codec with ffprobe`, and leaves a **video-only** file. The
 numbered formats (`bytevc1_540p_792787-0`) are split streams despite the format table

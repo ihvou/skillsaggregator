@@ -117,16 +117,26 @@ export async function ensureInstaloader({ log = () => {} } = {}) {
 }
 
 /**
- * TikTok: ask for a format that HAS an audio codec, rather than naming one.
+ * TikTok: prefer h264, because the h265 formats lie about having audio.
  *
- * Two dead ends, both of which look like they work:
+ * `b[acodec!=none]` looks like the principled answer — state the requirement
+ * rather than name a format — and it is wrong, because the requirement is
+ * evaluated against TikTok's own metadata and that metadata is false. Every
+ * bytevc1_* (h265) row in the format table advertises `aac`; ffprobe on the
+ * delivered file finds a single hevc video stream and no audio at all.
+ * Reproduced on three videos. yt-dlp preferred those rows on size, so roughly
+ * half the clips in a nightly run were discarded as `download_had_no_audio`
+ * — recorded as a property of the clip when it was a property of the format.
+ *
+ * The h264_* rows are honest: 3 of 3 delivered audio, including the two videos
+ * that had just failed. So ask for h264 first and keep the old chain behind it.
+ *
+ * Two further dead ends, both of which look like they work:
  *   -x            fails postprocessing with "unable to obtain file audio codec
  *                 with ffprobe" and silently leaves a VIDEO-ONLY file.
- *   -f download   the watermarked combined format. Serves audio for some videos
- *                 and 403 Forbidden for others — 7 of 10 in the first backlog
- *                 batch failed on it.
- * `b[acodec!=none]` states the requirement instead of guessing at a format name,
- * with bv*+ba as the merge fallback. Verified across h264 and h265 variants.
+ *   -f download   the watermarked combined format. Genuinely carries audio, but
+ *                 serves 403 Forbidden for many videos — 7 of 10 in the first
+ *                 backlog batch — so it is a fallback, not the first choice.
  *
  * Instagram: instaloader is the only downloader that works anonymously. yt-dlp
  * fails with "login required" and gallery-dl redirects to the login page;
@@ -148,7 +158,7 @@ async function downloadMedia(url, dir, { log } = {}) {
       if (attempt > 0) await delay(config.downloadRetryBackoffMs * attempt);
       try {
         await run(config.ytDlpBin, [
-          "-f", "b[acodec!=none]/bv*+ba/b", "--no-warnings",
+          "-f", "b[vcodec*=264]/download/b[acodec!=none]/bv*+ba/b", "--no-warnings",
           "-o", join(dir, "clip.%(ext)s"), url,
         ], { timeout: config.downloadTimeoutMs, maxBuffer: 8 * 1024 * 1024 });
         lastError = null;
