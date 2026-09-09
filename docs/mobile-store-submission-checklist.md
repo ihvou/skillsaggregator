@@ -155,10 +155,10 @@ needs a registered legal entity and a D-U-N-S number, which is weeks of bureaucr
 **Build and ship**
 - [ ] 8. `npx eas-cli build --platform ios --profile production` (EAS manages certificates/profiles)
 - [ ] 9. Verify the generated `Info.plist` does not allow arbitrary ATS loads
-- [ ] 10. Upload to App Store Connect (`eas submit --platform ios`)
+- [x] 10. Upload to App Store Connect (`eas submit --platform ios`) — done 2026-09-09, build 11 (1.0.0, commit `5040104`); confirmed `processingState=VALID` via the App Store Connect API. See *Runbook A2*.
 - [x] 11. Store listing **prepared** — copy, keywords and 6.9" (1320×2868) screenshots in `docs/store-listing-copy.md` / `store-assets/`. Still to do: paste into App Store Connect, plus the **Apple privacy labels** (see *Privacy disclosures*).
 - [ ] 12. Reviewer notes + demo access — draft in `docs/store-listing-copy.md`. **Decide the demo-account answer first**: magic-link sign-in is something a reviewer cannot complete.
-- [ ] 13. **TestFlight** build, smoke test on a real iPhone
+- [~] 13. **TestFlight** build, smoke test on a real iPhone — build 11 is on TestFlight and installable by internal testers now. **The smoke test is the part still outstanding**, and it is the only place Sign in with Apple has ever run for real; App Review will exercise it.
 - [ ] 14. Submit for App Store review
 
 ---
@@ -262,13 +262,42 @@ Play, Create app will reject it as "already in use."** That is documented behavi
 This happened here — the preview APK was sideloaded on a Pixel 6a (Android section, item 2) months
 before the app existed on Play. **The fix that worked:** Play Console → **Android developer
 verification → Package names → Register package name**, register `xyz.subskills.app` there. It sits
-in *Draft* asking for a public key, but that alone is enough — Create app then reports "Package name
-available". Do **not** guess a fingerprint from a local artifact to clear the Draft; wait until the
-first AAB is uploaded and read the real certificates from **Protected with Play → Play Store
-distribution → Play app signing**. There is no documented way to undo a key registration.
+in *Draft* asking for a public key, but that alone is enough to unblock Create app, which then
+reports "Package name available". Do **not** guess a fingerprint from a local artifact to clear the
+Draft. There is no documented way to undo a key registration.
 
 For any *future* app: create it in Play Console **first**, before sideloading any build, and Play
 auto-registers the package name with no key step at all.
+
+### Clearing the Draft — this is a real deadline, not a nag
+
+Play Console shows *"Ensure your apps are registered for Android developer verification by
+Sep 30, 2026"* for as long as the package sits in Draft. Two things this doc previously got wrong:
+
+- **Uploading an AAB does not clear it.** Google is explicit that simply shipping to a track does
+  not complete registration; there is a separate manual flow you have to run.
+- **Draft is not a paperwork state.** It means auto-registration *failed*. Google auto-registers
+  based on install thresholds and key-holder majority, so a brand-new app with no installs will
+  never auto-register — it will always need the manual flow.
+
+The manual flow, from [Registering Play package
+names](https://support.google.com/googleplay/android-developer/answer/16984799):
+
+1. On the draft package name, **Add key**, and pick the app's public certificate from the eligible
+   keys shown.
+2. **Get Started**. Play gives you a **snippet**.
+3. Put the snippet in an APK's assets folder, sign that APK **with the app's signing key**, and
+   upload it in Play Console. This is a proof-of-key-ownership step — it is not a release, and the
+   APK you upload here does not have to be the real app.
+
+The catch for this project: **EAS holds the upload keystore**, so signing that proof APK needs it
+pulled down first — `eas credentials -p android` offers a keystore download. Do not generate a new
+keystore for this; a key that does not match is the one thing the flow is checking.
+
+Stakes: from 2026-09-30 the verification protections go live in Brazil, Indonesia, Singapore and
+Thailand, expanding to certified Android devices globally through 2027, and [unregistered apps are
+removed from Play](https://android-developers.googleblog.com/2026/06/android-developer-verification.html)
+under the Play Console Requirements policy.
 
 ### App identity (from `apps/mobile/app.json` + the built AAB)
 
@@ -335,13 +364,21 @@ minified release build runs from a Play-signed, per-device split APK.
 
 The steps above are a manual upload, which is what the first release needs anyway — Play will not
 accept an API upload for a package it has never seen. Once the app exists on Play, later releases
-can go with one command, but only after a **Google service account key** exists:
+can go with one command, but only after a **Google service account key** exists.
 
-1. Play Console → **Setup → API access** → link (or create) a Google Cloud project.
-2. In that project, create a service account, then **Grant access** back in Play Console with the
-   *Release manager* role limited to this app.
-3. Download its JSON key. It is a credential with upload rights — treat it like the Apple `.p8`.
-4. Put it at `apps/mobile/credentials/play-service-account.json` and add
+⚠️ **This does not start in Play Console.** An earlier version of this section said
+*Play Console → Setup → API access → link a Google Cloud project*; that path is wrong now, and
+looking for "Setup" is why you cannot find it. Google [no longer requires linking the developer
+account to a Cloud project](https://developers.google.com/android-publisher/getting_started), and
+the service account is created on the Cloud side first:
+
+1. **Google Cloud Console** → *Service Accounts* → **Create service account**. Assign it **no**
+   Google Cloud roles — the permissions that matter are granted in Play, not here.
+2. On that service account, create a key and download the **JSON**. It is a credential with upload
+   rights to your listing; treat it like the Apple `.p8`.
+3. **Play Console** → *Users & permissions* → **Invite new users** → paste the service account's
+   email address, and grant it release permissions for this app only.
+4. Put the JSON at `apps/mobile/credentials/play-service-account.json` and add
    `"serviceAccountKeyPath": "./credentials/play-service-account.json"` under
    `submit.production.android` in `eas.json`.
 
@@ -544,6 +581,51 @@ cd apps/mobile && npx eas-cli build --platform android --profile production
 ```
 Then Play Console → Testing → **Closed testing** → Create release → upload the `.aab` → add testers → share the opt-in link. You can keep pushing new releases to this track during the 14 days; it does not reset the clock.
 Optional: `eas submit --platform android` automates upload but needs a Google service-account JSON; manual upload is simpler the first time.
+
+## Runbook A2 — iOS production IPA → TestFlight
+
+The counterpart to Runbook A, and missing from this doc until 2026-09-10: it named TestFlight three
+times without once saying how to get a build there.
+
+```bash
+cd apps/mobile
+npx eas-cli build  --platform ios --profile production
+npx eas-cli submit --platform ios --profile production --latest
+```
+
+`submit` needs no Apple ID login and no 2FA — `submit.production.ios.ascApiKeyPath` points at the
+App Store Connect API key (see *iOS credentials: use the API key, not an Apple ID*). It uploads
+straight to App Store Connect; there is no separate "send to TestFlight" step.
+
+Then Apple processes the build for 5–10 minutes. Verify rather than waiting on the email — a build
+stuck in processing and a build that failed look identical from the outside:
+
+```bash
+npx eas-cli build:view <BUILD_ID>          # EAS side: finished, artifact URL
+```
+
+App Store Connect → your app → **TestFlight** shows the real state. `processingState` goes
+`PROCESSING` → `VALID`; anything else means Apple rejected the binary. Verified 2026-09-09 for
+build 11 via the App Store Connect API (`GET /v1/builds?filter[app]=…`), which returns the same
+field without opening a browser.
+
+**Internal vs external testers — the part that decides your timeline:**
+
+| | Who | Review | Limit |
+|---|---|---|---|
+| **Internal** | People with a role on your App Store Connect account | **None** — installable as soon as the build is `VALID` | 100 |
+| **External** | Anyone, by email or public link | **Beta App Review** required on the first build | 10,000 |
+
+Internal testing is the fast path and needs no approval, so add yourself as an internal tester and
+install immediately. External testing needs Beta App Review, which is a real review with a real
+queue — start it early if outside testers are the point.
+
+There is **no** iOS equivalent of Play's 12-tester / 14-day gate. That gate is Google's alone;
+nothing about TestFlight blocks an App Store submission, so the two platforms are not on the same
+clock and iOS can ship first.
+
+Export compliance is already declared (`ITSAppUsesNonExemptEncryption: false` in `app.json`), so
+TestFlight will not stop and ask before distributing each build.
 
 ## Runbook B — iOS Simulator (the working local loop)
 
