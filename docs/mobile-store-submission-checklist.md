@@ -399,9 +399,9 @@ worth it if the records must exist before the first build.
 
 | | Value | Safe to commit? |
 |---|---|---|
-| Apple Team ID | `T3J6K9GV2B` | Yes — it appears in every provisioning profile. |
+| Apple Team ID | `T3J6K9GV2B` — already in `eas.json` | Yes — it appears in every provisioning profile. |
 | Bundle ID | `xyz.subskills.app` | Yes — user-visible. |
-| ASC App ID (`ascAppId`) | *(after the app record exists)* — App Store Connect → App Information → General → "Apple ID", a number like `6478123456` | Yes — it is in your public App Store URL. |
+| ASC App ID (`ascAppId`) | `6810049311` — created 2026-09-09, already in `eas.json` | Yes — it is in your public App Store URL. |
 | Apple ID (`appleId`) | the account email you enrolled with | **No.** This repo is public; an Apple ID email is half of an account-takeover attempt. Use the `EXPO_APPLE_ID` env var, or let `eas submit` prompt. |
 
 None of these are needed for `eas build --platform ios` — EAS handles
