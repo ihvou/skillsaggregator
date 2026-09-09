@@ -372,10 +372,16 @@ verified runs used. The key stays in `.env.hosted` and is simply unread.
   option: `char_count > 0` is enforced, and storing the few characters whisper did return
   would feed the coach a Spanish song as surfing technique, which is the exact harm the
   density gate exists to prevent.
-- **Short-form links have no thumbnail.** 135 of 155 TikToks and both Instagram links are
-  already missing one, so this predates the new path, but new links inherit it. TikTok's CDN
-  thumbnail URLs expire, so the durable answer is the existing `cacheThumbnailIfNeeded`
-  storage path rather than storing the remote URL.
 - `duration_seconds` is now populated from the decoded audio on every short-form link that
   transcribes — a real measurement rather than a scraped card value. Still null on all
   YouTube links.
+
+**Thumbnails are NOT an open item, contrary to an earlier revision of this document.** All
+ten short-form links collected on 2026-09-09 have a thumbnail and nine of the ten are cached
+to our own storage, so the signed TikTok CDN URL expiring does not matter. The enrichment
+path handles both platforms already: TikTok oEmbed, and the Instagram `og:image` fix from
+M135. The claim that they were missing came from counting `thumbnail_url` alone and reading
+20 of 155 TikToks — the cached ones live in `thumbnail_storage_path`, and the real figure is
+143 of 163. The inverse of the assumption holds: YouTube keeps 19,617 remote `i.ytimg.com`
+URLs and caches none, because those are stable; short-form is the platform that gets
+cached, because its URLs are not.
