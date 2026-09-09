@@ -211,26 +211,25 @@ thumbnail and caption with no credentials. Tested on six reels, 6/6 succeeded.
 **The download dominates the cost, not the transcription.** 7–28MB of video to obtain a
 43-second voice track. Prefer the smallest combined format available.
 
-## Coverage — informational, not a gate
+## Coverage — the earlier table was wrong, and wrong in a specific way
 
-Measured per category, one representative sub-skill each, count of usable results in 10:
+An earlier revision of this document carried a per-category table of "usable results in 10"
+that put chess at 1, BJJ at 0 and table tennis at 2, and concluded those categories simply
+do not have short-form instruction. **Do not rely on it. It has now mispredicted twice.**
+
+It was measured through a different engine and a differently-shaped query. Against Tavily,
+with the query the pipeline actually sends, a single query returns:
 
 ```
-running 9 · pickleball 9 · gym 9 · badminton ~10 · boxing 8 · swimming 8 · pilates 8
-snowboarding 7 · tennis 7 · soccer 7 · muay-thai 6 · golf 6 · surfing 6 · yoga 6
-padel 6 · climbing 5 (9 on TikTok) · skiing 5 · cycling 5
-table-tennis 2 (5 on TikTok) · chess 1 · bjj 0
+muay-thai/guard              11 TikTok · 18 Instagram
+chess/rules-for-beginners    19 TikTok ·  6 Instagram
+chess/forks                  18 TikTok · 14 Instagram
 ```
 
-The platforms are **complementary, not redundant**: climbing is 5/10 on Instagram and 9/10
-on TikTok; table tennis doubles on TikTok. Only BJJ and chess fail on both, which is a
-finding about where that instruction lives rather than a problem to fix.
-
-**This table does not gate anything.** The goal is content diversity — every skill having
-*some* short-form option for users who prefer short clips — not maximal coverage. A category
-returning two clips instead of nine is not a failure; those users have two short options
-they did not have before. BJJ and chess learners get YouTube, which is where their
-instruction actually is.
+Chess was supposedly the worst category in the catalogue. It returns as much as anything
+else. The lesson is not "chess is fine" — it is that a coverage measurement is a property of
+the engine and the query, not of the sport, and does not survive changing either. Measure
+against the pipeline as configured, or do not measure.
 
 ## Ranking — score everything the same way, and let it rank where it lands
 

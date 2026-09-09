@@ -38,11 +38,21 @@
  * than bind to one vendor, the query and the result shape are ours and only the
  * transport differs. Set whichever key you have.
  *
- * BUDGET. Smaller than it first appears, because discovery here is seeding, not
- * a feed. Once a sub-skill has a few short clips it is done — the goal is
- * presence, not freshness. One pass over the whole catalogue is ~492 queries;
- * after that only new skills need one. Serper's 2,500 free queries cover the
- * initial pass five times over.
+ * BUDGET, with the real numbers. Two queries per sub-skill, so one pass over the
+ * 492-skill catalogue costs ~984 credits. Tavily's free tier is 1,000 a month,
+ * which means the entire catalogue can be seeded once inside a single month's
+ * quota and then costs almost nothing, because discovery here is seeding, not a
+ * feed: once a sub-skill has some short clips it is done, and only new skills
+ * need a query.
+ *
+ * What does NOT fit is running it as a feed. At 20 skills a night indefinitely
+ * that is 1,200 credits a month, over quota, spent re-querying skills that
+ * already have clips. After the first pass, either lower the nightly rate or
+ * skip skills that already hold enough short-form.
+ *
+ * Note the shape of the spend: cost scales with SKILLS, not with clips. Taking
+ * more results from a query that has already been paid for is free, which is why
+ * maxPerPlatform is the right knob to reach for and the skill count is not.
  */
 import { setTimeout as delay } from "node:timers/promises";
 
@@ -110,9 +120,23 @@ export const config = {
   // Free tiers rate limit to roughly one query per second.
   queryGapMs: Number(process.env.COLLECT_SEARCH_QUERY_GAP_MS ?? 1_200),
   resultsPerQuery: Number(process.env.COLLECT_SEARCH_RESULTS ?? 20),
-  // Per platform, so one cannot crowd out the other. Total per skill is at
-  // most twice this.
-  maxPerPlatform: Number(process.env.COLLECT_SHORTFORM_MAX_PER_PLATFORM ?? 3),
+  // Per platform, so one cannot crowd out the other. Total per skill is at most
+  // twice this.
+  //
+  // WHY 6 AND NOT 3. This was the binding constraint on short-form output, and
+  // it was an arbitrary one. A single query already returns far more than we
+  // were taking: measured on muay-thai/guard, one query yields 11 usable TikTok
+  // post URLs and 18 Instagram, and at 3 apiece we discarded 23 of 29 results we
+  // had already paid for. Raising it costs NO extra search credits — same query,
+  // same response, we just stop throwing most of it away.
+  //
+  // What it does cost is download and whisper time, roughly 30s per candidate,
+  // so this is the knob that trades run time for coverage. It is deliberately
+  // not raised to the full 11/18: TikTok's media CDN throttles by returning
+  // 403/404 on URLs it served minutes earlier, and download volume is what
+  // provokes that. If throttling reappears, lower this before touching anything
+  // else.
+  maxPerPlatform: Number(process.env.COLLECT_SHORTFORM_MAX_PER_PLATFORM ?? 6),
 };
 
 /**
