@@ -477,6 +477,56 @@ credentials are ready to build*, every later `eas build` runs non-interactively.
 
 Apple's Developer Portal returns a plain 500 on profile creation often enough
 that eas-cli's three retries can all miss. It is not a config error. Re-run.
+Hit twice now, both times fixed by running the same command again.
+
+### Always set `EXPO_NO_CAPABILITY_SYNC=1`
+
+EAS derives the capabilities an App ID should have from the Expo config, which
+describes the **app**. It has no idea the share extension exists as a signable
+thing with its own entitlements — `withShareTargets` writes those during
+prebuild, long after this check. So it concludes the extension should have no
+App Groups and tries to turn the capability **off**:
+
+```
+Failed to patch capabilities: [ { capabilityType: 'APP_GROUPS', option: 'OFF' } ]
+✖ Failed to sync capabilities xyz.subskills.app.share
+```
+
+It fails rather than silently undoing the setting, which is lucky. Without the
+variable, every credentials run tries to revert the portal configuration and
+dies. With it, both targets report *Synced capabilities: No updates* and the
+run completes. Capabilities are managed by hand in the portal for this project
+— see *App Groups: capabilities EAS will not set for you*.
+
+### App Groups: capabilities EAS will not set for you
+
+App Groups is a *capability identifier*, the same class as iCloud containers
+and merchant IDs, and eas-cli says outright:
+
+> Skipping capability identifier syncing because the current Apple
+> authentication session is not using Cookies (username/password).
+
+We authenticate with an App Store Connect API key precisely to avoid the 2FA
+dead end, so EAS will never create or attach the group. It is a manual step,
+done once (2026-09-11):
+
+1. Identifiers → **+** → **App Groups** → identifier `group.xyz.subskills.app`.
+   It must match `appGroupFor()` in `plugins/withShareTargets.js` exactly; a
+   typo yields an empty container at runtime and no error anywhere.
+2. On **both** `xyz.subskills.app` (`HMN3LCNZT3`) and `xyz.subskills.app.share`
+   (`45A88G2NXS`): tick App Groups → Configure → select the group → Assign.
+   The extension is the easy one to miss and the half that does the writing.
+3. Changing an App ID invalidates its profiles — Apple's words. Re-run
+   `eas credentials:configure-build -p ios -e production` to regenerate both.
+
+Verify without trusting the console, and query each bundle by its **portal id**
+— `filter[identifier]=xyz.subskills.app` is a prefix match that also returns
+`.share` and hands back a union of both capability sets, which reads as though
+Sign in with Apple has vanished:
+
+```
+GET /v1/bundleIds/<PORTAL_ID>/bundleIdCapabilities     # no `limit` param, it 400s
+```
 
 ### Every target needs its own provisioning profile
 
