@@ -231,3 +231,40 @@ submitting, either provide a demo email/password the reviewer can actually use, 
 state in the notes that all content is reachable without signing in and that sign-in
 gates only save/watch/vote/suggest. The second is true here and is the simpler path,
 but expect it to be the thing that gets questioned.
+
+### It was questioned. Build 11 rejected, 2026-09-10
+
+> Guideline 2.1(a) - Information Needed. We have started your beta app's review,
+> but we were unable to successfully access all or part of the app.
+
+Beta App Review, not App Store review — so it blocked **external TestFlight
+testers**, not a release. Cause: *Beta App Review Information* was left empty
+(checklist item 12 was never ticked), so the reviewer opened the app with no
+notes at all, found Account offering three sign-in methods, and assumed content
+sat behind them. Nothing does — Discover and every skill page are reachable with
+no account.
+
+Apple's boilerplate asks for a user name and password. **We cannot supply one**,
+and should not pretend otherwise: sign-in is magic link, Google and Sign in with
+Apple. None of the three is a typeable credential. Their own message allows the
+alternative — "a demonstration mode that exhibits the app's full features" — and
+for this app that is simply the app itself.
+
+So: leave **"Sign-in required" unticked**, paste the notes above into Notes for
+Review, and open with the sentence that answers 2.1(a) directly:
+
+```
+No account is required. Every part of this app — browsing sports, opening a
+skill, and playing any tutorial — works immediately on launch with no sign-in.
+
+There is no demo account to provide because the app has no password login:
+sign-in is magic link, Google, or Sign in with Apple, and all three are
+optional. They only sync an existing library across devices.
+
+To review the app: open it, choose any sports on the first screen, tap
+Continue through to the end, then tap any sport and any skill. The bookmark
+saves to Watch later and the tick marks watched. None of it asks who you are.
+```
+
+Re-review is not per build. Once external testing is approved for a version,
+later builds reach external testers without going through it again.
