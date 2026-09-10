@@ -1,4 +1,11 @@
-const { AndroidConfig, withAndroidManifest, withMainActivity, withDangerousMod, withXcodeProject } = require("@expo/config-plugins");
+const {
+  AndroidConfig,
+  withAndroidManifest,
+  withEntitlementsPlist,
+  withMainActivity,
+  withDangerousMod,
+  withXcodeProject,
+} = require("@expo/config-plugins");
 const fs = require("node:fs");
 const path = require("node:path");
 
@@ -127,9 +134,37 @@ function withAndroidShareIntentNormalizer(config) {
   });
 }
 
+/** The one channel a share extension and its app genuinely share. */
+function appGroupFor(bundleIdentifier) {
+  return `group.${bundleIdentifier}`;
+}
+
 function writeShareExtensionFiles(iosProjectRoot, bundleIdentifier) {
   const extensionRoot = path.join(iosProjectRoot, SHARE_EXTENSION_NAME);
+  const appGroup = appGroupFor(bundleIdentifier);
   fs.mkdirSync(extensionRoot, { recursive: true });
+
+  // The extension cannot launch the app (Apple restricts that to Today widgets,
+  // and on iOS 18 the responder-chain workaround force-returns false), so the
+  // App Group container is how the shared URL crosses the process boundary.
+  // This is the same mechanism Telegram's share extension uses — it reads its
+  // account out of `group.<bundleId>` and does the work in-process rather than
+  // opening the app.
+  fs.writeFileSync(
+    path.join(extensionRoot, `${SHARE_EXTENSION_NAME}.entitlements`),
+    `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>com.apple.security.application-groups</key>
+  <array>
+    <string>${appGroupFor(bundleIdentifier)}</string>
+  </array>
+</dict>
+</plist>
+`,
+  );
+
   fs.writeFileSync(
     path.join(extensionRoot, `${SHARE_EXTENSION_NAME}-Info.plist`),
     `<?xml version="1.0" encoding="UTF-8"?>
@@ -190,34 +225,34 @@ final class ShareViewController: UIViewController {
         self.extensionContext?.completeRequest(returningItems: nil)
         return
       }
-      var components = URLComponents()
-      components.scheme = "subskills"
-      components.host = "suggest"
-      components.queryItems = [URLQueryItem(name: "url", value: url.absoluteString)]
-      guard let deepLink = components.url else {
-        self.extensionContext?.completeRequest(returningItems: nil)
-        return
+      // A share extension CANNOT launch its containing app. Apple's App
+      // Extension Programming Guide: "A Today widget (and no other app
+      // extension type) can ask the system to open its containing app by
+      // calling the openURL:completionHandler: method of NSExtensionContext."
+      // The old code called it anyway; it did nothing, its completion handler
+      // never fired, so completeRequest was never reached and the extension sat
+      // alive with no UI while the host app hung behind it. Sharing from
+      // YouTube locked YouTube up (TestFlight, 2026-09-10).
+      //
+      // The responder-chain openURL: workaround is deliberately not used: it
+      // calls a UIApplication method unavailable to extensions (guideline
+      // 2.5.1), and since iOS 18 UIKit force-returns false for it anyway.
+      //
+      // So the URL crosses the process boundary through the App Group
+      // container and the app drains it. This is what Telegram's share
+      // extension does — it reads its account out of group.<bundleId> and works
+      // in-process rather than opening Telegram.
+      let defaults = UserDefaults(suiteName: "${appGroup}")
+      var pending = defaults?.stringArray(forKey: "pending_shared_urls") ?? []
+      if !pending.contains(url.absoluteString) {
+        pending.append(url.absoluteString)
       }
-      // A share extension CANNOT launch its containing app this way. Apple's
-      // App Extension Programming Guide is explicit: "A Today widget (and no
-      // other app extension type) can ask the system to open its containing app
-      // by calling the openURL:completionHandler: method of NSExtensionContext."
-      //
-      // So this call does nothing here — and worse, its completion handler is
-      // not guaranteed to fire, which is how completeRequest was being missed
-      // entirely: the extension stayed alive with no UI and the host app froze
-      // behind it. Sharing from YouTube on iOS locked YouTube up (TestFlight,
-      // 2026-09-10).
-      //
-      // Completing is not conditional on opening. Releasing the host app is the
-      // one thing this controller genuinely owes the system.
-      //
-      // Opening the app for real needs an App Group: the extension writes the
-      // URL to the shared container and the app drains it on next foreground.
-      // The responder-chain openURL: trick is the usual workaround and is
-      // deliberately NOT used — it calls a UIApplication method unavailable to
-      // extensions, which is App Store guideline 2.5.1 (public APIs only).
-      self.extensionContext?.open(deepLink)
+      // Cap it. Nothing drains this until the app is opened, and a queue that
+      // grows without bound on a device that never opens the app is a leak.
+      defaults?.set(Array(pending.suffix(50)), forKey: "pending_shared_urls")
+
+      // Unconditional. Releasing the host app is the one thing this controller
+      // genuinely owes the system.
       self.extensionContext?.completeRequest(returningItems: nil)
     }
   }
@@ -332,6 +367,7 @@ function withIosShareExtensionTarget(config) {
       // Stored with embedded quotes to match PRODUCT_BUNDLE_IDENTIFIER above;
       // pbxproj is a property-list dialect and strips them on read.
       settings.DEVELOPMENT_TEAM = appleTeamId ? `"${appleTeamId}"` : settings.DEVELOPMENT_TEAM;
+      settings.CODE_SIGN_ENTITLEMENTS = `"${SHARE_EXTENSION_NAME}/${SHARE_EXTENSION_NAME}.entitlements"`;
       settings.IPHONEOS_DEPLOYMENT_TARGET = settings.IPHONEOS_DEPLOYMENT_TARGET ?? "15.1";
       settings.SWIFT_VERSION = settings.SWIFT_VERSION ?? "5.0";
       settings.APPLICATION_EXTENSION_API_ONLY = "YES";
@@ -343,9 +379,29 @@ function withIosShareExtensionTarget(config) {
   });
 }
 
+/**
+ * Both sides of the App Group. The extension gets its entitlements file written
+ * next to its source; the app needs the same group declared here, because a
+ * container only exists where both processes claim it.
+ */
+function withIosAppGroup(config) {
+  return withEntitlementsPlist(config, (modConfig) => {
+    const bundleIdentifier = modConfig.ios?.bundleIdentifier ?? "xyz.subskills.app";
+    const group = appGroupFor(bundleIdentifier);
+    const key = "com.apple.security.application-groups";
+    const existing = modConfig.modResults[key];
+    const groups = Array.isArray(existing) ? existing : [];
+    if (!groups.includes(group)) {
+      modConfig.modResults[key] = [...groups, group];
+    }
+    return modConfig;
+  });
+}
+
 function withSubskillsShareTargets(config) {
   config = withAndroidShareManifest(config);
   config = withAndroidShareIntentNormalizer(config);
+  config = withIosAppGroup(config);
   config = withIosShareExtensionFiles(config);
   config = withIosShareExtensionTarget(config);
   return config;
