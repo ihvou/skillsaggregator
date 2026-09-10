@@ -23,7 +23,17 @@ export default function DiscoverTab() {
   const [interestSlugs, setInterestSlugs] = useState<string[]>([]);
   const query = useQuery({
     queryKey: ["discover-sections"],
-    queryFn: () => getDiscoverSections(12),
+    // No cap. Batch 3 changed this from getDiscoverSections() to
+    // getDiscoverSections(12) with no rationale in the commit and no mention in
+    // its own change list, and it hid 290 of 554 skills — 52% of the catalogue,
+    // in every single category, since all 22 hold more than 12. A skill you
+    // cannot reach from Discover may as well not be collected.
+    //
+    // It buys nothing either: each rail is a horizontal FlashList, so it
+    // virtualises and renders only the tiles on screen no matter how long the
+    // row is. Thumbnails were already one round trip for every skill at once,
+    // not one per skill.
+    queryFn: () => getDiscoverSections(),
     staleTime: 300000,
   });
 
