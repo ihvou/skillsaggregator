@@ -13,7 +13,6 @@ import {
   PlaySquare,
   ThumbsDown,
   ThumbsUp,
-  UserRound,
 } from "lucide-react-native";
 import {
   boundedUserVoteWeight,
@@ -46,7 +45,7 @@ interface ResourceCardProps {
 
 /**
  * The right-hand metadata column owns this height (4 visual rows: source+pill,
- * title line 1, title line 2, contributor+actions). The 16/9 thumbnail then
+ * title line 1, title line 2, actions). The 16/9 thumbnail then
  * stretches to match it via `alignSelf: "stretch"` + `aspectRatio`, so 90 -> 160x90.
  */
 const BODY_HEIGHT = 90;
@@ -326,7 +325,6 @@ export function ResourceCard({
   }
 
   const SavedIcon = isSaved ? BookmarkCheck : Bookmark;
-  const contributor = resource.link.contributor_profile;
   const portrait = isPortraitResource(resource);
   const catalogueStatus = statusLabel(resource.catalog_status);
   // Only the thumbnail and title recede. The action bar stays at full opacity so
@@ -412,16 +410,6 @@ export function ResourceCard({
             </Text>
           </Pressable>
           <View style={styles.bottomRow}>
-            <View style={styles.metaLine}>
-              {contributor ? (
-                <View style={styles.contributorPill}>
-                  <UserRound size={11} color={colors.muted} />
-                  <Text style={styles.contributorText} numberOfLines={1}>
-                    @{contributor.slug}
-                  </Text>
-                </View>
-              ) : null}
-            </View>
             {/* Two groups inside the right-hand column: Watch later + Watched sit
                 left, next to the thumbnail; the vote cluster is pushed hard right
                 by actionSpacer. Buttons are 40pt wide, flush and shrinkable, so
@@ -619,29 +607,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: spacing.xs,
     minHeight: 36,
-  },
-  metaLine: {
-    flexShrink: 1,
-    minWidth: 0,
-    maxWidth: 92,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  contributorPill: {
-    maxWidth: 90,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 3,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: radius.sm,
-    backgroundColor: colors.bgGroup,
-  },
-  contributorText: {
-    color: colors.muted,
-    fontSize: 10,
-    fontWeight: "800",
   },
   // Takes the rest of the column so the four buttons can divide it evenly.
   actions: {
