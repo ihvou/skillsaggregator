@@ -24,6 +24,20 @@ export type DiscoverCategorySection = {
   skills: DiscoverSkillTile[];
 };
 
+/**
+ * Curriculum order — the sequence someone would actually work through a sport,
+ * which is what `learning_order` records. Queries return skills by name, and
+ * alphabetical order is meaningless for skills: it is why Discover showed Padel
+ * "How to choose a padel racket" and hid "Volley technique" at #24 of 24 behind
+ * a 12-skill cap. Falls back to name so a category nobody has ordered still
+ * comes out stable rather than arbitrary.
+ */
+export function byLearningOrder(a: SkillSummary, b: SkillSummary): number {
+  const left = a.learning_order ?? Number.MAX_SAFE_INTEGER;
+  const right = b.learning_order ?? Number.MAX_SAFE_INTEGER;
+  return left === right ? a.name.localeCompare(b.name) : left - right;
+}
+
 export type SkillSummaryPoint = { point: string; support: number };
 export type SkillTechniqueSummary = {
   consensus: SkillSummaryPoint[];
@@ -758,8 +772,12 @@ export async function getDiscoverSections(perCategorySkills: number | null = nul
       const { skills } = await getSkillsForCategory(category.slug);
       return {
         category,
-        skills: skills
+        skills: [...skills]
           .filter((skill) => skill.resource_count > 0)
+          // Sort BEFORE the cap. The cap is fine for a horizontal rail, but
+          // combined with alphabetical order it hid over half of every large
+          // category behind an arbitrary cut.
+          .sort(byLearningOrder)
           .slice(0, perCategorySkills ?? undefined),
       };
     }),

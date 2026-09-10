@@ -28,9 +28,15 @@ export function PageHeader({
   onMenuPress,
   rightAccessory,
 }: PageHeaderProps) {
+  const hasControlsRow = Boolean(showBack || showMenu);
   return (
     <View style={styles.wrap}>
-      {(showBack || showMenu || rightAccessory) && (
+      {/* The controls row exists to hold navigation. With a back button on the
+          left it reads as a row; with only an accessory it was a lone button
+          floating on its own line, pushing the title ~60pt down for nothing —
+          which is how Library looked. So the row renders only when something
+          navigational needs it, and a lone accessory sits beside the title. */}
+      {hasControlsRow ? (
         <View style={styles.controlsRow}>
           <View>{showBack ? <BackPillButton /> : null}</View>
           <View style={styles.rightControls}>
@@ -48,9 +54,14 @@ export function PageHeader({
             ) : null}
           </View>
         </View>
-      )}
-      <Text style={styles.title}>{title}</Text>
-      {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
+      ) : null}
+      <View style={styles.titleRow}>
+        <View style={styles.titleBlock}>
+          <Text style={styles.title}>{title}</Text>
+          {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
+        </View>
+        {!hasControlsRow && rightAccessory ? rightAccessory : null}
+      </View>
     </View>
   );
 }
@@ -86,6 +97,16 @@ const styles = StyleSheet.create({
   },
   pressed: {
     opacity: 0.7,
+  },
+  titleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: spacing.sm,
+  },
+  titleBlock: {
+    flex: 1,
+    minWidth: 0,
   },
   title: {
     ...typography.pageTitle,

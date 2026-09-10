@@ -149,7 +149,13 @@ export default function SavedTab() {
           // keeps its scroll offset across the swap — switching while scrolled lands you
           // mid-list, or past the shorter list's content, which reads as a big blank gap
           // under the header. Keying by view remounts it so the new list starts at the top.
-          key={view}
+          //
+          // The skill filter does exactly the same thing and was missed: tapping a chip
+          // swaps in a much shorter dataset while the offset survives, so the list renders
+          // empty or with its rows pushed far down the screen. It looked intermittent
+          // because it only shows up once you have scrolled. Found on TestFlight, iOS,
+          // 2026-09-10.
+          key={`${view}:${selectedSkillId}`}
           data={displayResources}
           style={styles.list}
           keyExtractor={(item) => item.id}

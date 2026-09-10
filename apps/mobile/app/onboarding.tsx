@@ -11,7 +11,7 @@ import Svg, {
   Stop,
 } from "react-native-svg";
 import { Screen } from "@/components/Screen";
-import { getCategories, getSkillsForCategory } from "@/lib/data";
+import { byLearningOrder, getCategories, getSkillsForCategory } from "@/lib/data";
 import { setOnboardingCompleted, setOnboardingInterests } from "@/lib/localState";
 import { colors, radius, shadows, spacing } from "@/lib/theme";
 import { track } from "@/lib/analytics";
@@ -123,11 +123,7 @@ export default function OnboardingScreen() {
     // Curriculum order, not the alphabetical order the query returns. A card
     // that reads as a character sheet should show the path through the sport;
     // by name it opened on "Badminton rules explained, Badminton warm up".
-    const ordered = [...skills].sort((a, b) => {
-      const left = a.learning_order ?? Number.MAX_SAFE_INTEGER;
-      const right = b.learning_order ?? Number.MAX_SAFE_INTEGER;
-      return left === right ? a.name.localeCompare(b.name) : left - right;
-    });
+    const ordered = [...skills].sort(byLearningOrder);
     return {
       label: chosen.name,
       rows: ordered.slice(0, MAX_STAT_ROWS).map((skill) => skill.name),

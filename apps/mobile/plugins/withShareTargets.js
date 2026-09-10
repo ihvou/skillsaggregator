@@ -198,9 +198,27 @@ final class ShareViewController: UIViewController {
         self.extensionContext?.completeRequest(returningItems: nil)
         return
       }
-      self.extensionContext?.open(deepLink) { _ in
-        self.extensionContext?.completeRequest(returningItems: nil)
-      }
+      // A share extension CANNOT launch its containing app this way. Apple's
+      // App Extension Programming Guide is explicit: "A Today widget (and no
+      // other app extension type) can ask the system to open its containing app
+      // by calling the openURL:completionHandler: method of NSExtensionContext."
+      //
+      // So this call does nothing here — and worse, its completion handler is
+      // not guaranteed to fire, which is how completeRequest was being missed
+      // entirely: the extension stayed alive with no UI and the host app froze
+      // behind it. Sharing from YouTube on iOS locked YouTube up (TestFlight,
+      // 2026-09-10).
+      //
+      // Completing is not conditional on opening. Releasing the host app is the
+      // one thing this controller genuinely owes the system.
+      //
+      // Opening the app for real needs an App Group: the extension writes the
+      // URL to the shared container and the app drains it on next foreground.
+      // The responder-chain openURL: trick is the usual workaround and is
+      // deliberately NOT used — it calls a UIApplication method unavailable to
+      // extensions, which is App Store guideline 2.5.1 (public APIs only).
+      self.extensionContext?.open(deepLink)
+      self.extensionContext?.completeRequest(returningItems: nil)
     }
   }
 
