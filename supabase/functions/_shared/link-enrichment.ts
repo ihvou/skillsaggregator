@@ -167,6 +167,53 @@ function usableTitle(value: string | null | undefined) {
   return PLATFORM_SHELL_TITLES.has(trimmed.toLowerCase()) ? null : trimmed;
 }
 
+// The image equivalent of PLATFORM_SHELL_TITLES, and it was missing.
+//
+// Meta serves its UI assets from `rsrc.php` paths — bundled chrome, never post
+// content, which lives on scontent*.cdninstagram.com. When og:image came back as
+// one of those we stored it, and 32 of 51 Instagram links ended up rendering the
+// Instagram logo as their thumbnail: 778KB, byte-identical across every link.
+// Non-null, so nothing downstream knew to retry or fall back — the same failure
+// shape M135 fixed for titles, on the other field.
+//
+// The posts were alive the whole time and serve a real og:image on a re-fetch,
+// so this is a transient response variant rather than a dead post. Rejecting it
+// leaves the column null, which the caller can act on.
+const SHELL_IMAGE_PATTERNS = [
+  /cdninstagram\.com\/rsrc\.php\//i,
+  /fbcdn\.net\/rsrc\.php\//i,
+];
+
+function usableThumbnail(value: string | null | undefined) {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  return SHELL_IMAGE_PATTERNS.some((pattern) => pattern.test(trimmed)) ? null : trimmed;
+}
+
+/**
+ * Instagram's handle, taken from the tags we already fetch.
+ *
+ * twitter:title is "Michael Collins (@uppercut_athletics) • Instagram reel" and
+ * og:description opens "20 likes, 0 comments - uppercut_athletics on March 17".
+ * Neither was being read, so creator_handle was null on 21 of 22 published
+ * Instagram links — no attribution on the card for the person whose clip it is.
+ *
+ * The collector cannot supply it either: search results give a bare
+ * /reel/<code> URL with no handle in it.
+ */
+function instagramHandleFromMeta(html: string) {
+  const twitterTitle = metaTagContent(html, ["twitter:title"]);
+  const parenthesised = twitterTitle?.match(/\(@([A-Za-z0-9._]{1,30})\)/);
+  if (parenthesised?.[1]) return parenthesised[1];
+
+  const description = metaTagContent(html, ["og:description", "twitter:description"]);
+  const dashed = description?.match(/-\s*([A-Za-z0-9._]{1,30})\s+on\s/);
+  if (dashed?.[1]) return dashed[1];
+
+  return null;
+}
+
 async function fetchTikTokOEmbed(payload: LinkAddPayload) {
   const url = payload.canonical_url ?? payload.url;
   if (!url) return null;
@@ -205,7 +252,8 @@ async function fetchOpenGraph(payload: LinkAddPayload) {
   return {
     title: usableTitle(metaTagContent(html, ["og:title", "twitter:title"]) ?? titleTagContent(html)),
     description: metaTagContent(html, ["og:description", "twitter:description", "description"]),
-    thumbnail_url: metaTagContent(html, ["og:image", "twitter:image", "twitter:image:src"]),
+    thumbnail_url: usableThumbnail(metaTagContent(html, ["og:image", "twitter:image", "twitter:image:src"])),
+    creator_handle: instagramHandleFromMeta(html),
   };
 }
 
@@ -248,6 +296,9 @@ export async function enrichLinkPayload(payload: LinkAddPayload): Promise<LinkAd
         description: payload.description ?? og.description,
         thumbnail_url: payload.thumbnail_url ?? og.thumbnail_url,
         content_type: payload.content_type ?? "video",
+        creator_handle: payload.creator_handle ?? og.creator_handle ?? null,
+        creator_url: payload.creator_url
+          ?? (og.creator_handle ? `https://www.instagram.com/${og.creator_handle}/` : null),
         creator_platform: payload.creator_platform ?? "instagram",
         scoring_strategy: payload.scoring_strategy ?? "engagement_authority",
       };

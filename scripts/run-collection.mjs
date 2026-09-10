@@ -312,11 +312,21 @@ const config = {
   // COLLECT_TIKTOK_ENABLED is still honoured: the nightly launchd plist and the
   // runbooks set it, and short-form is what that switch always meant.
   shortFormEnabled: envFlag("COLLECT_SHORTFORM_ENABLED", envFlag("COLLECT_TIKTOK_ENABLED", true)),
-  // Deliberately far below the YouTube skill count. Short-form is seeding, not a
-  // feed: a sub-skill needs a handful of clips once, and every candidate costs a
-  // download plus a whisper pass. 20 skills/night walks the whole catalogue in
-  // about a month and then only new skills need anything.
-  shortFormSkillsPerRun: Number(process.env.COLLECT_SHORTFORM_SKILLS_PER_RUN ?? 20),
+  // Bounded where YouTube is not, and the asymmetry is deliberate: YouTube's
+  // marginal cost per skill is zero (yt-dlp search, no metered API), so it runs
+  // until the hard timeout kills it. Short-form spends 2 metered search credits
+  // per skill, so an unbounded loop filling the 6h window would be ~75 skills
+  // and ~150 credits a night — a 1,000/month budget gone in under seven nights
+  // with nobody having chosen that.
+  //
+  // 45 is ~3.5h of short-form at the measured 4.75 min/skill, which still leaves
+  // YouTube the tail of the window uncontended, and ~90 credits a night.
+  //
+  // NOTE the shape of this knob is wrong even if the number is right: what is
+  // scarce is search credits, not sub-skills, so the bound belongs on credits
+  // with the skill count falling out of it. Until that changes, this number
+  // implies a monthly spend rather than enforcing one.
+  shortFormSkillsPerRun: Number(process.env.COLLECT_SHORTFORM_SKILLS_PER_RUN ?? 45),
   // Between candidates. TikTok's media CDN throttles by returning 403/404 on the
   // same URL it served a minute earlier, so pacing matters more than throughput.
   shortFormGapMs: Number(process.env.COLLECT_SHORTFORM_GAP_MS ?? 4_000),
