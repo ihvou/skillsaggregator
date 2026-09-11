@@ -2370,6 +2370,28 @@ async function recordShortFormTranscriptAttempt(linkId, transcription) {
   }
 }
 
+/**
+ * A card-sized title from a caption. Split on the LINE BREAK before collapsing
+ * whitespace — a reel caption's first line is usually its actual headline
+ * ("Front Push Kick (Teep) 🔥"), and normalising first destroys that boundary
+ * and yields a run-on of headline plus body.
+ */
+function titleFromDescription(description) {
+  const raw = String(description ?? "").trim();
+  if (!raw) return null;
+  // instaloader writes some captions with the owner's handle on its own first
+  // line ("sutaimuaythai\n\nFront Push Kick (Teep) 🔥"), observed directly in the
+  // catalogue. A bare handle is not a title, so skip a leading single token that
+  // looks like one.
+  const looksLikeBareHandle = (line) => /^@?[A-Za-z0-9._]{1,30}$/.test(line);
+  const lines = raw.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const firstLine = lines.find((line) => !looksLikeBareHandle(line)) ?? lines[0] ?? raw;
+  const source = firstLine.length >= 15 ? firstLine : raw.replace(/\s+/g, " ");
+  const sentence = source.split(/(?<=[.!?])\s+/)[0] ?? source;
+  const candidate = (sentence.length >= 15 ? sentence : source).replace(/\s+/g, " ").slice(0, 140).trim();
+  return candidate.length >= 10 ? candidate : null;
+}
+
 async function postShortFormSuggestion(skill, candidate, transcript, score, durationSeconds) {
   const confidence = Math.min(score.relevance, score.teaching_quality);
   const scoringMode = score.scoring_mode ?? "transcript";
@@ -2388,7 +2410,14 @@ async function postShortFormSuggestion(skill, candidate, transcript, score, dura
       url: candidate.canonicalUrl,
       canonical_url: candidate.canonicalUrl,
       domain: isTikTok ? "tiktok.com" : "instagram.com",
-      title: candidate.title || `${skill.name} ${candidate.platform} clip`,
+      // Order matters. The search title first when it is real (a shell title
+      // like "Instagram" has already been nulled by the search module). Then the
+      // caption's opening sentence, which for Instagram is the only true
+      // description we have and does not depend on enrichment succeeding —
+      // enrichment was rate-limited for 42 of 68 Instagram links on 2026-09-11,
+      // so relying on it to supply the title means a blank card whenever
+      // Instagram throttles. The generated label is the last resort.
+      title: candidate.title || titleFromDescription(candidate.description) || `${skill.name} ${candidate.platform} clip`,
       description: candidate.description ?? null,
       content_type: "video",
       language: "en",

@@ -148,6 +148,28 @@ export const config = {
 const TIKTOK_VIDEO = /^https?:\/\/(?:www\.)?tiktok\.com\/@([A-Za-z0-9._-]+)\/video\/(\d+)/i;
 const INSTAGRAM_POST = /^https?:\/\/(?:www\.)?instagram\.com\/(?:([A-Za-z0-9._]+)\/)?(?:reel|reels|p)\/([A-Za-z0-9_-]+)/i;
 
+/**
+ * A search engine sometimes titles a result with just the platform name, the
+ * same way a dead page's <title> is "Instagram". `_shared/link-enrichment.ts`
+ * has rejected those since M135 — but only on the enrichment path, and the
+ * collector never goes through it: it sends the search result's title straight
+ * into the payload, and enrichment then keeps it (`payload.title ?? og.title`)
+ * rather than fetching the real one. Three links published on 2026-09-11 are
+ * titled "Instagram" for exactly that reason.
+ *
+ * So the guard has to exist on this side too. Same list, stated once here rather
+ * than imported across the Deno/Node boundary.
+ */
+const SHELL_TITLES = new Set([
+  "instagram", "tiktok", "tiktok - make your day", "youtube", "facebook", "x", "twitter",
+]);
+
+export function usableResultTitle(value) {
+  const trimmed = String(value ?? "").replace(/\s+/g, " ").trim();
+  if (!trimmed) return null;
+  return SHELL_TITLES.has(trimmed.toLowerCase()) ? null : trimmed;
+}
+
 export function classifyResultUrl(rawUrl) {
   const url = String(rawUrl ?? "").split("?")[0];
 
@@ -250,7 +272,9 @@ export async function discoverShortForm(skill, { log = () => {} } = {}) {
         ...classified,
         // The engine's description: for TikTok the full caption, for Instagram a
         // templated title. Kept as submission metadata, NOT used to filter.
-        title: String(result?.title ?? "").trim().slice(0, 180),
+        // A shell title becomes null so enrichment can fetch the real one
+        // instead of being blocked by a useless value it would keep.
+        title: usableResultTitle(result?.title)?.slice(0, 180) ?? null,
         description: String(result?.description ?? "").trim().slice(0, 600) || null,
       });
     }

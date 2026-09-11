@@ -56,6 +56,19 @@ const THUMBNAIL_TARGET_WIDTH = 720;
 // Meta serves UI chrome from `rsrc.php` paths; post content lives on
 // scontent*.cdninstagram.com. An image from the former is never the poster.
 const SHELL_IMAGE = /(?:cdninstagram\.com|fbcdn\.net)\/rsrc\.php\//i;
+// Same set _shared/link-enrichment.ts rejects. A link can carry one of these as
+// its stored title when the COLLECTOR supplied it — the search engine sometimes
+// titles a result with just the platform name, and enrichment keeps whatever
+// the payload already had rather than fetching a better one.
+const SHELL_TITLES = new Set([
+  "instagram", "tiktok", "tiktok - make your day", "youtube", "facebook", "x", "twitter",
+]);
+
+function usableTitle(value) {
+  const trimmed = String(value ?? "").replace(/\s+/g, " ").trim();
+  if (!trimmed) return null;
+  return SHELL_TITLES.has(trimmed.toLowerCase()) ? null : trimmed;
+}
 // Same ceiling as _shared/thumbnail-storage.ts. It also explains the original
 // symptom: the placeholder is 778KB, so the cache rejected it as too large,
 // which is exactly why those rows kept a remote URL and no cached copy.
@@ -155,6 +168,7 @@ const PLATFORMS = {
           ?.match(/-\s*([A-Za-z0-9._]{1,30})\s+on\s/)?.[1]
         ?? null;
       return {
+        title: usableTitle(metaTagContent(html, ["og:title"])),
         thumbnailUrl: metaTagContent(html, ["og:image", "twitter:image", "twitter:image:src"]),
         creatorHandle: handle,
         creatorUrl: handle ? `https://www.instagram.com/${handle}/` : null,
@@ -185,6 +199,7 @@ const PLATFORMS = {
         ?? String(body?.author_url ?? "").match(/\/@([A-Za-z0-9._-]+)/)?.[1]
         ?? null;
       return {
+        title: usableTitle(body?.title),
         thumbnailUrl: body?.thumbnail_url ?? null,
         creatorHandle: handle,
         creatorUrl: handle ? `https://www.tiktok.com/@${handle}` : (body?.author_url ?? null),
@@ -264,14 +279,15 @@ const supabase = createServiceRoleSupabaseClient();
 
 const { data: links, error } = await supabase
   .from("links")
-  .select("id, url, canonical_url, thumbnail_url, thumbnail_storage_path, creator_handle, creator_url, duration_seconds")
+  .select("id, url, canonical_url, title, thumbnail_url, thumbnail_storage_path, creator_handle, creator_url, duration_seconds")
   .eq("is_active", true)
   .or("url.ilike.%tiktok.com%,url.ilike.%instagram.com%")
   .limit(2000);
 if (error) throw error;
 
 const needsRepair = (link) =>
-  !link.creator_handle
+  !usableTitle(link.title)
+  || !link.creator_handle
   || link.duration_seconds === null
   // A signed remote URL with no cached copy is a card that will go blank later,
   // so it needs repair even though nothing looks wrong today.
@@ -295,7 +311,7 @@ log("info", "shortform_repair_started", {
 });
 
 const stats = {
-  checked: 0, thumbnail_replaced: 0, thumbnail_cleared: 0, cached: 0,
+  checked: 0, title_fixed: 0, thumbnail_replaced: 0, thumbnail_cleared: 0, cached: 0,
   handle_fixed: 0, duration_fixed: 0, cache_failed: 0, failed: 0,
 };
 
@@ -342,6 +358,13 @@ for (const [index, link] of targets.entries()) {
       // honest; a logo pretending to be a thumbnail is not.
       patch.thumbnail_url = null;
       stats.thumbnail_cleared += 1;
+    }
+
+    // A stored shell title ("Instagram") is worse than no title: it looks like
+    // real metadata, so nothing retries it.
+    if (meta.title && !usableTitle(link.title)) {
+      patch.title = meta.title.slice(0, 200);
+      stats.title_fixed += 1;
     }
 
     if (meta.creatorHandle && !link.creator_handle) {
