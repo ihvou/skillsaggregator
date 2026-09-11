@@ -7,10 +7,20 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider, initialWindowMetrics } from "react-native-safe-area-context";
 import { AuthProvider } from "@/lib/auth";
 import { useTutorialReturnPrompt } from "@/lib/tutorialReturnPrompt";
+import { useSharedInbox } from "@/lib/useSharedInbox";
 import { track } from "@/lib/analytics";
 
 function TutorialReturnPromptGate() {
   useTutorialReturnPrompt();
+  return null;
+}
+
+/**
+ * Inside the router, because it navigates; a hook that calls useRouter cannot
+ * live in RootLayout itself.
+ */
+function SharedInboxGate() {
+  useSharedInbox();
   return null;
 }
 
@@ -49,6 +59,7 @@ export default function RootLayout() {
         <QueryClientProvider client={queryClient}>
           <AuthProvider>
             <TutorialReturnPromptGate />
+            <SharedInboxGate />
             <StatusBar style="dark" />
             <Stack screenOptions={{ headerShown: false }}>
               <Stack.Screen name="(tabs)" />

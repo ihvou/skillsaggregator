@@ -37,6 +37,10 @@ export type AppEvent =
   | "resource_watched"
   | "resource_voted"
   | "suggestion_submitted"
+  // Fired when a link shared from another app is picked up. On iOS that is the
+  // App Group drain on foreground, which is the only signal we get that the
+  // share extension ran at all — it cannot report anything itself.
+  | "resource_shared_in"
   | "search_performed";
 
 type QueuedEvent = {

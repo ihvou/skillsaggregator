@@ -158,7 +158,7 @@ needs a registered legal entity and a D-U-N-S number, which is weeks of bureaucr
 - [x] 10. Upload to App Store Connect (`eas submit --platform ios`) — done 2026-09-09, build 11 (1.0.0, commit `5040104`); confirmed `processingState=VALID` via the App Store Connect API. See *Runbook A2*.
 - [x] 11. Store listing **prepared** — copy, keywords and 6.9" (1320×2868) screenshots in `docs/store-listing-copy.md` / `store-assets/`. Still to do: paste into App Store Connect, plus the **Apple privacy labels** (see *Privacy disclosures*).
 - [ ] 12. Reviewer notes + demo access — draft in `docs/store-listing-copy.md`. **Decide the demo-account answer first**: magic-link sign-in is something a reviewer cannot complete.
-- [~] 13. **TestFlight** build, smoke test on a real iPhone — build 11 is on TestFlight and installable by internal testers now. **The smoke test is the part still outstanding**, and it is the only place Sign in with Apple has ever run for real; App Review will exercise it.
+- [~] 13. **TestFlight** build, smoke test on a real iPhone — build 11 installed and partly exercised. **Sign in with Apple verified working on a real device, 2026-09-11**, closing a risk open since the entitlement was added: it had only ever run in a simulator, and App Review exercises it. That also rules it out as the cause of the 2.1(a) beta rejection — see *Beta App Review* in `docs/store-listing-copy.md`. Still outstanding: share-in (known broken in build 11) and a full pass on the fixes in M147-M150.
 - [ ] 14. Submit for App Store review
 
 ---
