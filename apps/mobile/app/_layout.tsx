@@ -8,6 +8,7 @@ import { SafeAreaProvider, initialWindowMetrics } from "react-native-safe-area-c
 import { AuthProvider } from "@/lib/auth";
 import { useTutorialReturnPrompt } from "@/lib/tutorialReturnPrompt";
 import { useSharedInbox } from "@/lib/useSharedInbox";
+import { reconcileInterruptedSubmissions } from "@/lib/pendingSubmissions";
 import { track } from "@/lib/analytics";
 
 function TutorialReturnPromptGate() {
@@ -27,6 +28,10 @@ function SharedInboxGate() {
 export default function RootLayout() {
   useEffect(() => {
     track("app_open");
+    // A submission still marked in-flight at startup lost its request when the
+    // process died; nothing is retrying it. Surface it as failed so it can be
+    // retried, rather than leaving a row that says "Adding..." forever.
+    reconcileInterruptedSubmissions();
   }, []);
 
   const [queryClient] = useState(

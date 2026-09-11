@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { FlashList } from "@shopify/flash-list";
 import { useRouter } from "expo-router";
@@ -7,6 +7,7 @@ import { ArrowDown, ArrowUp, Bookmark, CheckCircle, PlusCircle } from "lucide-re
 import type { SkillResource } from "@skillsaggregator/shared";
 import { EmptyState } from "@/components/EmptyState";
 import { PageHeader } from "@/components/PageHeader";
+import { PendingResourceCard } from "@/components/PendingResourceCard";
 import { ResourceCard } from "@/components/ResourceCard";
 import { Screen } from "@/components/Screen";
 import { SkeletonList } from "@/components/SkeletonList";
@@ -18,6 +19,15 @@ import {
 } from "@/lib/data";
 import { useAuth } from "@/lib/auth";
 import { getSupabase } from "@/lib/supabase";
+import {
+  failPendingSubmission,
+  getPendingSubmissions,
+  removePendingSubmission,
+  resolvePendingSubmission,
+  subscribePendingSubmissions,
+  type PendingSubmission,
+} from "@/lib/pendingSubmissions";
+import { sendSuggestion } from "@/lib/submitSuggestion";
 import { useOnboardingGate } from "@/lib/useOnboardingGate";
 import { colors, radius, spacing } from "@/lib/theme";
 
@@ -25,7 +35,7 @@ export default function SavedTab() {
   const router = useRouter();
   const queryClient = useQueryClient();
   useOnboardingGate();
-  const { user } = useAuth();
+  const { user, profile, ensureSession } = useAuth();
   const [view, setView] = useState<UserLibraryView>("saved");
   const [selectedSkillId, setSelectedSkillId] = useState<string>("all");
   const queryKey = ["user-library", user?.id, view] as const;
@@ -68,7 +78,13 @@ export default function SavedTab() {
     if (selectedSkillId === "all") return allResources;
     return allResources.filter((resource) => resource.skill?.id === selectedSkillId);
   }, [allResources, selectedSkillId]);
-  const showSkeleton = Boolean(user) && displayResources.length === 0 && query.isLoading;
+  // Links the user submitted that the server has not finished with. Held
+  // outside react-query on purpose: they are not rows yet, and inventing fake
+  // SkillResources to sit in the list would put an object shaped like a saved
+  // resource where nothing has been saved.
+  const pending = useSyncExternalStore(subscribePendingSubmissions, getPendingSubmissions);
+  const showSkeleton =
+    Boolean(user) && displayResources.length === 0 && query.isLoading && pending.length === 0;
   const emptyIcon = view === "saved" ? Bookmark : CheckCircle;
 
   useEffect(() => {
@@ -77,6 +93,33 @@ export default function SavedTab() {
       setSelectedSkillId("all");
     }
   }, [selectedSkillId, skillOptions]);
+
+  const visiblePending = useMemo(() => {
+    // Only Watch later — a submission is not watched — and only under a chip it
+    // actually belongs to.
+    if (view !== "saved") return [];
+    return pending.filter(
+      (item) => selectedSkillId === "all" || item.request.skill_id === selectedSkillId,
+    );
+  }, [pending, selectedSkillId, view]);
+
+  async function retryPending(item: PendingSubmission) {
+    try {
+      const activeSession = await ensureSession("suggest_resource");
+      await sendSuggestion(item.request, {
+        accessToken: activeSession.access_token,
+        originName: profile
+          ? `mobile_${profile.slug}`
+          : activeSession.user.is_anonymous
+            ? "mobile_anonymous"
+            : "mobile_authenticated",
+      });
+      resolvePendingSubmission(item.id);
+      void queryClient.invalidateQueries({ queryKey: ["user-library"] });
+    } catch (error) {
+      failPendingSubmission(item.id, error instanceof Error ? error.message : String(error));
+    }
+  }
 
   async function moveResource(resourceId: string, direction: -1 | 1) {
     if (view !== "saved" || !user) return;
@@ -160,6 +203,9 @@ export default function SavedTab() {
           style={styles.list}
           keyExtractor={(item) => item.id}
           ListEmptyComponent={
+            // Silent while something is pending: the header already shows a row,
+            // so "Nothing in Watch later" directly above it contradicts itself.
+            visiblePending.length > 0 ? null : (
             <View style={styles.emptyWrap}>
               {user ? (
                 <EmptyState
@@ -179,6 +225,27 @@ export default function SavedTab() {
                 />
               )}
             </View>
+            )
+          }
+          ListHeaderComponent={
+            visiblePending.length > 0 ? (
+              <View>
+                {visiblePending.map((item) => (
+                  <View key={item.id}>
+                    <View style={styles.rowWrap}>
+                      <PendingResourceCard
+                        item={item}
+                        onRetry={(target) => {
+                          void retryPending(target);
+                        }}
+                        onDismiss={(target) => removePendingSubmission(target.id)}
+                      />
+                    </View>
+                    <View style={styles.divider} />
+                  </View>
+                ))}
+              </View>
+            ) : null
           }
           ItemSeparatorComponent={() => <View style={styles.divider} />}
           renderItem={({ item, index }) => (

@@ -74,10 +74,23 @@ function isPortraitResource(resource: SkillResource) {
   return source === "tiktok" || source === "instagram";
 }
 
+/**
+ * What happened to a link the user submitted (MI35). Only the states where the
+ * card cannot otherwise say it.
+ *
+ * "In catalogue" is deliberately absent: `relationId` is non-null exactly when
+ * `catalog_status` is `in_catalog`, and `canVote` follows `relationId`, so the
+ * vote controls already mean "this is in the catalogue". Labelling it too put
+ * the word on nearly every row in Watch later — most saves come from the
+ * catalogue — to repeat what the thumbs were saying.
+ *
+ * The other three earn their place: none of them shows vote controls, so the
+ * label is the only thing distinguishing a private save from one still in
+ * review from one that was reviewed and not taken.
+ */
 function statusLabel(status: SkillResource["catalog_status"]) {
   if (status === "private") return "Private";
   if (status === "in_review") return "In review";
-  if (status === "in_catalog") return "In catalogue";
   if (status === "not_added") return "Reviewed";
   return null;
 }

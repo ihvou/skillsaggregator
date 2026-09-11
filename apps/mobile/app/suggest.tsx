@@ -11,6 +11,12 @@ import { getCategories, getSkillsForCategory } from "@/lib/data";
 import { useAuth } from "@/lib/auth";
 import { colors, radius, spacing, typography } from "@/lib/theme";
 import { track } from "@/lib/analytics";
+import {
+  addPendingSubmission,
+  failPendingSubmission,
+  resolvePendingSubmission,
+} from "@/lib/pendingSubmissions";
+import { sendSuggestion, type SuggestionRequest } from "@/lib/submitSuggestion";
 
 const LEVELS: Array<{ value: SkillLevel; label: string }> = [
   { value: "beginner", label: "Beginner" },
@@ -31,7 +37,6 @@ export default function SuggestScreen() {
   const [level, setLevel] = useState<SkillLevel | "">("");
   const [addToWatchLater, setAddToWatchLater] = useState(true);
   const [suggestToCatalog, setSuggestToCatalog] = useState(true);
-  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const categoriesQuery = useQuery({
     queryKey: ["suggest-categories"],
@@ -91,72 +96,71 @@ export default function SuggestScreen() {
       Alert.alert("Missing choice", "Choose Watch later, catalogue review, or both.");
       return;
     }
-    setIsSubmitting(true);
-    try {
-      const activeSession = await ensureSession("suggest_resource");
-      const response = await fetch(`${supabaseUrl}/functions/v1/submit-suggestion`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          apikey: anonKey,
-          Authorization: `Bearer ${activeSession.access_token}`,
-        },
-        body: JSON.stringify({
-          type: "LINK_ADD",
-          origin_type: "human",
-          add_to_watch_later: addToWatchLater,
-          suggest_to_catalog: suggestToCatalog,
-          origin_name: profile
+    // Everything below is deliberately NOT awaited. The chain behind this —
+    // session, Turnstile, rate limit, oEmbed, several database round trips, then
+    // a second edge function over HTTP — takes seconds, and none of it is work
+    // the user needs to watch. The link is accepted here and appears in Watch
+    // later straight away as a visibly-loading row; the request runs behind it.
+    const request: SuggestionRequest = {
+      add_to_watch_later: addToWatchLater,
+      suggest_to_catalog: suggestToCatalog,
+      category_id: selectedCategory.id,
+      skill_id: skillId,
+      payload_json: {
+        url: url.trim(),
+        canonical_url: url.trim(),
+        target_skill_id: skillId,
+        title: showFallbackTitle && fallbackTitle.trim() ? fallbackTitle.trim() : null,
+        public_note: note.trim() || null,
+        skill_level: level || null,
+        language: "en",
+      },
+    };
+    const pendingId = addPendingSubmission({
+      url: url.trim(),
+      title: request.payload_json.title,
+      skillName: skills.find((item) => item.id === skillId)?.name ?? null,
+      request,
+    });
+
+    track("suggestion_submitted", {
+      suggested_to_catalog: suggestToCatalog,
+      source: urlSource ?? "other",
+    });
+
+    // No success dialog. "Suggest" already says the catalogue copy is reviewed
+    // rather than published, and a modal reading "Submitted for review" lands as
+    // a refusal even when the link WAS saved. Failures now surface on the row
+    // itself, where the user can retry, instead of in an alert over this form.
+    //
+    // This screen is reachable with NO back stack — a share-target launch, or a
+    // deep link — where router.back() is a no-op and would strand the user on a
+    // form they have already submitted.
+    if (router.canGoBack()) router.back();
+    else router.replace("/(tabs)/library");
+
+    void (async () => {
+      try {
+        const activeSession = await ensureSession("suggest_resource");
+        const result = await sendSuggestion(request, {
+          accessToken: activeSession.access_token,
+          originName: profile
             ? `mobile_${profile.slug}`
             : activeSession.user.is_anonymous
               ? "mobile_anonymous"
               : "mobile_authenticated",
-          category_id: selectedCategory.id,
-          skill_id: skillId,
-          payload_json: {
-            url: url.trim(),
-            canonical_url: url.trim(),
-            target_skill_id: skillId,
-            title: showFallbackTitle && fallbackTitle.trim() ? fallbackTitle.trim() : null,
-            public_note: note.trim() || null,
-            skill_level: level || null,
-            language: "en",
-          },
-        }),
-      });
-      const body = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(body.error ?? "Suggestion failed.");
-      const saved = Boolean(body.saved);
-      // No success dialog. "Suggest" already tells the user the catalogue copy is
-      // reviewed rather than published, and a modal reading "Submitted for review"
-      // lands as a refusal even when the link WAS saved to their own list.
-      // Failures still alert, in the catch below.
-      if (saved) {
-        // Put it in Watch later now rather than on the next cold fetch, so the
-        // list the user checks immediately afterwards already has it.
+        });
+        resolvePendingSubmission(pendingId);
+        console.info("[suggest] submitted", { ...result, suggestToCatalog });
         void queryClient.invalidateQueries({ queryKey: ["user-library"] });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        // The row carries the failure and offers Retry. Alerting here would fire
+        // over whatever screen the user has moved on to.
+        failPendingSubmission(pendingId, message);
+        console.warn("[suggest] submission failed", { error: message });
       }
-      track("suggestion_submitted", {
-        saved,
-        suggested_to_catalog: suggestToCatalog,
-        source: urlSource ?? "other",
-      });
-      console.info("[suggest] submitted", {
-        saved,
-        suggestToCatalog,
-        duplicate: Boolean(body.duplicate),
-      });
-      // This screen is reachable with NO back stack — a share-target launch from
-      // another app, or a deep link — and router.back() is a no-op there, which
-      // strands the user on a form they have already submitted. Send them to the
-      // Library instead, which is also where a saved link just landed.
-      if (router.canGoBack()) router.back();
-      else router.replace("/(tabs)/library");
-    } catch (error) {
-      Alert.alert("Suggestion failed", error instanceof Error ? error.message : String(error));
-    } finally {
-      setIsSubmitting(false);
-    }
+    })();
   }
 
   const loading = categoriesQuery.isLoading || skillsQuery.isLoading;
@@ -275,14 +279,14 @@ export default function SuggestScreen() {
 
           <Pressable
             onPress={submit}
-            disabled={isSubmitting || (!addToWatchLater && !suggestToCatalog)}
+            disabled={!addToWatchLater && !suggestToCatalog}
             style={({ pressed }) => [
               styles.submit,
               pressed && styles.pressed,
-              (isSubmitting || (!addToWatchLater && !suggestToCatalog)) && styles.disabled,
+              !addToWatchLater && !suggestToCatalog && styles.disabled,
             ]}
           >
-            <Text style={styles.submitText}>{isSubmitting ? "Submitting..." : "Save / suggest link"}</Text>
+            <Text style={styles.submitText}>Save / suggest link</Text>
           </Pressable>
         </ScrollView>
       )}
