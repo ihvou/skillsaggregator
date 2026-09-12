@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Alert, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import * as AppleAuthentication from "expo-apple-authentication";
+import * as Application from "expo-application";
 import { useRouter } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 import { ExternalLink, Mail, Trash2 } from "lucide-react-native";
@@ -369,12 +370,27 @@ export default function AccountScreen() {
             ))}
           </View>
         </View>
+
+        {/* Which build am I actually running? Two preview APKs from different
+            commits both reported 1.0.0 (6), so a tester could not tell whether a
+            fix was installed — and neither could we. Read from the binary via
+            expo-application rather than from app.json, because EAS assigns the
+            build number remotely and app.json never sees it. */}
+        <Text style={styles.buildLine} selectable>
+          {`Version ${Application.nativeApplicationVersion ?? "?"} (${Application.nativeBuildVersion ?? "?"})`}
+        </Text>
       </ScrollView>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
+  buildLine: {
+    marginTop: spacing.lg,
+    textAlign: "center",
+    fontSize: 12,
+    color: colors.faint,
+  },
   scrollContent: {
     paddingBottom: spacing.xxl,
   },
