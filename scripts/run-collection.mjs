@@ -309,6 +309,10 @@ const config = {
   ytdlpTranscriptTimeoutMs: Number(process.env.COLLECT_YTDLP_TRANSCRIPT_TIMEOUT_MS ?? 15_000),
   ollamaTimeoutMs: Number(process.env.COLLECT_OLLAMA_TIMEOUT_MS ?? 90_000),
   submitTimeoutMs: Number(process.env.COLLECT_SUBMIT_TIMEOUT_MS ?? 15_000),
+  // Short-form only. See postShortFormSuggestion for why it retries where the
+  // YouTube submit does not.
+  submitRetries: Number(process.env.COLLECT_SUBMIT_RETRIES ?? 2),
+  submitRetryBackoffMs: Number(process.env.COLLECT_SUBMIT_RETRY_BACKOFF_MS ?? 4_000),
   // COLLECT_TIKTOK_ENABLED is still honoured: the nightly launchd plist and the
   // runbooks set it, and short-form is what that switch always meant.
   shortFormEnabled: envFlag("COLLECT_SHORTFORM_ENABLED", envFlag("COLLECT_TIKTOK_ENABLED", true)),
@@ -2473,18 +2477,52 @@ async function postShortFormSuggestion(skill, candidate, transcript, score, dura
     ...(requestAutoApply ? { requested_status: "auto_approved" } : {}),
   };
 
-  const response = await fetchWithTimeout(`${config.supabaseUrl}/functions/v1/submit-suggestion`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${config.serviceRoleKey}`,
-      "Content-Type": "application/json",
-      ...(config.internalFunctionToken ? { "x-internal-token": config.internalFunctionToken } : {}),
-    },
-    body: JSON.stringify(payload),
-  }, config.submitTimeoutMs, "submit_shortform");
-  const text = await response.text();
-  if (!response.ok) throw new Error(`submit-shortform ${response.status}: ${text}`);
-  return JSON.parse(text);
+  // RETRY, unlike the YouTube submit, and the asymmetry is the point: a lost
+  // YouTube submit costs a caption fetch that can simply happen again, while a
+  // lost short-form submit throws away a download AND a whisper pass that
+  // already ran — about 30s of real work per clip. Six clips were lost this way
+  // on 2026-09-12 (five 15s timeouts and one apply-suggestion 503), all of them
+  // fully transcribed before the call failed.
+  //
+  // Safe to repeat: submit-suggestion dedupes on dedupe_key and returns the
+  // existing suggestion, so a retry after a timeout that actually landed comes
+  // back as a duplicate rather than inserting twice.
+  //
+  // Only transient failures are retried. A 4xx is a validation error and will
+  // fail identically on the next attempt.
+  let lastError = null;
+  for (let attempt = 1; attempt <= config.submitRetries + 1; attempt += 1) {
+    try {
+      const response = await fetchWithTimeout(`${config.supabaseUrl}/functions/v1/submit-suggestion`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${config.serviceRoleKey}`,
+          "Content-Type": "application/json",
+          ...(config.internalFunctionToken ? { "x-internal-token": config.internalFunctionToken } : {}),
+        },
+        body: JSON.stringify(payload),
+      }, config.submitTimeoutMs, "submit_shortform");
+      const text = await response.text();
+      if (response.ok) return JSON.parse(text);
+      const error = new Error(`submit-shortform ${response.status}: ${text}`);
+      if (response.status < 500) throw error;
+      lastError = error;
+    } catch (error) {
+      // Our synthetic timeout error, or a transport-level failure.
+      if (!/_timeout_after_\d+ms|fetch failed|ECONNRESET|socket hang up/i.test(errorMessage(error))) throw error;
+      lastError = error;
+    }
+    if (attempt <= config.submitRetries) {
+      log("info", "shortform_submit_retry", "Submit failed transiently; retrying rather than discarding a transcribed clip", {
+        canonical_url: candidate.canonicalUrl,
+        attempt,
+        cause: errorMessage(lastError),
+        next_attempt_in_ms: config.submitRetryBackoffMs * attempt,
+      });
+      await sleep(config.submitRetryBackoffMs * attempt);
+    }
+  }
+  throw lastError;
 }
 
 async function ensureLinkPlaceholder(candidate) {
