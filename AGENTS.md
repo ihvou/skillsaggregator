@@ -2,15 +2,30 @@
 
 ## Destructive Database Operations
 
-The local Supabase Postgres volume contains agent-collected catalog data that is not fully recreated by `supabase/seed.sql`.
+Production is the **hosted** project `vqxsaabskkkjdljxiyqi`; the local Supabase
+Postgres volume is dev. Both hold agent-collected catalog data that
+`supabase/seed.sql` does not recreate. Establish which one a command targets
+before running it.
 
-Before running any command that can reset, drop, or replace the local database, run:
+Before anything that can reset, drop, or replace the **hosted** database — a
+migration that drops live data, a manual `delete`/`truncate`, a restore — run:
+
+```bash
+npm run db:backup:hosted
+```
+
+Before the same against the **local** database, run:
 
 ```bash
 scripts/db-backup.sh
 ```
 
-Show the resulting `.collection/backups/db-*.dump` path to the user and get explicit confirmation before continuing with destructive work.
+Show the resulting dump path to the user and get explicit confirmation before
+continuing with destructive work. `scripts/db-restore-hosted.sh` writes to
+production: it plans by default and requires `--confirm <project-ref>`. Never
+pass `--confirm` or `--no-pre-dump` on the user's behalf without them asking.
+
+See [docs/db-backup-restore.md](docs/db-backup-restore.md).
 
 Protected commands include:
 

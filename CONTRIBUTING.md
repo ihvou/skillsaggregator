@@ -2,9 +2,18 @@
 
 ## Destructive Operations
 
-The local Supabase database is not disposable. It contains collected links, approved suggestions, pending suggestions, and agent run history that are not restored by `supabase/seed.sql`.
+Neither database is disposable. Both hold collected links, suggestions, and
+agent run history that `supabase/seed.sql` does not restore — and **hosted
+(`vqxsaabskkkjdljxiyqi`) is production**, with no automated Supabase backups on
+the Free plan.
 
-Before any destructive database operation, create a dump and keep the path:
+Before any destructive operation on **hosted**, dump and keep the path:
+
+```bash
+npm run db:backup:hosted
+```
+
+Before any destructive operation on **local**:
 
 ```bash
 scripts/db-backup.sh
@@ -23,11 +32,15 @@ The safer reset wrapper is:
 npm run db:migrate:safe
 ```
 
-Restore a dump with:
+Restore a local dump with:
 
 ```bash
 npm run db:restore -- .collection/backups/db-YYYYMMDDTHHMMSSZ.dump
 ```
+
+Restore hosted with `npm run db:restore:hosted` — it plans by default and writes
+only when given `--confirm <project-ref>`. Full runbook:
+[docs/db-backup-restore.md](docs/db-backup-restore.md).
 
 Use `--force-no-backup` only for a confirmed empty local database.
 

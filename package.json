@@ -26,6 +26,8 @@
     "report:content-ops": "node scripts/content-ops-report.mjs",
     "db:backup": "bash scripts/db-backup.sh",
     "db:restore": "bash scripts/db-restore.sh",
+    "db:backup:hosted": "bash scripts/db-backup-hosted.sh",
+    "db:restore:hosted": "bash scripts/db-restore-hosted.sh",
     "db:migrate:safe": "bash scripts/db-migrate-safe.sh",
     "db:replay-logs": "node scripts/replay-from-logs.mjs",
     "transcripts:backfill-cache": "node scripts/backfill-transcripts-from-cache.mjs",

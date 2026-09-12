@@ -10,7 +10,31 @@ An MVP learning-resource aggregator for sport and training skills. It includes:
 
 ## ⚠️ Destructive operations — read before applying migrations
 
-The local Postgres volume carries **all agent-collected content** (currently ~70 links / ~160 link-skill relations across all categories). It is NOT a clean repro from `seed.sql` — that file only seeds categories, skills, and trusted_sources. If you wipe the DB you lose everything the nightly collection has gathered.
+**Production is the hosted Supabase project `vqxsaabskkkjdljxiyqi`** (Option A —
+see Architecture below). The local Docker Postgres is dev only. Backups are split
+accordingly, and it is worth being sure which one you are about to damage.
+
+### Hosted (production)
+
+Supabase takes **no automated backups on the Free plan**, so the nightly dump in
+`scripts/db-backup-hosted.sh` is the only backup that exists. It runs
+automatically before each nightly collection; take one by hand with:
+
+```bash
+npm run db:backup:hosted
+```
+
+~3.5 minutes, ~74 MB, into `.collection/backups/hosted/` (7 daily + 4 weekly).
+Restores — including single-table recovery, which Supabase's own whole-project
+restore cannot do — go through `npm run db:restore:hosted`, which plans by
+default and writes only with `--confirm`.
+
+**Full runbook: [docs/db-backup-restore.md](docs/db-backup-restore.md).**
+
+### Local (dev)
+
+The local Postgres volume is not a clean repro from `seed.sql` — that file only
+seeds categories, skills, and trusted_sources.
 
 **Before running any of the following, dump first:**
 
@@ -28,7 +52,15 @@ scripts/db-backup.sh
 
 Use `npm run db:migrate:safe` instead of bare `supabase db reset` when applying local migrations.
 
-**If the catalog gets wiped anyway**, the `.collection/logs/nightly-*.log` files preserve every `candidate_scored` + `suggestion_submitted` event from past nightly runs (R20 design). Run `npm run db:replay-logs` to rebuild — takes ~5 seconds, idempotent, no LLM/YouTube calls needed.
+### The log-replay fallback is partial
+
+`npm run db:replay-logs` rebuilds links and relations from the `candidate_scored`
+and `secondary_suggestion_submitted` events in `.collection/logs/nightly-*.log`
+(R20 design) — fast, idempotent, no LLM/YouTube calls. It is **not** a substitute
+for a backup: it handles three event types and carries no transcripts, no curator
+votes, no coach scores, and no published state. Re-fetching the ~20k transcripts
+instead would take days of wall clock at the 25s pacing gap, and would silently
+lose every video that has since been deleted.
 
 ## Architecture
 

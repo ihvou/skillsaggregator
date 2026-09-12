@@ -110,7 +110,20 @@ if [ "$COLLECT_TARGET" = "local" ]; then
     echo "[$(date +%Y-%m-%dT%H:%M:%S%z)] WARNING: pre-run database backup failed; continuing" | tee -a "$log_file"
   fi
 else
-  echo "[$(date +%Y-%m-%dT%H:%M:%S%z)] hosted target: skipping local Supabase health check and pg_dump backup" | tee -a "$log_file"
+  echo "[$(date +%Y-%m-%dT%H:%M:%S%z)] hosted target: skipping local Supabase health check" | tee -a "$log_file"
+
+  # Hosted is the single source of truth (Option A), and Supabase takes no
+  # automated backups on the Free plan — so this pre-run dump is the only thing
+  # standing between a bad night and permanent loss of the transcript corpus.
+  # Same safety-net rule as the local branch: never let a backup failure cost a
+  # night of collection. The script's own diagnostics go to the nightly log.
+  if [ "${COLLECT_SKIP_BACKUP:-0}" = "1" ]; then
+    echo "[$(date +%Y-%m-%dT%H:%M:%S%z)] pre-run hosted backup skipped (COLLECT_SKIP_BACKUP=1)" | tee -a "$log_file"
+  elif backup_path="$(bash scripts/db-backup-hosted.sh 2>>"$log_file")"; then
+    echo "[$(date +%Y-%m-%dT%H:%M:%S%z)] pre-run hosted database backup: ${backup_path}" | tee -a "$log_file"
+  else
+    echo "[$(date +%Y-%m-%dT%H:%M:%S%z)] WARNING: pre-run hosted database backup failed; continuing" | tee -a "$log_file"
+  fi
 fi
 
 set +e
@@ -131,6 +144,29 @@ if [ "$exit_code" -eq 0 ] && [ "$missing_transcripts_limit" != "0" ]; then
   echo "[$(date +%Y-%m-%dT%H:%M:%S%z)] missing-transcripts step exited with code ${missing_transcripts_exit_code}" | tee -a "$log_file"
   if [ "$missing_transcripts_exit_code" -ne 0 ]; then
     echo "[$(date +%Y-%m-%dT%H:%M:%S%z)] WARNING: missing-transcripts step failed; preserving collection exit code ${exit_code}" | tee -a "$log_file"
+  fi
+fi
+
+# Sweep short-form metadata that enrichment could not complete during the run.
+#
+# Not optional housekeeping. apply-suggestion enriches each link as it applies,
+# and Instagram throttles under the burst a full night produces: on 2026-09-11,
+# 42 of 68 published Instagram links came out with no thumbnail at all because
+# the og: fetch was rate-limited mid-run. Re-fetched an hour later the same posts
+# serve a real og:image, so the cure is simply to try again once the burst is
+# over. The script is idempotent and only touches links that are actually
+# missing something, so a clean night is a cheap no-op.
+#
+# It runs even when collection failed, for the same reason the report does: a
+# partial night still published links, and those links still need thumbnails.
+if [ "${COLLECT_SKIP_SHORTFORM_REPAIR:-0}" != "1" ]; then
+  echo "[$(date +%Y-%m-%dT%H:%M:%S%z)] short-form metadata repair starting" | tee -a "$log_file"
+  set +e
+  node scripts/repair-shortform-link-metadata.mjs --limit "${COLLECT_SHORTFORM_REPAIR_LIMIT:-400}" 2>&1 | tee -a "$log_file"
+  repair_exit_code="${PIPESTATUS[0]}"
+  set -e
+  if [ "$repair_exit_code" -ne 0 ]; then
+    echo "[$(date +%Y-%m-%dT%H:%M:%S%z)] WARNING: short-form metadata repair failed with ${repair_exit_code}; preserving collection exit code ${exit_code}" | tee -a "$log_file"
   fi
 fi
 
