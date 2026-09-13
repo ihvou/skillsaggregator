@@ -83,6 +83,14 @@ function arg(name, fallback = null) {
 }
 
 const limit = Number(arg("limit", 200));
+// A SECOND PASS, because the first one races the throttle it is cleaning up
+// after. The nightly sweep runs minutes after a collection that made ~120
+// Instagram requests, and Instagram was still rate-limiting at 09:07 on
+// 2026-09-13: 17 links were checked and left unfixed, and the same three pages
+// re-fetched hours later served og:image and twitter:title perfectly. Waiting
+// costs nothing on an idle machine and turns a 24-hour blank card into a
+// half-hour one. Only the links that stayed broken are retried, not a re-scan.
+const secondPassAfterMs = Number(arg("second-pass-after-ms", 30 * 60 * 1000));
 const gapMs = Number(arg("gap-ms", 1500));
 const dryRun = Boolean(arg("dry-run", false));
 const platformFilter = arg("platform", null);
@@ -277,22 +285,51 @@ async function cacheThumbnail(supabase, imageUrl, objectKey) {
 
 const supabase = createServiceRoleSupabaseClient();
 
-const { data: links, error } = await supabase
-  .from("links")
-  .select("id, url, canonical_url, title, thumbnail_url, thumbnail_storage_path, creator_handle, creator_url, duration_seconds")
-  .eq("is_active", true)
-  .or("url.ilike.%tiktok.com%,url.ilike.%instagram.com%")
-  .limit(2000);
-if (error) throw error;
+/**
+ * PAGINATED, because .limit() does not do what it looks like it does.
+ *
+ * PostgREST caps a response at 1000 rows server-side and `.limit(2000)` does not
+ * lift that — it silently returns the first 1000. With 1,188 active short-form
+ * links, 188 were invisible to this sweep, and the shortfall grows every night
+ * as the catalogue does. The symptom was links that stayed unrepaired night
+ * after night while the script cheerfully reported "needing_repair: 7".
+ *
+ * link-transcripts.mjs already pages with .range() for exactly this reason.
+ */
+async function loadShortFormLinks(pageSize = 1000) {
+  const rows = [];
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await supabase
+      .from("links")
+      .select("id, url, canonical_url, title, thumbnail_url, thumbnail_storage_path, creator_handle, creator_url, duration_seconds")
+      .eq("is_active", true)
+      .or("url.ilike.%tiktok.com%,url.ilike.%instagram.com%")
+      .order("created_at", { ascending: true })
+      .range(from, from + pageSize - 1);
+    if (error) throw error;
+    if (!data?.length) break;
+    rows.push(...data);
+    if (data.length < pageSize) break;
+  }
+  return rows;
+}
 
-const needsRepair = (link) =>
-  !usableTitle(link.title)
-  || !link.creator_handle
-  || link.duration_seconds === null
-  // A signed remote URL with no cached copy is a card that will go blank later,
-  // so it needs repair even though nothing looks wrong today.
-  || !link.thumbnail_storage_path
-  || SHELL_IMAGE.test(link.thumbnail_url ?? "");
+const links = await loadShortFormLinks();
+
+const needsRepair = (link) => {
+  const platform = PLATFORMS[platformFor(link.canonical_url ?? link.url ?? "") ?? ""];
+  return !usableTitle(link.title)
+    || !link.creator_handle
+    // Only when we can actually get it. Instagram has no metadata-only duration
+    // source, so flagging those would mark every Instagram link permanently
+    // unrepairable — they would be re-checked every night and, worse, would
+    // re-enter the second pass forever with nothing to do.
+    || (link.duration_seconds === null && platform?.supportsDurationProbe === true)
+    // A signed remote URL with no cached copy is a card that will go blank
+    // later, so it needs repair even though nothing looks wrong today.
+    || !link.thumbnail_storage_path
+    || SHELL_IMAGE.test(link.thumbnail_url ?? "");
+};
 
 const targets = (links ?? [])
   .filter((link) => {
@@ -315,94 +352,122 @@ const stats = {
   handle_fixed: 0, duration_fixed: 0, cache_failed: 0, failed: 0,
 };
 
-for (const [index, link] of targets.entries()) {
-  const url = link.canonical_url ?? link.url;
-  const name = platformFor(url);
-  const platform = PLATFORMS[name];
-  try {
-    const meta = await platform.fetchMetadata(url);
-    stats.checked += 1;
-    const patch = {};
+async function repairLinks(batch) {
+  const stillBroken = [];
+  for (const [index, link] of batch.entries()) {
+    const url = link.canonical_url ?? link.url;
+    const name = platformFor(url);
+    const platform = PLATFORMS[name];
+    try {
+      const meta = await platform.fetchMetadata(url);
+      stats.checked += 1;
+      const patch = {};
 
-    const isShell = SHELL_IMAGE.test(meta.thumbnailUrl ?? "");
-    const usableImage = meta.thumbnailUrl && !isShell ? meta.thumbnailUrl : null;
+      const isShell = SHELL_IMAGE.test(meta.thumbnailUrl ?? "");
+      const usableImage = meta.thumbnailUrl && !isShell ? meta.thumbnailUrl : null;
 
-    // A link that already has a cached copy is DONE — the cached object is the
-    // real poster and does not expire. Writing a fresh signed URL onto it would
-    // replace a durable null with something that rots.
-    if (usableImage && !link.thumbnail_storage_path) {
-      if (SHELL_IMAGE.test(link.thumbnail_url ?? "") || !link.thumbnail_url) {
-        patch.thumbnail_url = usableImage;
-        stats.thumbnail_replaced += 1;
-      }
-      // Cache here rather than hoping something else will: nothing runs over
-      // existing links, and the URL just stored expires.
-      {
-        const objectKey = platform.storageKey(url);
-        if (objectKey) {
-          try {
-            patch.thumbnail_storage_path = await cacheThumbnail(supabase, usableImage, objectKey);
-            patch.preview_status = "fetched";
-            stats.cached += 1;
-          } catch (cacheError) {
-            stats.cache_failed += 1;
-            log("warn", "shortform_repair_cache_failed", {
-              link_id: link.id, platform: name,
-              message: String(cacheError?.message ?? cacheError).slice(0, 140),
-            });
+      // A link that already has a cached copy is DONE — the cached object is the
+      // real poster and does not expire. Writing a fresh signed URL onto it would
+      // replace a durable null with something that rots.
+      if (usableImage && !link.thumbnail_storage_path) {
+        if (SHELL_IMAGE.test(link.thumbnail_url ?? "") || !link.thumbnail_url) {
+          patch.thumbnail_url = usableImage;
+          stats.thumbnail_replaced += 1;
+        }
+        // Cache here rather than hoping something else will: nothing runs over
+        // existing links, and the URL just stored expires.
+        {
+          const objectKey = platform.storageKey(url);
+          if (objectKey) {
+            try {
+              patch.thumbnail_storage_path = await cacheThumbnail(supabase, usableImage, objectKey);
+              patch.preview_status = "fetched";
+              stats.cached += 1;
+            } catch (cacheError) {
+              stats.cache_failed += 1;
+              log("warn", "shortform_repair_cache_failed", {
+                link_id: link.id, platform: name,
+                message: String(cacheError?.message ?? cacheError).slice(0, 140),
+              });
+            }
           }
         }
+      } else if (SHELL_IMAGE.test(link.thumbnail_url ?? "")) {
+        // Still the shell on a re-fetch: the post is probably gone. Null is
+        // honest; a logo pretending to be a thumbnail is not.
+        patch.thumbnail_url = null;
+        stats.thumbnail_cleared += 1;
       }
-    } else if (SHELL_IMAGE.test(link.thumbnail_url ?? "")) {
-      // Still the shell on a re-fetch: the post is probably gone. Null is
-      // honest; a logo pretending to be a thumbnail is not.
-      patch.thumbnail_url = null;
-      stats.thumbnail_cleared += 1;
-    }
 
-    // A stored shell title ("Instagram") is worse than no title: it looks like
-    // real metadata, so nothing retries it.
-    if (meta.title && !usableTitle(link.title)) {
-      patch.title = meta.title.slice(0, 200);
-      stats.title_fixed += 1;
-    }
-
-    if (meta.creatorHandle && !link.creator_handle) {
-      patch.creator_handle = meta.creatorHandle;
-      patch.creator_url = link.creator_url ?? meta.creatorUrl;
-      stats.handle_fixed += 1;
-    }
-
-    if (link.duration_seconds === null && platform.supportsDurationProbe) {
-      const seconds = await probeDuration(url);
-      if (seconds !== null) {
-        patch.duration_seconds = seconds;
-        stats.duration_fixed += 1;
+      // A stored shell title ("Instagram") is worse than no title: it looks like
+      // real metadata, so nothing retries it.
+      if (meta.title && !usableTitle(link.title)) {
+        patch.title = meta.title.slice(0, 200);
+        stats.title_fixed += 1;
       }
-    }
 
-    if (!Object.keys(patch).length) continue;
+      if (meta.creatorHandle && !link.creator_handle) {
+        patch.creator_handle = meta.creatorHandle;
+        patch.creator_url = link.creator_url ?? meta.creatorUrl;
+        stats.handle_fixed += 1;
+      }
 
-    if (dryRun) {
-      log("info", "shortform_repair_would_update", { link_id: link.id, platform: name, ...patch });
-    } else {
-      const { error: updateError } = await supabase.from("links").update(patch).eq("id", link.id);
-      if (updateError) throw updateError;
-      log("info", "shortform_repair_updated", {
+      if (link.duration_seconds === null && platform.supportsDurationProbe) {
+        const seconds = await probeDuration(url);
+        if (seconds !== null) {
+          patch.duration_seconds = seconds;
+          stats.duration_fixed += 1;
+        }
+      }
+
+      if (!Object.keys(patch).length) {
+        // Reached, but nothing usable came back — the signature of a throttled
+        // response. A genuinely dead post looks the same here, and retrying one
+        // costs a single request.
+        stillBroken.push(link);
+        continue;
+      }
+
+      if (dryRun) {
+        log("info", "shortform_repair_would_update", { link_id: link.id, platform: name, ...patch });
+      } else {
+        const { error: updateError } = await supabase.from("links").update(patch).eq("id", link.id);
+        if (updateError) throw updateError;
+        log("info", "shortform_repair_updated", {
+          link_id: link.id, platform: name,
+          handle: patch.creator_handle ?? null,
+          duration: patch.duration_seconds ?? null,
+          thumbnail: patch.thumbnail_storage_path ? "cached" : (patch.thumbnail_url ? "replaced" : "unchanged"),
+        });
+      }
+    } catch (repairError) {
+      stats.failed += 1;
+      log("warn", "shortform_repair_failed", {
         link_id: link.id, platform: name,
-        handle: patch.creator_handle ?? null,
-        duration: patch.duration_seconds ?? null,
-        thumbnail: patch.thumbnail_storage_path ? "cached" : (patch.thumbnail_url ? "replaced" : "unchanged"),
+        message: String(repairError?.message ?? repairError).slice(0, 200),
       });
     }
-  } catch (repairError) {
-    stats.failed += 1;
-    log("warn", "shortform_repair_failed", {
-      link_id: link.id, platform: name,
-      message: String(repairError?.message ?? repairError).slice(0, 200),
-    });
+    if (index < batch.length - 1 && gapMs > 0) await sleep(gapMs);
   }
-  if (index < targets.length - 1 && gapMs > 0) await sleep(gapMs);
+  return stillBroken;
+}
+
+const unfixed = await repairLinks(targets);
+
+
+// Links that were reached but produced no usable metadata — the signature of a
+// throttled response rather than a dead post.
+if (unfixed.length && secondPassAfterMs > 0 && !dryRun) {
+  log("info", "shortform_repair_second_pass_waiting", {
+    unfixed: unfixed.length, waiting_ms: secondPassAfterMs,
+    reason: "first pass ran while the platform was still rate-limiting",
+  });
+  await sleep(secondPassAfterMs);
+  const stillUnfixed = await repairLinks(unfixed);
+  log("info", "shortform_repair_second_pass_completed", {
+    retried: unfixed.length,
+    still_unfixed: stillUnfixed.length,
+  });
 }
 
 log("info", "shortform_repair_completed", stats);
