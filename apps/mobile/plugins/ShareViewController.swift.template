@@ -51,7 +51,9 @@ final class ShareViewController: UIViewController {
 
   override func viewDidLoad() {
     super.viewDidLoad()
-    view.backgroundColor = UIColor.black.withAlphaComponent(0.35)
+    // Clear, not a dim. The system already dims the host app behind a share
+    // sheet, so tinting here dimmed it twice and read as a grey slab.
+    view.backgroundColor = .clear
     buildUI()
 
     resolveSharedURL { [weak self] url in
@@ -88,10 +90,13 @@ final class ShareViewController: UIViewController {
     configureMenuButton(skillButton, placeholder: "Choose a skill")
 
     watchLaterSwitch.isOn = true
-    // Off by default. Sharing a video you liked is a weaker signal than
-    // deliberately proposing it for a public catalogue, so the catalogue is an
-    // opt-in here even though the in-app form defaults it on.
-    catalogueSwitch.isOn = false
+    // BOTH on, matching the in-app form. This defaulted off on the theory that
+    // sharing something is a weaker signal than proposing it — but user_watched
+    // is keyed on link_skill_relation_id NOT NULL, and a private save has no
+    // relation, so a catalogue-less share can never be ticked as watched. The
+    // default quietly made every shared video unmarkable. Suggestions are
+    // reviewed before they publish, so defaulting on proposes nothing directly.
+    catalogueSwitch.isOn = true
 
     saveButton.setTitle("Save", for: .normal)
     saveButton.titleLabel?.font = .systemFont(ofSize: 17, weight: .semibold)

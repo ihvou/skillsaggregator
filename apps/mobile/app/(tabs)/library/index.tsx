@@ -293,6 +293,9 @@ export default function SavedTab() {
                     // Every row in the Watched tab is watched, so dimming them all
                     // would make the whole tab look disabled (M128).
                     dimWhenWatched={view !== "watched"}
+                    // Hide the toggle this list already implies. It restates the
+                    // list, and its single tap deletes the row with no undo.
+                    impliedState={view === "saved" ? "saved" : "watched"}
                   />
                 </View>
               </View>

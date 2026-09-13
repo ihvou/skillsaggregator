@@ -41,6 +41,16 @@ interface ResourceCardProps {
    * or the whole list renders dimmed and reads as disabled.
    */
   dimWhenWatched?: boolean;
+  /**
+   * The state this list already implies, whose toggle is therefore hidden.
+   *
+   * In Watch later every row is saved, so a filled bookmark says nothing — and
+   * tapping it deletes the row outright, with no undo, from a 40pt target
+   * sitting between three others. Same for the tick in Watched. Removal still
+   * exists on long-press, where the sheet spells it out as "Remove from Watch
+   * later" instead of relying on the user recognising a filled icon.
+   */
+  impliedState?: "saved" | "watched";
 }
 
 /**
@@ -110,6 +120,7 @@ export function ResourceCard({
   initialSaved = false,
   initialCompleted = false,
   dimWhenWatched = true,
+  impliedState,
 }: ResourceCardProps) {
   const resolvedRelationId = resource.link_skill_relation_id ?? (resource.catalog_status ? null : resource.id);
   const relationId =
@@ -431,6 +442,7 @@ export function ResourceCard({
                 the room. The vote cluster only renders when the link has a
                 catalogue relation to vote on (M136). */}
             <View style={styles.actions}>
+              {impliedState === "saved" ? null : (
               <Pressable
                 onPress={toggleSaved}
                 style={styles.iconTap}
@@ -444,6 +456,8 @@ export function ResourceCard({
                   strokeWidth={2}
                 />
               </Pressable>
+              )}
+              {impliedState === "watched" ? null : (
               <Pressable
                 onPress={toggleCompleted}
                 style={styles.iconTap}
@@ -458,6 +472,7 @@ export function ResourceCard({
                   strokeWidth={2}
                 />
               </Pressable>
+              )}
               <View style={styles.actionSpacer} />
               {canVote ? (
                 <>
