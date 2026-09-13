@@ -90,13 +90,17 @@ final class ShareViewController: UIViewController {
     configureMenuButton(skillButton, placeholder: "Choose a skill")
 
     watchLaterSwitch.isOn = true
-    // BOTH on, matching the in-app form. This defaulted off on the theory that
-    // sharing something is a weaker signal than proposing it — but user_watched
-    // is keyed on link_skill_relation_id NOT NULL, and a private save has no
-    // relation, so a catalogue-less share can never be ticked as watched. The
-    // default quietly made every shared video unmarkable. Suggestions are
-    // reviewed before they publish, so defaulting on proposes nothing directly.
-    catalogueSwitch.isOn = true
+    // Off. Sharing something you liked is a weaker signal than deliberately
+    // proposing it to a public catalogue, and this form is two taps inside
+    // someone else's app.
+    //
+    // This briefly defaulted on, because a private save cannot be marked
+    // watched — user_watched is keyed on link_skill_relation_id NOT NULL and a
+    // private save has no relation. That was fixing a data-model gap with a
+    // default, which is not a fix: it just made everyone publish to avoid it.
+    // The gap is closed properly in the migration that puts user_watched on
+    // link_id, the same move 0053 made for user_bookmarks.
+    catalogueSwitch.isOn = false
 
     saveButton.setTitle("Save", for: .normal)
     saveButton.titleLabel?.font = .systemFont(ofSize: 17, weight: .semibold)
