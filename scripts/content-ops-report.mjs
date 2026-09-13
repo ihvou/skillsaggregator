@@ -251,7 +251,17 @@ const summarySql = `
 // Each metric has to be dated by its own event. Bucketing published relations by
 // created_at would credit them to the night they were collected, which is weeks
 // before the coaches scored them and the gate made them visible.
-const perSkillSql = (metric) => {
+// Short-form is identified by host, matching the rule SuggestForm.tsx and the
+// mobile suggest screen already use — exact domain or any subdomain, which is what
+// picks up vt.tiktok.com. There is no is_short column on links to read instead.
+// The links join is added ONLY for the short-form variant so the unrestricted
+// counts stay byte-identical to what they were before short-form existed.
+const SHORT_FORM_PREDICATE = `(
+    l.domain = 'tiktok.com' or l.domain like '%.tiktok.com'
+    or l.domain = 'instagram.com' or l.domain like '%.instagram.com'
+  )`;
+
+const perSkillSql = (metric, { shortOnly = false } = {}) => {
   const dateColumn = metric === "published" ? "lsr.published_at" : "lsr.created_at";
   const filter = metric === "published" ? "lsr.published" : "lsr.is_active";
   return `
@@ -259,9 +269,11 @@ const perSkillSql = (metric) => {
          (${dateColumn} at time zone $1)::date::text,
          count(*)::text
   from public.link_skill_relations lsr
+  ${shortOnly ? "join public.links l on l.id = lsr.link_id" : ""}
   join public.skills s on s.id = lsr.skill_id
   join public.categories c on c.id = s.category_id
   where s.is_active and ${filter} -- c.is_active NOT filtered: staged categories are collecting and must stay visible in ops reporting
+  ${shortOnly ? `and ${SHORT_FORM_PREDICATE}` : ""}
   group by 1, 2 order by 1, 2`;
 };
 
@@ -588,20 +600,26 @@ function renderReport2Csv({ dates, skillKeys, cumulative }) {
   return `${lines.join("\n")}\n`;
 }
 
-function renderReport2Md({ dates, skills, cumulative, summaries, generatedAt }) {
+function renderReport2Md({ dates, skills, cumulative, cumulativeShort, summaries, generatedAt }) {
   const window = config.mdDays > 0 ? dates.slice(-config.mdDays) : dates;
   const latest = dates.at(-1);
   const first = window[0];
   const rows = skills
     .map((skill) => {
       const series = cumulative[skill.key] ?? {};
+      const shortSeries = cumulativeShort[skill.key] ?? {};
       const now = series[latest] ?? 0;
       const then = first ? (series[first] ?? 0) : 0;
-      const delta = now - then;
+      // Short-form is a SUBSET of the totals beside it, not a separate stream —
+      // these relations are already counted in Total and the date cells.
+      const nowShort = shortSeries[latest] ?? 0;
+      const thenShort = first ? (shortSeries[first] ?? 0) : 0;
       return {
         skill,
         now,
-        delta,
+        delta: now - then,
+        nowShort,
+        deltaShort: nowShort - thenShort,
         cells: window.map((date) => series[date] ?? 0),
       };
     })
@@ -612,6 +630,8 @@ function renderReport2Md({ dates, skills, cumulative, summaries, generatedAt }) 
   const totals = {
     now: rows.reduce((sum, row) => sum + row.now, 0),
     delta: rows.reduce((sum, row) => sum + row.delta, 0),
+    nowShort: rows.reduce((sum, row) => sum + row.nowShort, 0),
+    deltaShort: rows.reduce((sum, row) => sum + row.deltaShort, 0),
     cells: window.map((_, index) => rows.reduce((sum, row) => sum + row.cells[index], 0)),
   };
 
@@ -647,14 +667,19 @@ function renderReport2Md({ dates, skills, cumulative, summaries, generatedAt }) 
     return `${done}/${group.length}`;
   };
 
-  const overviewHeaders = ["Category", "Sub-skills", "Total", `+${config.mdDays}d`, "Summarised", ...dateHeaders];
-  const overviewAligns = ["l", "r", "r", "r", "r", ...window.map(() => "r")];
+  const overviewHeaders = [
+    "Category", "Sub-skills", "Total", `+${config.mdDays}d`,
+    "Total short", `+${config.mdDays}d short`, "Summarised", ...dateHeaders,
+  ];
+  const overviewAligns = ["l", "r", "r", "r", "r", "r", "r", ...window.map(() => "r")];
   const overviewBody = [
     [
       `**All ${byCategory.size} categories**`,
       skills.length,
       totals.now,
       delta(totals.delta),
+      totals.nowShort,
+      delta(totals.deltaShort),
       `${counts.done}/${skills.length}`,
       ...totals.cells,
     ],
@@ -663,13 +688,18 @@ function renderReport2Md({ dates, skills, cumulative, summaries, generatedAt }) 
       group.length,
       group.reduce((sum, row) => sum + row.now, 0),
       delta(group.reduce((sum, row) => sum + row.delta, 0)),
+      group.reduce((sum, row) => sum + row.nowShort, 0),
+      delta(group.reduce((sum, row) => sum + row.deltaShort, 0)),
       stateCount(group),
       ...sumCells(group),
     ]),
   ];
 
-  const detailHeaders = ["Sub-skill", "Total", `+${config.mdDays}d`, "Summary", ...dateHeaders];
-  const detailAligns = ["l", "r", "r", "l", ...window.map(() => "r")];
+  const detailHeaders = [
+    "Sub-skill", "Total", `+${config.mdDays}d`,
+    "Total short", `+${config.mdDays}d short`, "Summary", ...dateHeaders,
+  ];
+  const detailAligns = ["l", "r", "r", "r", "r", "l", ...window.map(() => "r")];
   const categorySections = [...byCategory.entries()].flatMap(([category, group]) => [
     `### ${category} (${group.length})`,
     "",
@@ -679,6 +709,8 @@ function renderReport2Md({ dates, skills, cumulative, summaries, generatedAt }) 
         row.skill.key.slice(category.length + 1),
         row.now,
         delta(row.delta),
+        row.nowShort,
+        delta(row.deltaShort),
         summaryOf(row.skill.key),
         ...row.cells,
       ]),
@@ -706,6 +738,11 @@ function renderReport2Md({ dates, skills, cumulative, summaries, generatedAt }) 
     "## Overview by category",
     "",
     mdTable(overviewHeaders, overviewBody, overviewAligns),
+    "",
+    `**Total short** / **+${config.mdDays}d short** count the short-form half — TikTok and Instagram — matched`,
+    "by host the same way the suggest forms do, so `vt.tiktok.com` counts too. They are a **subset**",
+    "of Total, not a separate stream: a short-form relation is already inside Total and inside the",
+    "date cells. Subtract to get long-form.",
     "",
     "## Summary column",
     "",
@@ -746,7 +783,7 @@ function renderReport2Md({ dates, skills, cumulative, summaries, generatedAt }) 
 
 async function main() {
   const tz = config.reportTz;
-  const [collectedRows, ingestedRows, scoredRows, publishedRows, skillRows, perSkillRows, summaryRows, channelRows, logStats] =
+  const [collectedRows, ingestedRows, scoredRows, publishedRows, skillRows, perSkillRows, shortRows, summaryRows, channelRows, logStats] =
     await Promise.all([
       dbRows(collectedSql, [tz]),
       dbRows(ingestedSql, [tz]),
@@ -754,6 +791,7 @@ async function main() {
       dbRows(publishedSql, [tz]),
       dbRows(skillsSql),
       dbRows(perSkillSql(config.metric), [tz]),
+      dbRows(perSkillSql(config.metric, { shortOnly: true }), [tz]),
       dbRows(summarySql, [config.summaryGrowth, config.summaryMinVideos]),
       dbRows(channelsSql),
       loadNoTranscriptCounts(),
@@ -811,20 +849,25 @@ async function main() {
   const windowed = config.days > 0 ? dates.slice(-config.days) : dates;
 
   // Daily per-skill deltas accumulated forward into a running total.
-  const daily = {};
-  for (const [key, date, count] of perSkillRows) {
-    (daily[key] ??= {})[date] = num(count);
-  }
-  const cumulative = {};
-  for (const key of skillKeys) {
-    const series = {};
-    let running = 0;
-    for (const date of dates) {
-      running += daily[key]?.[date] ?? 0;
-      series[date] = running;
+  const accumulate = (rows) => {
+    const daily = {};
+    for (const [key, date, count] of rows) {
+      (daily[key] ??= {})[date] = num(count);
     }
-    cumulative[key] = series;
-  }
+    const result = {};
+    for (const key of skillKeys) {
+      const series = {};
+      let running = 0;
+      for (const date of dates) {
+        running += daily[key]?.[date] ?? 0;
+        series[date] = running;
+      }
+      result[key] = series;
+    }
+    return result;
+  };
+  const cumulative = accumulate(perSkillRows);
+  const cumulativeShort = accumulate(shortRows);
 
   const generatedAt = new Intl.DateTimeFormat("sv-SE", {
     timeZone: tz, dateStyle: "short", timeStyle: "short",
@@ -836,7 +879,7 @@ async function main() {
     noTranscript: logStats.counts, logInfo: logStats, generatedAt,
   });
   const csv = renderReport2Csv({ dates, skillKeys, cumulative });
-  const report2 = renderReport2Md({ dates, skills, cumulative, summaries, generatedAt });
+  const report2 = renderReport2Md({ dates, skills, cumulative, cumulativeShort, summaries, generatedAt });
 
   const paths = {
     ops: join(config.reportsDir, "content-ops.md"),
