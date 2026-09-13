@@ -9,8 +9,12 @@
 The engagement **data spine already exists** (migration `0025`, plus app wiring by the parallel thread). v2 builds the progress/badge/notification layer as **derived state on top of it**, and does **not** introduce the `user_actions`-based tables v1 proposed.
 
 Shipped and in use:
-- Tables (all **auth-only**, RLS own-read, keyed by `link_skill_relation_id` where applicable): `user_bookmarks` (Watch later), `user_watched` (Watched, has `watched_at`), `user_relation_votes` (votes).
-- RPCs: `set_user_bookmark(relation_id, saved)`, `set_user_watched(relation_id, watched)`, `set_user_vote(relation_id, vote)` — auth required, published+active relations only. `set_user_watched` preserves earliest `watched_at`.
+- Tables (all **auth-only**, RLS own-read): `user_bookmarks` (Watch later) and `user_watched` (Watched, has `watched_at`) are keyed on `(user_id, link_id)` with a **nullable** `link_skill_relation_id` — a share-in saved privately has no relation, and still has to be savable and markable (`0053`, `0061`). `user_relation_votes` stays keyed on `link_skill_relation_id`, because a vote is a statement about a catalogue entry and there is nothing to vote on without one.
+- RPCs, in matched pairs — the relation form validates published+active and is what the catalogue surfaces call; the link form is the fallback for private and in-review rows:
+  - `set_user_bookmark(relation_id, saved)` / `set_user_link_bookmark(link_id, saved)`
+  - `set_user_watched(relation_id, watched)` / `set_user_link_watched(link_id, watched)` — both preserve the earliest `watched_at`, and the link form inherits skill/relation from the user's own saved row so a share-in keeps the sport and skill picked in the share sheet.
+  - `set_user_vote(relation_id, vote)` — relation only, by design.
+- Watched is a property of the **video**, not of one catalogue entry: watching a link credits every published relation it has, so a video filed under two skills advances both.
 - Ranking: `link_skill_relations.combined_score` + best-first index `(skill_id, combined_score desc …) where is_active and published`. Publish gate (15-min cron) controls which relations are visible/actionable.
 - `get_skill_resource_counts(uuid[])` → per-skill total of active+published relations (anon-callable) = the progress **denominator source**.
 - UI: both apps have a **Library** with `Watch later | Watched` tabs and a `ResourceCard` (watch-later/watch/vote + coach's take). Web: `apps/web/app/saved/page.tsx` → `SavedResourceBrowser`, `useResourceActions`, `NavLinks` "My library". Mobile: `apps/mobile/app/(tabs)/library/index.tsx` → `getUserLibraryResources`, `ResourceCard`.
@@ -35,7 +39,7 @@ Bring identified learners back a few times a week to work through their **Watch 
 |---|---|---|
 | Watch later | bookmarked and **not yet** watched | `user_bookmarks` − `user_watched` |
 | Watched (archive) | marked watched (saved earlier or not) | `user_watched` |
-| Skill progress | `min(watched_in_skill, target) / target` | `user_watched` ⨝ `link_skill_relations` by `skill_id` |
+| Skill progress | `min(watched_in_skill, target) / target` | `user_watched` ⨝ `link_skill_relations` **by `link_id`**, counting published+active relations only — a private watch has no catalogue denominator to be a fraction of, so it does not count and `watched_count ≤ total_count` always holds |
 | Skill complete / badge | `watched_in_skill ≥ target` (target = `least(3, published_count)`) | derived |
 | Category progress | `skills_completed / skills_in_category` (or category target) | derived from skill completion |
 | Category badge | category complete (all / target skills) | derived (+ optional `earned_at` table) |
@@ -77,9 +81,10 @@ language sql security definer set search_path = public as $$
     group by r.skill_id
   ),
   w as (
+    -- joined by link_id, not by the relation the user happened to tap (0061)
     select r.skill_id, count(distinct r.id)::int watched
     from user_watched uw
-    join link_skill_relations r on r.id = uw.link_skill_relation_id
+    join link_skill_relations r on r.link_id = uw.link_id
     where uw.user_id = auth.uid() and r.skill_id = any(p_skill_ids) and r.is_active and r.published
     group by r.skill_id
   )

@@ -105,15 +105,19 @@ export function useTutorialReturnPrompt() {
     async function isAlreadyWatched(pending: PendingTutorial) {
       const supabase = getSupabase();
       if (!supabase || !user) return false;
+      // By link, not by relation (M158): watched state is per video now, so a
+      // video already marked watched under a different skill — or saved
+      // privately and ticked off there — must not be prompted for again.
       const { data, error } = await supabase
         .from("user_watched")
         .select("watched_at")
         .eq("user_id", user.id)
-        .eq("link_skill_relation_id", pending.relationId)
+        .eq("link_id", pending.linkId)
         .maybeSingle();
       if (error) {
         console.warn("[tutorial-return] Watched preflight failed", {
           relationId: pending.relationId,
+          linkId: pending.linkId,
           error: error.message,
         });
         return false;

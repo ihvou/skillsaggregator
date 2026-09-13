@@ -174,14 +174,15 @@ export function ResourceCard({
           .eq("user_id", currentUser.id)
           .eq("link_id", linkId)
           .maybeSingle(),
-        relationId
-          ? supabaseClient
-              .from("user_watched")
-              .select("watched_at")
-              .eq("user_id", currentUser.id)
-              .eq("link_skill_relation_id", relationId)
-              .maybeSingle()
-          : Promise.resolve({ data: null, error: null }),
+        // Keyed on the link, not the relation (M158): a private save has no
+        // relation, and the same video watched under one skill is watched
+        // everywhere it appears.
+        supabaseClient
+          .from("user_watched")
+          .select("watched_at")
+          .eq("user_id", currentUser.id)
+          .eq("link_id", linkId)
+          .maybeSingle(),
         relationId
           ? supabaseClient
               .from("user_relation_votes")
@@ -251,33 +252,34 @@ export function ResourceCard({
   }
 
   async function toggleCompleted() {
-    if (!relationId) {
-      Alert.alert(
-        resource.catalog_status === "private" ? "Private save" : "Still in review",
-        resource.catalog_status === "private"
-          ? "Marking watched needs a catalogue entry. Suggest this link to the catalogue to track it."
-          : "This link can be marked watched once it joins the catalogue.",
-      );
-      return;
-    }
     if (!(await ensureActionSession("mark_watched"))) return;
     const supabase = getSupabase();
     if (!supabase) return;
     const next = !isCompleted;
     setIsCompleted(next);
-    const { error } = await supabase.rpc("set_user_watched", {
-      p_relation_id: relationId,
-      p_watched: next,
-    });
+    // Same split as toggleSaved: the relation path keeps the catalogue
+    // validation for items that have one, and everything else — private saves,
+    // links still in review — goes in by link id (M158).
+    const { error } = relationId
+      ? await supabase.rpc("set_user_watched", {
+          p_relation_id: relationId,
+          p_watched: next,
+        })
+      : await supabase.rpc("set_user_link_watched", {
+          p_link_id: linkId,
+          p_watched: next,
+        });
     if (error) {
       setIsCompleted(!next);
       Alert.alert("Watched update failed", error.message);
-      console.warn("[resource-actions] Watched write failed", { relationId, error: error.message });
+      console.warn("[resource-actions] Watched write failed", { relationId, linkId, error: error.message });
       return;
     }
     if (next) {
       track("resource_watched", { source: getLinkSource(resource.link) });
-      void recordWatchedForReviewPrompt(relationId);
+      // The return prompt asks the user to rate a catalogue entry, so there is
+      // nothing to schedule for a link that has none.
+      if (relationId) void recordWatchedForReviewPrompt(relationId);
     }
     triggerSelectionHaptic();
     void queryClient.invalidateQueries({ queryKey: ["user-library"] });

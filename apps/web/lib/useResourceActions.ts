@@ -74,14 +74,14 @@ export function useResourceActions(
         .eq("user_id", user.id)
         .eq("link_id", linkId)
         .maybeSingle(),
-      relationId
-        ? supabase
-            .from("user_watched")
-            .select("watched_at")
-            .eq("user_id", user.id)
-            .eq("link_skill_relation_id", relationId)
-            .maybeSingle()
-        : Promise.resolve({ data: null, error: null }),
+      // Watched state is keyed on the link (M158), so it reads the same whether
+      // or not this card happens to carry a relation.
+      supabase
+        .from("user_watched")
+        .select("watched_at")
+        .eq("user_id", user.id)
+        .eq("link_id", linkId)
+        .maybeSingle(),
       relationId
         ? supabase
             .from("user_relation_votes")
@@ -177,25 +177,28 @@ export function useResourceActions(
   }, [ensureActionSession, isSaved, linkId, relationId, supabase]);
 
   const toggleWatched = useCallback(async () => {
-    if (!relationId) {
-      setError("This link needs catalogue review before it can be marked watched.");
-      return false;
-    }
     if (!(await ensureActionSession("mark_watched"))) return false;
     const next = !isWatched;
     setIsWatched(next);
-    const { error: mutationError } = await supabase!.rpc("set_user_watched", {
-      p_relation_id: relationId,
-      p_watched: next,
-    });
+    // Mirrors toggleSaved: relation path where there is one, link path
+    // otherwise, so private and in-review links can be marked watched (M158).
+    const { error: mutationError } = relationId
+      ? await supabase!.rpc("set_user_watched", {
+          p_relation_id: relationId,
+          p_watched: next,
+        })
+      : await supabase!.rpc("set_user_link_watched", {
+          p_link_id: linkId,
+          p_watched: next,
+        });
     if (mutationError) {
       setIsWatched(!next);
       setError(mutationError.message);
-      console.warn("resource_watched_write_failed", { relationId, message: mutationError.message });
+      console.warn("resource_watched_write_failed", { relationId, linkId, message: mutationError.message });
       return false;
     }
     return true;
-  }, [ensureActionSession, isWatched, relationId, supabase]);
+  }, [ensureActionSession, isWatched, linkId, relationId, supabase]);
 
   const setUserVote = useCallback(async (nextVote: UserVoteState) => {
     if (!relationId) {
