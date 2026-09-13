@@ -134,6 +134,44 @@ function withAndroidShareIntentNormalizer(config) {
   });
 }
 
+
+/**
+ * The share-sheet form, generated with the build's Supabase config baked in.
+ *
+ * The extension is a separate process and cannot run the React Native bundle,
+ * so this screen is native and is the one place in the project where a piece of
+ * the Suggest form exists twice. It is kept deliberately small for that reason:
+ * sport, skill, the two destination toggles, and nothing else. Level, public
+ * note and fallback title stay in the app, where they can change without this
+ * silently falling out of step.
+ *
+ * EXPO_PUBLIC_* values are not secrets: they are committed in eas.json and ship
+ * inside the app bundle already. They are read from the build environment so
+ * the extension talks to the same project the app does.
+ */
+function shareViewControllerSource(appGroup) {
+  const supabaseUrl = (process.env.EXPO_PUBLIC_SUPABASE_URL ?? "").replace(/\/+$/, "");
+  const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? "";
+  if (!supabaseUrl || !anonKey) {
+    // Failing loudly beats generating an extension that silently cannot load
+    // its pickers on a real device.
+    throw new Error(
+      "withShareTargets: EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY " +
+        "must be set when prebuilding; the share extension needs them to fetch sports and skills.",
+    );
+  }
+  // Read from a real .swift file rather than an inline template literal.
+  // Embedding Swift in a JS template literal silently ate one level of every
+  // backslash: the keypath \.url arrived as .url and the regex "^www\\." as an
+  // invalid escape, so the extension only failed at compile time, far from the
+  // edit that caused it. A file has no such layer.
+  return fs
+    .readFileSync(path.join(__dirname, "ShareViewController.swift.template"), "utf8")
+    .replace("__SUPABASE_URL__", supabaseUrl)
+    .replace("__SUPABASE_ANON_KEY__", anonKey)
+    .replace("__APP_GROUP__", appGroup);
+}
+
 /** The one channel a share extension and its app genuinely share. */
 function appGroupFor(bundleIdentifier) {
   return `group.${bundleIdentifier}`;
@@ -212,102 +250,8 @@ function writeShareExtensionFiles(iosProjectRoot, bundleIdentifier) {
   );
   fs.writeFileSync(
     path.join(extensionRoot, "ShareViewController.swift"),
-    `import UIKit
-import UniformTypeIdentifiers
+    shareViewControllerSource(appGroup),
 
-final class ShareViewController: UIViewController {
-  override func viewDidLoad() {
-    super.viewDidLoad()
-    view.backgroundColor = .systemBackground
-    resolveSharedURL { [weak self] url in
-      guard let self else { return }
-      guard let url else {
-        self.extensionContext?.completeRequest(returningItems: nil)
-        return
-      }
-      // A share extension CANNOT launch its containing app. Apple's App
-      // Extension Programming Guide: "A Today widget (and no other app
-      // extension type) can ask the system to open its containing app by
-      // calling the openURL:completionHandler: method of NSExtensionContext."
-      // The old code called it anyway; it did nothing, its completion handler
-      // never fired, so completeRequest was never reached and the extension sat
-      // alive with no UI while the host app hung behind it. Sharing from
-      // YouTube locked YouTube up (TestFlight, 2026-09-10).
-      //
-      // The responder-chain openURL: workaround is deliberately not used: it
-      // calls a UIApplication method unavailable to extensions (guideline
-      // 2.5.1), and since iOS 18 UIKit force-returns false for it anyway.
-      //
-      // So the URL crosses the process boundary through the App Group
-      // container and the app drains it. This is what Telegram's share
-      // extension does — it reads its account out of group.<bundleId> and works
-      // in-process rather than opening Telegram.
-      let defaults = UserDefaults(suiteName: "${appGroup}")
-      var pending = defaults?.stringArray(forKey: "pending_shared_urls") ?? []
-      if !pending.contains(url.absoluteString) {
-        pending.append(url.absoluteString)
-      }
-      // Cap it. Nothing drains this until the app is opened, and a queue that
-      // grows without bound on a device that never opens the app is a leak.
-      defaults?.set(Array(pending.suffix(50)), forKey: "pending_shared_urls")
-
-      // Unconditional. Releasing the host app is the one thing this controller
-      // genuinely owes the system.
-      self.extensionContext?.completeRequest(returningItems: nil)
-    }
-  }
-
-  private func resolveSharedURL(completion: @escaping (URL?) -> Void) {
-    let providers = extensionContext?.inputItems
-      .compactMap { $0 as? NSExtensionItem }
-      .flatMap { $0.attachments ?? [] } ?? []
-
-    if let provider = providers.first(where: { $0.hasItemConformingToTypeIdentifier(UTType.url.identifier) }) {
-      provider.loadItem(forTypeIdentifier: UTType.url.identifier, options: nil) { item, _ in
-        DispatchQueue.main.async {
-          completion((item as? URL) ?? URL(string: item as? String ?? ""))
-        }
-      }
-      return
-    }
-
-    if let provider = providers.first(where: { $0.hasItemConformingToTypeIdentifier(UTType.plainText.identifier) }) {
-      provider.loadItem(forTypeIdentifier: UTType.plainText.identifier, options: nil) { item, _ in
-        let text = item as? String
-        let url = text.flatMap(Self.firstURL(in:))
-        DispatchQueue.main.async { completion(url) }
-      }
-      return
-    }
-
-    completion(nil)
-  }
-
-  private static func firstURL(in text: String) -> URL? {
-    guard let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) else {
-      return nil
-    }
-    let range = NSRange(text.startIndex..<text.endIndex, in: text)
-    return detector
-      .matches(in: text, options: [], range: range)
-      .compactMap(\\.url)
-      .first(where: isSupportedURL)
-  }
-
-  private static func isSupportedURL(_ url: URL) -> Bool {
-    guard let host = url.host?.lowercased().replacingOccurrences(of: "^www\\\\.", with: "", options: .regularExpression) else {
-      return false
-    }
-    return host == "youtu.be" ||
-      host == "youtube.com" ||
-      host.hasSuffix(".youtube.com") ||
-      host == "tiktok.com" ||
-      host.hasSuffix(".tiktok.com") ||
-      host == "instagram.com" ||
-      host.hasSuffix(".instagram.com")
-  }
-}
-`,
   );
 }
 

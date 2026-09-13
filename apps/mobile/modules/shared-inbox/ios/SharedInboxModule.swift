@@ -18,20 +18,40 @@ public class SharedInboxModule: Module {
   // written for both targets. A mismatch is silent: the suite simply resolves to
   // nil and every share disappears with no error anywhere.
   private static let appGroup = "group.xyz.subskills.app"
-  private static let pendingKey = "pending_shared_urls"
+  // Complete requests written by the share sheet form: url, category, skill and
+  // the two destination toggles. The app sends them as-is.
+  private static let pendingKey = "pending_shared_requests"
+  // Bare URLs from the pre-form extension. A build 12/13 user can have one
+  // queued at the moment they upgrade, and dropping it would lose a share they
+  // already made.
+  private static let legacyKey = "pending_shared_urls"
 
   public func definition() -> ModuleDefinition {
     Name("SharedInbox")
 
     /**
-     * Returns everything queued and clears it in the same call.
+     * Both functions return everything queued and clear it in the same call.
      *
      * Read-and-clear rather than read-then-clear-later: the caller is JS, and
      * anything that can interleave between two bridge calls eventually will.
-     * The cost of this choice is that a URL is lost if the app dies between the
-     * clear and the save, which is the right trade — a duplicate save is
-     * invisible to the user, a share that silently reappears days later is not.
+     * The cost is that an item is lost if the app dies between the clear and
+     * the send — the right trade, because the server dedupes on dedupe_key, so
+     * a retry collapses to duplicate:true while a share that silently
+     * reappears days later would not.
      */
+
+    /// Complete requests written by the share-sheet form, as JSON strings.
+    Function("drainPendingSharedRequests") { () -> [String] in
+      guard let defaults = UserDefaults(suiteName: Self.appGroup) else {
+        log.warn("SharedInbox: no App Group container for \(Self.appGroup)")
+        return []
+      }
+      let pending = defaults.stringArray(forKey: Self.pendingKey) ?? []
+      if !pending.isEmpty { defaults.removeObject(forKey: Self.pendingKey) }
+      return pending
+    }
+
+    /// Bare URLs left by the pre-form extension, drained once on upgrade.
     Function("drainPendingSharedUrls") { () -> [String] in
       guard let defaults = UserDefaults(suiteName: Self.appGroup) else {
         // Only happens when the entitlement is missing or the group id does not
@@ -41,9 +61,9 @@ public class SharedInboxModule: Module {
         log.warn("SharedInbox: no App Group container for \(Self.appGroup)")
         return []
       }
-      let pending = defaults.stringArray(forKey: Self.pendingKey) ?? []
+      let pending = defaults.stringArray(forKey: Self.legacyKey) ?? []
       if !pending.isEmpty {
-        defaults.removeObject(forKey: Self.pendingKey)
+        defaults.removeObject(forKey: Self.legacyKey)
       }
       return pending
     }
