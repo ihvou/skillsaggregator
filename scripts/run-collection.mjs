@@ -1460,6 +1460,119 @@ function termsForSkill(skill) {
   ])].filter(Boolean);
 }
 
+/**
+ * WHY THIS EXISTS. Three tennis videos were published on table-tennis/lob and
+ * scored 2.7-3.6 by the coach. The query was right — open search asks for
+ * "Table Tennis Lob" — but that string CONTAINS "tennis", so YouTube returns
+ * tennis lobs, and the only local gate is title_relevance > 0 computed from
+ * termsForSkill(), which for this skill is exactly ["lob"]. A tennis lob scores
+ * a perfect 1.0. Nothing else stood in the way: nightly runs with
+ * COLLECT_SCORING=off, so the Ollama relevance check never ran.
+ *
+ * Fourteen sub-skill names are shared across categories (lob, drop shot, return
+ * of serve, overhead smash, volley technique, forehand smash, singles strategy,
+ * footwork, shadow boxing...). For the racquet family those are genuinely
+ * different techniques in different sports.
+ *
+ * Only the racquet and combat families are listed, because those are where a
+ * shared name means a genuinely different skill. gym-men/gym-women share names
+ * too, but a deadlift is a deadlift — excluding across those would discard
+ * correct content.
+ */
+const SPORT_TERMS = [
+  // Longest first: "table tennis" must be consumed before "tennis" is tested,
+  // or every table-tennis video looks like it names tennis.
+  ["table-tennis", ["table tennis", "ping pong", "ping-pong", "ping‑pong"]],
+  ["pickleball", ["pickleball", "pickle ball"]],
+  ["badminton", ["badminton"]],
+  ["squash", ["squash"]],
+  ["padel", ["padel"]],
+  ["tennis", ["tennis"]],
+  ["muay-thai", ["muay thai", "muay-thai"]],
+  ["boxing", ["boxing", "boxer"]],
+  ["bjj", ["jiu jitsu", "jiu-jitsu", "bjj"]],
+];
+
+/** Which sports a title explicitly names, resolving the table-tennis/tennis overlap. */
+function sportsNamedIn(text) {
+  let haystack = ` ${String(text ?? "").toLowerCase()} `;
+  const found = new Set();
+  for (const [slug, terms] of SPORT_TERMS) {
+    for (const term of terms) {
+      if (haystack.includes(term)) {
+        found.add(slug);
+        // Consume it so a more general term cannot match the same words.
+        haystack = haystack.split(term).join(" ");
+      }
+    }
+  }
+  return found;
+}
+
+/**
+ * True when the title names a sport and it is not this skill's sport.
+ *
+ * Deliberately silent when the title names NO sport — most legitimate tutorials
+ * do not say "badminton" in the title, and requiring it would reject far more
+ * good content than bad. This catches the explicit mismatch only.
+ */
+function namesForeignSport(title, categorySlug) {
+  if (!SPORT_TERMS.some(([slug]) => slug === categorySlug)) return false;
+  const named = sportsNamedIn(title);
+  return named.size > 0 && !named.has(categorySlug);
+}
+
+/**
+ * Sports where a channel devoted to one is essentially never a source for
+ * another. A "Tennis Doctor" upload is not table-tennis instruction.
+ *
+ * Scoped to the racquet family ON PURPOSE. Combat sports genuinely cross —
+ * 31 muay-thai links come from boxing channels and most are legitimate footwork
+ * and conditioning — and gym-men/gym-women share channels by design. Applying
+ * this there would discard correct content, so those rely on the title guard
+ * alone.
+ */
+const EXCLUSIVE_FAMILY = new Set(["tennis", "table-tennis", "badminton", "padel", "pickleball", "squash"]);
+
+// channel_id -> Set(category slug). Loaded once; trusted_sources is small.
+let channelCategoryIndex = null;
+
+async function loadChannelCategoryIndex() {
+  if (channelCategoryIndex) return channelCategoryIndex;
+  channelCategoryIndex = new Map();
+  try {
+    const rows = await dbQuery(
+      `select ts.identifier, c.slug
+         from public.trusted_sources ts
+         join public.categories c on c.id = ts.category_id
+        where ts.source_type <> 'tiktok_search' and ts.identifier is not null`,
+    );
+    for (const [identifier, slug] of rows) {
+      if (!channelCategoryIndex.has(identifier)) channelCategoryIndex.set(identifier, new Set());
+      channelCategoryIndex.get(identifier).add(slug);
+    }
+  } catch (error) {
+    log("warn", "channel_category_index_failed", errorMessage(error));
+  }
+  return channelCategoryIndex;
+}
+
+/**
+ * True when this candidate's channel is a trusted source for a DIFFERENT sport
+ * in the exclusive family.
+ *
+ * This is what catches the case the title guard cannot. Two of the three tennis
+ * videos published on table-tennis/lob came from "Tennis Doctor" and "Tom Avery
+ * Tennis - CTW Academy", both trusted TENNIS sources, and neither title names a
+ * sport at all ("How To Hit A Forehand Lob In 3 Steps").
+ */
+function channelBelongsToAnotherSport(candidate, categorySlug) {
+  if (!EXCLUSIVE_FAMILY.has(categorySlug) || !candidate.channel_id || !channelCategoryIndex) return false;
+  const owners = channelCategoryIndex.get(candidate.channel_id);
+  if (!owners || owners.has(categorySlug)) return false;
+  return [...owners].some((slug) => EXCLUSIVE_FAMILY.has(slug));
+}
+
 function relevanceForQuery(candidate, terms) {
   if (!terms.length) return 1;
   const haystack = `${candidate.title}`.toLowerCase();
@@ -2906,6 +3019,24 @@ async function processSkill(skill, summary) {
             // only cheap signal we have before spending a transcript fetch on it.
             // Channel search keeps its zero-relevance tail; open search does not.
             if (candidate.title_relevance <= 0) continue;
+            // A shared sub-skill name ("lob", "drop shot") makes title_relevance
+            // meaningless across sports: termsForSkill() carries no category, so
+            // a tennis lob scores 1.0 for table-tennis/lob. These two checks are
+            // the category awareness that gate never had.
+            if (namesForeignSport(candidate.title, skill.category_slug)) {
+              log("debug", "candidate_rejected_foreign_sport", "Title names a different sport", {
+                skill: skill.slug, category: skill.category_slug,
+                video_id: candidate.video_id, title: String(candidate.title).slice(0, 80),
+              });
+              continue;
+            }
+            if (channelBelongsToAnotherSport(candidate, skill.category_slug)) {
+              log("debug", "candidate_rejected_foreign_channel", "Channel is a trusted source for another sport", {
+                skill: skill.slug, category: skill.category_slug,
+                video_id: candidate.video_id, channel_id: candidate.channel_id,
+              });
+              continue;
+            }
             if (candidate.channel_id) {
               const prev = openChannelsSeen.get(candidate.channel_id) ?? { name: candidate.channel_name, n: 0 };
               prev.n += 1;
@@ -3630,6 +3761,12 @@ async function main() {
 
     const skills = await loadSkills(skillSlugFilter);
     if (!skills.length) throw new Error(`No active skills found${categorySlugFilter ? ` for category ${categorySlugFilter}` : ""}.`);
+    // Needed before any open-search candidate is judged: it is what lets the
+    // collector notice a tennis channel answering a table-tennis query.
+    const channelIndex = await loadChannelCategoryIndex();
+    log("info", "channel_category_index_loaded", "Channel-to-category index ready", {
+      channels: channelIndex.size,
+    });
     // Surface skills parked by the low-publish-ratio guard. They are excluded from
     // the rotation on purpose (they need taxonomy work, not more collection), but
     // they must not disappear silently — this list IS the taxonomy-review queue.
