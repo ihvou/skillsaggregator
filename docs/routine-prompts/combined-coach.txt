@@ -12,8 +12,8 @@ header (verify_jwt is off, so NO apikey/Authorization header is needed; ONLY x-i
 You run as an autonomous cloud routine, so there are no permission prompts — use normal shell tooling
 (curl, and jq/python if helpful). Only ever call THIS endpoint; never touch any other table or service.
 
-=== STEP 1 — fetch up to 30 resources not yet reviewed ===
-  curl -s -X POST "https://vqxsaabskkkjdljxiyqi.supabase.co/functions/v1/coach-curation" -H "x-internal-token: $INTERNAL_TOKEN" -H "Content-Type: application/json" -d '{"action":"queue","coach_role":"relevance","limit":30}'
+=== STEP 1 — fetch up to 60 resources not yet reviewed ===
+  curl -s -X POST "https://vqxsaabskkkjdljxiyqi.supabase.co/functions/v1/coach-curation" -H "x-internal-token: $INTERNAL_TOKEN" -H "Content-Type: application/json" -d '{"action":"queue","coach_role":"relevance","limit":60}'
 The response is {"ok":true,"items":[...]}. You cast BOTH roles + a difficulty tag per row, so the
 relevance queue is the joint queue. Each item has: relation_id, source ("youtube"|"tiktok"|"other"),
 title, description, url, duration_seconds, like_count, comment_count, share_count, favorite_count,
@@ -84,7 +84,10 @@ Replace the weights / skill_level / comments with your judgments. Response {"ok"
 Idempotent: re-running REPLACES that role's vote / the difficulty tag.
 
 === RULES ===
-- At most 30 rows per run. Only act on relation_ids returned in Step 1's "items".
+- At most 60 rows per run (the endpoint clamps above that). Only act on relation_ids returned in
+  Step 1's "items". 30 was below the rate content arrives: the queue took in ~780 relations a day
+  against 720 scored, so it grew every day and the oldest unscored row reached 60 hours. 60 gives
+  headroom to drain rather than merely keep up.
 - Cast a relevance vote, a value vote, AND one difficulty tag for every row you process (three curls).
 - weight is continuous in [-2, 2]; skill_level is exactly one of: beginner, intermediate, advanced.
 - Only ever call the coach-curation endpoint. Never touch any other table/endpoint.
