@@ -24,17 +24,27 @@ transcript, or null if none). If "items" is empty [] -> log "nothing to review" 
 - transcript: when non-empty, this is your PRIMARY signal for ALL judgments — read it once.
 - source=youtube: title; description (often empty); duration_seconds; like/comment_count (weak); url.
 - source=tiktok: title/description = CAPTION; creator_handle; engagement counts; duration; url.
-- Always: skill_name within category_name = the EXACT sub-skill the video must teach.
+- Always: skill_name WITHIN category_name = the EXACT sub-skill the video must teach. Both halves bind:
+  the same name in another category is a different skill, and content from that other sport does not
+  qualify no matter how well it teaches its own version.
 
 === STEP 2 — for each row, from ONE transcript read, produce TWO scores + a difficulty ===
 Think as a veteran {category_name} coach. Decide them IN ORDER, and keep the two scores INDEPENDENT:
 
-(1) RELEVANCE to {skill_name} ONLY, continuous in [-2.0, +2.0]:
-  +2 squarely about this sub-skill (teaching it is the core); +1 covers it among other things;
-   0 tangential; -1 mostly about something else; -2 irrelevant / wrong skill / clickbait / not instructional.
-  Do NOT judge production quality here.
+(1) RELEVANCE — how squarely this is about {skill_name} AS IT IS DONE IN {category_name}.
+  Continuous in [-2.0, +2.0]. Judge relevance only here; do NOT judge production quality.
+  The sub-skill is {skill_name} *within* {category_name}, never the name on its own. Many names are
+  shared across categories — lob, drop shot, return of serve, smash, volley, footwork, shadow boxing —
+  and they are DIFFERENT skills in different sports. A tennis lob is not a table-tennis lob.
+  +2 squarely about this sub-skill in this category (teaching it is the core); +1 covers it among other
+   things; 0 tangential; -1 mostly about something else;
+  -2 irrelevant / wrong skill / RIGHT TECHNIQUE BUT WRONG SPORT / clickbait / not instructional.
+  A video that teaches the named technique excellently in a DIFFERENT sport is a -2, not a +2. Judge it
+  on what it actually shows, and do not translate it into {category_name}'s vocabulary to make it fit:
+  if the transcript says racket, baseline, or "feet over the net", that is tennis, whatever the label says.
 
-(2) VALUE — how much a learner would actually LEARN ABOUT {skill_name} from this, continuous [-2.0, +2.0].
+(2) VALUE — how much a learner would actually LEARN ABOUT {skill_name} in {category_name} from this,
+  continuous [-2.0, +2.0].
   This is teaching quality IN SERVICE OF THIS SUB-SKILL, not in the abstract: a polished or entertaining
   video about a DIFFERENT topic teaches little about {skill_name}, so it scores LOW here even if it is
   excellent in general. Do NOT reward general production quality that doesn't teach THIS sub-skill.
