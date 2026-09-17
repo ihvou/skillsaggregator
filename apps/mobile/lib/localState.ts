@@ -4,6 +4,7 @@ let storage: MMKV | null = null;
 const memory = new Map<string, string>();
 const ONBOARDING_COMPLETED_KEY = "onboarding_completed";
 const ONBOARDING_INTERESTS_KEY = "onboarding_interests";
+const INSTALL_ID_KEY = "install_id";
 
 try {
   storage = new MMKV({ id: "skillsaggregator" });
@@ -42,6 +43,35 @@ export function setStoredString(key: string, value: string | null) {
 
 export function getStoredString(key: string) {
   return getString(key) ?? null;
+}
+
+/**
+ * A random id for this install, kept in MMKV. It is the only way to count people
+ * who open the app and never act: the anonymous Supabase user is created lazily
+ * on first real action, so those users have no identity to attribute anything to.
+ *
+ * Deliberately NOT the IDFV or an advertising id. A random uuid says nothing
+ * about the device and does not survive a reinstall, which keeps the store
+ * listing's privacy claim true — the cost is that this counts first launches
+ * rather than store installs.
+ *
+ * Returns `{ id, created }` so the caller can ping the server only on the launch
+ * that actually minted the id.
+ */
+export function getOrCreateInstallId(): { id: string; created: boolean } {
+  const existing = getString(INSTALL_ID_KEY);
+  if (existing) return { id: existing, created: false };
+  // crypto.randomUUID is not in the Hermes/RN runtime, so build the v4 layout by
+  // hand rather than pulling in a uuid dependency. The server validates the shape.
+  const hex = () => Math.floor(Math.random() * 16).toString(16);
+  const block = (length: number) => Array.from({ length }, hex).join("");
+  const variant = () => ((Math.floor(Math.random() * 16) & 0x3) | 0x8).toString(16);
+  const id = `${block(8)}-${block(4)}-4${block(3)}-${variant()}${block(3)}-${block(12)}`;
+  setString(INSTALL_ID_KEY, id);
+  // If storage is unavailable the id lives in `memory` for this run only, so the
+  // install is counted again next launch. Over-counting installs is a far better
+  // failure than blocking the app on analytics.
+  return { id, created: true };
 }
 
 export function hasCompletedOnboarding() {

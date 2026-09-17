@@ -9,7 +9,7 @@ import { AuthProvider } from "@/lib/auth";
 import { useTutorialReturnPrompt } from "@/lib/tutorialReturnPrompt";
 import { useSharedInbox } from "@/lib/useSharedInbox";
 import { reconcileInterruptedSubmissions } from "@/lib/pendingSubmissions";
-import { track } from "@/lib/analytics";
+import { track, trackInstall } from "@/lib/analytics";
 
 function TutorialReturnPromptGate() {
   useTutorialReturnPrompt();
@@ -27,6 +27,10 @@ function SharedInboxGate() {
 
 export default function RootLayout() {
   useEffect(() => {
+    // Before track(): on a first launch this is the only record that will exist
+    // if the user never acts, since app_open gets queued behind an identity that
+    // is never created.
+    trackInstall();
     track("app_open");
     // A submission still marked in-flight at startup lost its request when the
     // process died; nothing is retrying it. Surface it as failed so it can be

@@ -1,6 +1,6 @@
 import { Platform } from "react-native";
 import Constants from "expo-constants";
-import { getStoredString, setStoredString } from "./localState";
+import { getOrCreateInstallId, getStoredString, setStoredString } from "./localState";
 import { getSupabase } from "./supabase";
 
 /**
@@ -109,6 +109,9 @@ async function insertEvents(userId: string, events: QueuedEvent[]) {
       platform: platform(),
       app_version: appVersion(),
       session_id: sessionId(),
+      // Ties the event back to public.app_installs, which is what lets the funnel
+      // start at installs instead of at "users who eventually did something".
+      install_id: getOrCreateInstallId().id,
       props: item.props,
       occurred_at: item.occurred_at,
     })),
@@ -141,6 +144,43 @@ export function track(event: AppEvent, props: Record<string, unknown> = {}) {
     } catch (error) {
       console.warn("[analytics] track failed", {
         event,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  })();
+}
+
+/**
+ * Register this install, once, on the launch that mints the install id.
+ *
+ * This is the ONLY signal we get from someone who opens the app and never acts:
+ * they never trigger ensureSession, so they never get an identity, so none of
+ * their queued events are ever sent. Without this the funnel's top row was
+ * "users who did something", and every rate below it was near 100% by
+ * construction.
+ *
+ * Goes to an edge function rather than straight to the table because there is no
+ * identity yet, and opening an unauthenticated write path on a public table is
+ * the exact shape of the exposure 0062 was written to close.
+ */
+export function trackInstall() {
+  void (async () => {
+    try {
+      const { id, created } = getOrCreateInstallId();
+      if (!created) return;
+      const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL?.replace(/\/+$/, "");
+      const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+      if (!supabaseUrl || !anonKey) return;
+      await fetch(`${supabaseUrl}/functions/v1/track-install`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", apikey: anonKey },
+        body: JSON.stringify({ install_id: id, platform: platform(), app_version: appVersion() }),
+      });
+    } catch (error) {
+      // Same rule as track(): analytics never affects what the user is doing. The
+      // id is already stored, so a lost ping costs one install from the count and
+      // the events still carry the id.
+      console.warn("[analytics] install ping failed", {
         error: error instanceof Error ? error.message : String(error),
       });
     }

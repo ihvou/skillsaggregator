@@ -63,3 +63,10 @@ verify_jwt = false
 # routine's own calls. Same posture as coach-curation.
 [functions.skill-summary]
 verify_jwt = false
+
+# track-install is called before any identity exists — that is the whole point of
+# it, since the anonymous user is created lazily on first action and a user who
+# never acts would otherwise be invisible. The function validates the payload and
+# rate-limits by IP; the table it writes is service-role only.
+[functions.track-install]
+verify_jwt = false
