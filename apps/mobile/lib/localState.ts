@@ -55,8 +55,9 @@ export function getStoredString(key: string) {
  * listing's privacy claim true — the cost is that this counts first launches
  * rather than store installs.
  *
- * Returns `{ id, created }` so the caller can ping the server only on the launch
- * that actually minted the id.
+ * Returns `{ id, created }`, where `created` says whether this launch minted the
+ * id. The install ping does not key off it — it retries until the server
+ * confirms — because a first ping that fails must not cost the install for good.
  */
 export function getOrCreateInstallId(): { id: string; created: boolean } {
   const existing = getString(INSTALL_ID_KEY);

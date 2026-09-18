@@ -75,32 +75,54 @@ Deno.serve(async (request) => {
 
     const supabase = getServiceClient();
 
+    // Namespaced key. check_suggest_rate_limit stores one counter per IP in
+    // suggest_rate_limits, so calling it with the bare IP put install pings in the
+    // same bucket submit-suggestion checks against its own ceiling of 10/hour:
+    // ten first launches behind one NAT would have blocked a real suggestion for
+    // an hour, and suggestions would silently eat the install budget.
     const { data: limit, error: limitError } = await supabase.rpc("check_suggest_rate_limit", {
-      p_ip: clientIp(request),
+      p_ip: `install:${clientIp(request)}`,
       p_limit: RATE_LIMIT_MAX,
       p_window_seconds: RATE_LIMIT_WINDOW_SECONDS,
     }).single();
     if (limitError) throw limitError;
     if (limit && (limit as { allowed: boolean }).allowed === false) {
-      // 200, not 429: the client fires this once and never retries, and a failed
-      // install ping must never be something the user can notice.
+      // 200, not 429: a failed install ping must never be something the user can
+      // notice. `stored: false` is what tells the client to try again next launch.
       console.warn("track_install_rate_limited", { ip: clientIp(request) });
-      return jsonResponse({ ok: true, recorded: false, reason: "rate_limited" }, 200, request);
+      return jsonResponse({ ok: true, stored: false, inserted: false, reason: "rate_limited" }, 200, request);
     }
 
     // first_seen_at is left to the column default so the server clock decides the
     // cohort. ignoreDuplicates keeps a re-send from moving an existing install's
-    // date — the client retries on failure and the id is stable.
-    const { error } = await supabase
+    // date — the client retries until confirmed and the id is stable.
+    const { data: insertedRows, error } = await supabase
       .from("app_installs")
       .upsert(
         { install_id: installId, platform, app_version: appVersion },
         { onConflict: "install_id", ignoreDuplicates: true },
-      );
+      )
+      .select("install_id");
     if (error) throw error;
 
-    console.info("track_install_recorded", { platform, app_version: appVersion });
-    return jsonResponse({ ok: true, recorded: true }, 200, request);
+    // `stored` answers the only question the client has: is this install on the
+    // server, so it can stop pinging? An ignored duplicate returns no row, which
+    // is success too — confirmed with a read rather than inferred, so the client
+    // never retries forever because of a PostgREST detail.
+    const inserted = (insertedRows?.length ?? 0) > 0;
+    let stored = inserted;
+    if (!stored) {
+      const { data: existing, error: readError } = await supabase
+        .from("app_installs")
+        .select("install_id")
+        .eq("install_id", installId)
+        .maybeSingle();
+      if (readError) throw readError;
+      stored = Boolean(existing);
+    }
+
+    console.info("track_install_recorded", { platform, app_version: appVersion, inserted });
+    return jsonResponse({ ok: true, stored, inserted }, 200, request);
   } catch (error) {
     console.error("track_install_failed", {
       error: error instanceof Error ? error.message : String(error),

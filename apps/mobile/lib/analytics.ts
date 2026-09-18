@@ -1,6 +1,12 @@
 import { Platform } from "react-native";
 import Constants from "expo-constants";
-import { getOrCreateInstallId, getStoredString, setStoredString } from "./localState";
+import {
+  getFlag,
+  getOrCreateInstallId,
+  getStoredString,
+  setFlag,
+  setStoredString,
+} from "./localState";
 import { getSupabase } from "./supabase";
 
 /**
@@ -24,6 +30,9 @@ import { getSupabase } from "./supabase";
 
 const QUEUE_KEY = "analytics_queue_v1";
 const SESSION_KEY = "analytics_session_id";
+// Set only once the server confirms it holds this install, so a lost first ping
+// is retried rather than costing an install from the count for good.
+const INSTALL_REPORTED_KEY = "install_reported";
 const MAX_QUEUE = 50;
 
 export type AppEvent =
@@ -166,16 +175,30 @@ export function track(event: AppEvent, props: Record<string, unknown> = {}) {
 export function trackInstall() {
   void (async () => {
     try {
-      const { id, created } = getOrCreateInstallId();
-      if (!created) return;
+      // Ping on every launch until the server confirms it holds this install.
+      // Pinging only on the launch that minted the id lost the install for good
+      // whenever that first ping failed — an offline first launch, or a
+      // rate-limited one, which answers 200 and looks like success.
+      if (getFlag(INSTALL_REPORTED_KEY)) return;
+      const { id } = getOrCreateInstallId();
       const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL?.replace(/\/+$/, "");
       const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
       if (!supabaseUrl || !anonKey) return;
-      await fetch(`${supabaseUrl}/functions/v1/track-install`, {
+      const response = await fetch(`${supabaseUrl}/functions/v1/track-install`, {
         method: "POST",
         headers: { "Content-Type": "application/json", apikey: anonKey },
         body: JSON.stringify({ install_id: id, platform: platform(), app_version: appVersion() }),
       });
+      const body = (await response.json().catch(() => null)) as
+        | { stored?: boolean; recorded?: boolean }
+        | null;
+      // Only a server that says it has the row stops the retries. Anything else —
+      // offline, rate limited, 500 — leaves the flag unset and we try next launch.
+      // `recorded` is what the function answered before the audit fix; accepting it
+      // means this build behaves correctly whichever version is deployed, and it
+      // can go once the new function is live everywhere.
+      const stored = body?.stored === true || body?.recorded === true;
+      if (response.ok && stored) setFlag(INSTALL_REPORTED_KEY, true);
     } catch (error) {
       // Same rule as track(): analytics never affects what the user is doing. The
       // id is already stored, so a lost ping costs one install from the count and
