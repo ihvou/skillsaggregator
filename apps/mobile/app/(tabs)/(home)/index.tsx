@@ -9,6 +9,10 @@ import { SearchBar } from "@/components/SearchBar";
 import { SectionHeader } from "@/components/SectionHeader";
 import { SkeletonList } from "@/components/SkeletonList";
 import { SkillTile } from "@/components/SkillTile";
+import {
+  readCachedDiscoverSections,
+  writeCachedDiscoverSections,
+} from "@/lib/categoryCache";
 import { getDiscoverSections } from "@/lib/data";
 import {
   getOnboardingInterests,
@@ -21,6 +25,9 @@ export default function DiscoverTab() {
   const router = useRouter();
   const [search, setSearch] = useState("");
   const [interestSlugs, setInterestSlugs] = useState<string[]>([]);
+  // Last payload from disk, so a returning user gets rails on the first frame
+  // instead of placeholders while 46 round trips run.
+  const cachedDiscover = useMemo(() => readCachedDiscoverSections(), []);
   const query = useQuery({
     queryKey: ["discover-sections"],
     // No cap. Batch 3 changed this from getDiscoverSections() to
@@ -33,8 +40,18 @@ export default function DiscoverTab() {
     // virtualises and renders only the tiles on screen no matter how long the
     // row is. Thumbnails were already one round trip for every skill at once,
     // not one per skill.
-    queryFn: () => getDiscoverSections(),
+    queryFn: async () => {
+      const data = await getDiscoverSections();
+      writeCachedDiscoverSections(data);
+      return data;
+    },
     staleTime: 300000,
+    ...(cachedDiscover
+      ? {
+          initialData: cachedDiscover.data,
+          initialDataUpdatedAt: cachedDiscover.updatedAt,
+        }
+      : {}),
   });
 
   useOnboardingGate();

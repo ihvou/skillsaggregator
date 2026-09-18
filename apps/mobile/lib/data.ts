@@ -810,7 +810,14 @@ export async function getCategoryWithSkillResources(
   if (!category) return { category: null, skills: [], resources: [] };
 
   const supabase = getSupabase();
-  const skillsWithResources = skills.filter((skill) => skill.resource_count > 0);
+  // Beginner first, the same order Discover and onboarding use. getSkillsForCategory
+  // returns the database's alphabetical order, which is why the sport page opened on
+  // "Catching kicks" while Discover led with "Stance" — a tester spotted the
+  // disagreement. Sorted here rather than inside getSkillsForCategory because the
+  // Suggest form's skill picker shares that function, and a picker is easier to scan A-Z.
+  const skillsWithResources = skills
+    .filter((skill) => skill.resource_count > 0)
+    .sort(byLearningOrder);
   if (!supabase) {
     const resources = sortResources(
       skillsWithResources.flatMap((skill) =>

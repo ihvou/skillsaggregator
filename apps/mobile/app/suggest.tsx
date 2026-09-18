@@ -36,7 +36,14 @@ export default function SuggestScreen() {
   const [note, setNote] = useState("");
   const [level, setLevel] = useState<SkillLevel | "">("");
   const [addToWatchLater, setAddToWatchLater] = useState(true);
-  const [suggestToCatalog, setSuggestToCatalog] = useState(true);
+  // Off when the form was opened by a share (M163): a link shared in from another
+  // app is the user keeping something for themselves, and the iOS share sheet
+  // already defaults this toggle off. A `url` param only arrives through a share —
+  // Android's ACTION_SEND intent and the iOS inbox fallback — so the in-app
+  // Suggest buttons, which are for suggesting to the catalogue, keep it on.
+  const [suggestToCatalog, setSuggestToCatalog] = useState(
+    !(typeof initialUrl === "string" && initialUrl.length > 0),
+  );
 
   const categoriesQuery = useQuery({
     queryKey: ["suggest-categories"],

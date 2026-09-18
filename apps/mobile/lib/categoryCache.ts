@@ -1,6 +1,6 @@
 import type { CategorySummary, SkillResource, SkillSummary } from "@skillsaggregator/shared";
-// SkillTechniqueSummary is declared in lib/data.ts, not the shared package.
-import type { SkillTechniqueSummary } from "./data";
+// These are declared in lib/data.ts, not the shared package.
+import type { DiscoverCategorySection, SkillTechniqueSummary } from "./data";
 import { getStoredString, setStoredString } from "./localState";
 
 export type CachedCategoryResources = {
@@ -135,5 +135,49 @@ export function writeCachedSkillResources(
       skillSlug,
       error,
     });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Discover cache.
+//
+// Discover had none, so every cold start sat on a placeholder while 46 round
+// trips completed — measured against production on 2026-09-17: 5.25s on a cold
+// first run, ~1.85s warm. The category and skill screens have kept their last
+// payload on disk for a while; this gives Discover the same deal, so only the
+// first launch after install pays in full and later ones paint immediately and
+// refresh behind what is already on screen. Cutting the 46 round trips down to
+// one is the actual fix and is a separate job (M161).
+// ---------------------------------------------------------------------------
+
+const DISCOVER_CACHE_KEY = "discover_sections_cache";
+// A day. The catalogue grows overnight, so a morning-old copy is the same set of
+// rails with a few tiles missing, and the refetch behind it fills those in.
+const DISCOVER_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+type DiscoverCacheEnvelope = {
+  updatedAt: number;
+  data: DiscoverCategorySection[];
+};
+
+export function readCachedDiscoverSections(): DiscoverCacheEnvelope | null {
+  const raw = getStoredString(DISCOVER_CACHE_KEY);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as Partial<DiscoverCacheEnvelope>;
+    if (typeof parsed.updatedAt !== "number" || !Array.isArray(parsed.data)) return null;
+    if (Date.now() - parsed.updatedAt > DISCOVER_CACHE_MAX_AGE_MS) return null;
+    return parsed as DiscoverCacheEnvelope;
+  } catch (error) {
+    console.warn("[discover-cache] Failed to read cached Discover payload", { error });
+    return null;
+  }
+}
+
+export function writeCachedDiscoverSections(data: DiscoverCategorySection[]) {
+  try {
+    setStoredString(DISCOVER_CACHE_KEY, JSON.stringify({ updatedAt: Date.now(), data }));
+  } catch (error) {
+    console.warn("[discover-cache] Failed to write cached Discover payload", { error });
   }
 }

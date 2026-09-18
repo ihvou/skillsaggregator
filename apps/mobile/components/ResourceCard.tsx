@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Alert, Linking, Pressable, StyleSheet, Text, View } from "react-native";
 import { Image } from "expo-image";
 import * as Haptics from "expo-haptics";
@@ -154,6 +154,10 @@ export function ResourceCard({
     );
   }, [initialCompleted, resource.combined_score, resource.id, resource.user_score, savedFromResource]);
 
+  // How many writes this card has in flight. Read by loadState, which must not
+  // apply a server read that raced one of them.
+  const writesInFlight = useRef(0);
+
   useEffect(() => {
     let cancelled = false;
     const supabase = getSupabase();
@@ -193,6 +197,13 @@ export function ResourceCard({
           : Promise.resolve({ data: null, error: null }),
       ]);
       if (cancelled) return;
+      // A read that started before a write can still land after it, carrying the
+      // pre-write value and overwriting what the user just did. That is M164:
+      // the first save signs the user in anonymously, `user` changes, this
+      // effect re-runs mid-write, and the fresh read says "not saved" — so the
+      // bookmark icon emptied itself even though the row was written. Drop the
+      // read instead; the write is the newer truth.
+      if (writesInFlight.current > 0) return;
       if (bookmarkResult.error) console.warn("[resource-actions] Bookmark load failed", bookmarkResult.error.message);
       if (watchedResult.error) console.warn("[resource-actions] Watched load failed", watchedResult.error.message);
       if (voteResult.error) console.warn("[resource-actions] Vote load failed", voteResult.error.message);
@@ -224,65 +235,91 @@ export function ResourceCard({
   }
 
   async function toggleSaved() {
-    if (!(await ensureActionSession("save_resource"))) return;
-    const supabase = getSupabase();
-    if (!supabase) return;
+    // Icon and haptic belong to the tap. Both used to wait for the write to come
+    // back — 400-1200ms on this backend, plus an anonymous sign-in on a new
+    // user's first action — so the buzz arrived a beat after the finger left the
+    // screen and testers read it as lag.
     const next = !isSaved;
     setIsSaved(next);
-    const { error } = relationId
-      ? await supabase.rpc("set_user_bookmark", {
-          p_relation_id: relationId,
-          p_saved: next,
-        })
-      : await supabase.rpc("set_user_link_bookmark", {
-          p_link_id: linkId,
-          p_saved: next,
-        });
-    if (error) {
-      setIsSaved(!next);
-      Alert.alert("Save failed", error.message);
-      console.warn("[resource-actions] Bookmark write failed", { relationId, linkId, error: error.message });
-      return;
-    }
     triggerSelectionHaptic();
-    // Fired after the write succeeds, so the funnel counts real actions rather
-    // than taps that failed.
-    if (next) track("resource_saved", { source: getLinkSource(resource.link) });
-    void queryClient.invalidateQueries({ queryKey: ["user-library"] });
+    writesInFlight.current += 1;
+    try {
+      if (!(await ensureActionSession("save_resource"))) {
+        setIsSaved(!next);
+        return;
+      }
+      const supabase = getSupabase();
+      if (!supabase) {
+        setIsSaved(!next);
+        return;
+      }
+      const { error } = relationId
+        ? await supabase.rpc("set_user_bookmark", {
+            p_relation_id: relationId,
+            p_saved: next,
+          })
+        : await supabase.rpc("set_user_link_bookmark", {
+            p_link_id: linkId,
+            p_saved: next,
+          });
+      if (error) {
+        setIsSaved(!next);
+        Alert.alert("Save failed", error.message);
+        console.warn("[resource-actions] Bookmark write failed", { relationId, linkId, error: error.message });
+        return;
+      }
+      // Fired after the write succeeds, so the funnel counts real actions rather
+      // than taps that failed.
+      if (next) track("resource_saved", { source: getLinkSource(resource.link) });
+      void queryClient.invalidateQueries({ queryKey: ["user-library"] });
+    } finally {
+      writesInFlight.current -= 1;
+    }
   }
 
   async function toggleCompleted() {
-    if (!(await ensureActionSession("mark_watched"))) return;
-    const supabase = getSupabase();
-    if (!supabase) return;
     const next = !isCompleted;
     setIsCompleted(next);
-    // Same split as toggleSaved: the relation path keeps the catalogue
-    // validation for items that have one, and everything else — private saves,
-    // links still in review — goes in by link id (M158).
-    const { error } = relationId
-      ? await supabase.rpc("set_user_watched", {
-          p_relation_id: relationId,
-          p_watched: next,
-        })
-      : await supabase.rpc("set_user_link_watched", {
-          p_link_id: linkId,
-          p_watched: next,
-        });
-    if (error) {
-      setIsCompleted(!next);
-      Alert.alert("Watched update failed", error.message);
-      console.warn("[resource-actions] Watched write failed", { relationId, linkId, error: error.message });
-      return;
-    }
-    if (next) {
-      track("resource_watched", { source: getLinkSource(resource.link) });
-      // The return prompt asks the user to rate a catalogue entry, so there is
-      // nothing to schedule for a link that has none.
-      if (relationId) void recordWatchedForReviewPrompt(relationId);
-    }
     triggerSelectionHaptic();
-    void queryClient.invalidateQueries({ queryKey: ["user-library"] });
+    writesInFlight.current += 1;
+    try {
+      if (!(await ensureActionSession("mark_watched"))) {
+        setIsCompleted(!next);
+        return;
+      }
+      const supabase = getSupabase();
+      if (!supabase) {
+        setIsCompleted(!next);
+        return;
+      }
+      // Same split as toggleSaved: the relation path keeps the catalogue
+      // validation for items that have one, and everything else — private saves,
+      // links still in review — goes in by link id (M158).
+      const { error } = relationId
+        ? await supabase.rpc("set_user_watched", {
+            p_relation_id: relationId,
+            p_watched: next,
+          })
+        : await supabase.rpc("set_user_link_watched", {
+            p_link_id: linkId,
+            p_watched: next,
+          });
+      if (error) {
+        setIsCompleted(!next);
+        Alert.alert("Watched update failed", error.message);
+        console.warn("[resource-actions] Watched write failed", { relationId, linkId, error: error.message });
+        return;
+      }
+      if (next) {
+        track("resource_watched", { source: getLinkSource(resource.link) });
+        // The return prompt asks the user to rate a catalogue entry, so there is
+        // nothing to schedule for a link that has none.
+        if (relationId) void recordWatchedForReviewPrompt(relationId);
+      }
+      void queryClient.invalidateQueries({ queryKey: ["user-library"] });
+    } finally {
+      writesInFlight.current -= 1;
+    }
   }
 
   async function writeVote(nextVote: -1 | 0 | 1) {
@@ -290,39 +327,52 @@ export function ResourceCard({
       Alert.alert("Still in review", "Votes are available after this link joins the catalogue.");
       return;
     }
-    if (!(await ensureActionSession("vote_resource"))) return;
-    const supabase = getSupabase();
-    if (!supabase) return;
     const previousVote = vote;
     const previousUserScore = userScore;
     setVote(nextVote);
     setUserScore(previousUserScore - previousVote + nextVote);
-    const { data, error } = await supabase
-      .rpc("set_user_vote", {
-        p_relation_id: relationId,
-        p_vote: nextVote,
-      })
-      .single();
-    if (error) {
-      setVote(previousVote);
-      setUserScore(previousUserScore);
-      Alert.alert("Vote failed", error.message);
-      console.warn("[resource-actions] Vote write failed", { relationId, vote: nextVote, error: error.message });
-      return;
-    }
-    const row = data as {
-      vote?: number | null;
-      user_score?: number | null;
-      combined_score?: number | null;
-    } | null;
-    const returnedVote = row?.vote;
-    setVote(returnedVote === -1 ? -1 : returnedVote === 1 ? 1 : 0);
-    if (typeof row?.user_score === "number") setUserScore(row.user_score);
-    if (typeof row?.combined_score === "number" && typeof row?.user_score === "number") {
-      setBaseScore(row.combined_score - boundedUserVoteWeight(row.user_score));
-    }
-    if (nextVote !== 0) track("resource_voted", { direction: nextVote > 0 ? "up" : "down" });
     triggerSelectionHaptic();
+    writesInFlight.current += 1;
+    try {
+      if (!(await ensureActionSession("vote_resource"))) {
+        setVote(previousVote);
+        setUserScore(previousUserScore);
+        return;
+      }
+      const supabase = getSupabase();
+      if (!supabase) {
+        setVote(previousVote);
+        setUserScore(previousUserScore);
+        return;
+      }
+      const { data, error } = await supabase
+        .rpc("set_user_vote", {
+          p_relation_id: relationId,
+          p_vote: nextVote,
+        })
+        .single();
+      if (error) {
+        setVote(previousVote);
+        setUserScore(previousUserScore);
+        Alert.alert("Vote failed", error.message);
+        console.warn("[resource-actions] Vote write failed", { relationId, vote: nextVote, error: error.message });
+        return;
+      }
+      const row = data as {
+        vote?: number | null;
+        user_score?: number | null;
+        combined_score?: number | null;
+      } | null;
+      const returnedVote = row?.vote;
+      setVote(returnedVote === -1 ? -1 : returnedVote === 1 ? 1 : 0);
+      if (typeof row?.user_score === "number") setUserScore(row.user_score);
+      if (typeof row?.combined_score === "number" && typeof row?.user_score === "number") {
+        setBaseScore(row.combined_score - boundedUserVoteWeight(row.user_score));
+      }
+      if (nextVote !== 0) track("resource_voted", { direction: nextVote > 0 ? "up" : "down" });
+    } finally {
+      writesInFlight.current -= 1;
+    }
   }
 
   function toggleUpvote() {

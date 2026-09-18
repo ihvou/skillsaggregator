@@ -14,7 +14,7 @@
       "backgroundColor": "#0f3d2e"
     },
     "ios": {
-      "supportsTablet": true,
+      "supportsTablet": false,
       "bundleIdentifier": "xyz.subskills.app",
       "icon": "./assets/icon.png",
       "usesAppleSignIn": true,
