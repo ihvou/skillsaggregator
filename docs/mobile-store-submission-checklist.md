@@ -1,6 +1,7 @@
 # Mobile Store Submission Checklist
 
-Last updated: 2026-08-29
+Last updated: 2026-09-18 — iOS checklist rewritten against App Store Connect's actual state (read
+through the API), privacy answers corrected for the analytics events (M137) and the install ID (0063).
 
 **Work from the two checklists below.** Everything under "Reference" is background — read it only when a checklist item needs detail.
 
@@ -50,7 +51,12 @@ Legend: `[x]` done · `[ ]` not started · `[~]` partly done
   short-circuited on dedupe (the collector generates many such duplicates nightly), and a user's
   submission now waits on `apply-suggestion` before responding.
 
-- [ ] 0b. **Enrich user-submitted links, or they arrive blank.** Independent of the deploy, and
+- [~] 0b. **Status 2026-09-18:** titles and thumbnails now arrive — shared-in and suggested links
+  resolve into full cards (M134 og-scrape enrichment, M152 enrich-behind). Description, duration and
+  transcript for user-submitted links were not re-checked. A catalogue-quality item, not a store blocker.
+  Original report:
+
+  **Enrich user-submitted links, or they arrive blank.** Independent of the deploy, and
   the more serious of the two. Both clients send only `url`, `canonical_url`, `target_skill_id`,
   `public_note`, `skill_level`, `language` — no title, description or thumbnail. For a URL already
   in the catalogue the RPC's `on conflict … coalesce` keeps the existing metadata, which is why the
@@ -93,16 +99,18 @@ Legend: `[x]` done · `[ ]` not started · `[~]` partly done
 - [x] 5. AAB manifest verified: `package=xyz.subskills.app`, `targetSdkVersion=36` (≥35 ✓), `minSdkVersion=24`, `versionCode=2`
 
 **Play Console setup**
-- [ ] 6. Create the app in Play Console — every field and the exact answer is in *Play Console — every value you get asked for* below. Two irreversible choices there: **Free**, and the package name Play takes from your first AAB.
-- [x] 7. Store listing assets **prepared** — copy in `docs/store-listing-copy.md`, images in `store-assets/`. Still to do: paste them into the console at step 6.
-- [ ] 8. App content declarations: privacy policy URL, ads, content rating questionnaire, target audience
-- [ ] 9. **Data Safety form** — see *Privacy disclosures* for exactly what to declare
+- [x] 6. App created in Play Console — Free, package `xyz.subskills.app`.
+- [x] 7. Store listing assets prepared — copy in `docs/store-listing-copy.md`, images in `store-assets/`.
+- [x] 8. App content declarations (privacy policy, ads, content rating, target audience) — done: Play will not roll out a closed track without them, and it did.
+- [x] 9. **Data Safety form** — filled in for the closed track.
+- [ ] 9b. **Update Data safety before the build with install counting (build 16 / versionCode 10+) rolls out.** Two answers changed since it was filled in: *App interactions* is now **Yes** (product events since M137) and *Device or other IDs* is now **Yes** (the install ID from 0063). Where: Play Console → Subskills → **Policy → App content → Data safety → Manage**. Exact answers in *Privacy disclosures* below.
+- [ ] 9c. **Android developer verification — deadline 2026-09-30.** The draft needs its signing key registered (Add key → snippet → signed APK). After the deadline, unverified apps cannot be installed on certified devices.
 
 **Test then ship**
-- [ ] 10. Upload the AAB to **Closed testing** — *not* Internal testing. See *The 12-tester / 14-day gate* below before you create the track; getting this wrong costs 14 days.
-- [ ] 10b. **Recruit 15–20 testers and start the 14-day clock as early as possible.** It runs in the background while you do steps 6–9, so start it first if the build is ready. Not from r/badminton or r/padel — see `docs/growth-plan.md` §5.
-- [~] 11. **Smoke test the release build.** The minified code has now been run (2026-08-09) — see *Release build, exercised early*. Still required from Play itself: real device, Play-signed, split APKs.
-- [ ] 12. **Apply for production access** (the Dashboard questionnaire), then promote to production.
+- [x] 10. AABs uploaded to **Closed testing** by hand (no Play service account for `eas submit` yet). Latest AAB built: versionCode 9 (2026-09-13).
+- [~] 10b. **12 testers × 14 continuous days.** Testers are opted in; check the count against 12 in Play Console → Testing → Closed testing → Testers. The clock is per tester and does not reset on new builds — see *The 12-tester / 14-day gate*.
+- [~] 11. **Smoke test the release build** — Play-delivered builds exercised by the owner and testers on real devices (2026-09).
+- [ ] 12. **Apply for production access** (Dashboard questionnaire) once 10b is met, then promote to production.
 
 ## The 12-tester / 14-day gate
 
@@ -141,25 +149,31 @@ needs a registered legal entity and a D-U-N-S number, which is weeks of bureaucr
 
 # iOS — do these in order
 
-**Local (free — no Apple account needed)**
-- [x] 1. Xcode + CocoaPods installed; Simulator working
-- [x] 2. Simulator build + full UI pass, no bugs found — see *Verified: iOS*
-- [x] 3. Signed in on the Simulator; authenticated write path (save / watched / vote) verified **and persists across a full app restart** — server-side, not local
+Statuses marked "API" were read from, or set through, the App Store Connect API on 2026-09-18 — not
+assumed. Everything happens in App Store Connect (appstoreconnect.apple.com) → **Apps → Subskills**.
 
-**Apple account setup**
-- [ ] 4. **Enrol in the Apple Developer Program** — $99/yr. *Gate for everything below.*
-- [ ] 5. Create App ID `xyz.subskills.app` and enable the **Sign in with Apple** capability
-- [ ] 6. Enable the Apple provider in Supabase Auth (client ID = `xyz.subskills.app`; native id_token flow, no client secret)
-- [ ] 7. Test Sign in with Apple end-to-end on a real device
+**Done**
+- [x] 1. Xcode + CocoaPods; Simulator loop works — *Runbook B*.
+- [x] 2. Apple Developer Program enrolled. App IDs `xyz.subskills.app` and `xyz.subskills.app.share`, both with App Group `group.xyz.subskills.app` — see *App Groups*.
+- [x] 3. Sign in with Apple — Supabase Apple provider configured; verified on a real iPhone 2026-09-11.
+- [x] 4. Production builds through EAS, always with `EXPO_NO_CAPABILITY_SYNC=1` (see below). ATS: `NSAllowsArbitraryLoads=false` in `app.json`.
+- [x] 5. Uploads through the App Store Connect API key, no Apple ID login — *Runbook A2*. Latest uploaded: **build 15** (2026-09-13).
+- [x] 6. **TestFlight** — build 15 passed Beta App Review on 2026-09-15 (build 11 had been rejected under 2.1(a) for empty review notes) and is available to the internal and external groups. (API)
+- [x] 7. **Review information**, for both Beta App Review and App Review — contact details, "Sign-in required" unticked, notes that open with "No account is required…". Text in `docs/store-listing-copy.md`. (API)
+- [x] 8. **App Information** — name, subtitle, primary category Education, privacy policy URL. (API)
+- [x] 9. **Age rating** — questionnaire answered 2026-09-18 → **12+**. Non-"none" answers: realistic violence *infrequent/mild* (combat-sport sparring), medical or treatment information *infrequent/mild* (back-pain and pregnancy skills), health or wellness topics *yes*, user-generated content *yes*. Everything else none/no, including unrestricted web access (tutorials open in YouTube/Safari, not an in-app browser). (API)
+- [x] 10. **Content rights** — "Yes, it contains, shows, or accesses third-party content": thumbnails, titles and links from YouTube, TikTok and Instagram. (API)
+- [x] 11. **Pricing** — Free, base territory USA. **Availability** — 174 territories, everything except China mainland (which needs an ICP filing number); new territories added automatically. (API)
+- [x] 12. **Version 1.0 page** — description, keywords, promotional text, support and marketing URLs, copyright. (API)
 
-**Build and ship**
-- [ ] 8. `npx eas-cli build --platform ios --profile production` (EAS manages certificates/profiles)
-- [ ] 9. Verify the generated `Info.plist` does not allow arbitrary ATS loads
-- [x] 10. Upload to App Store Connect (`eas submit --platform ios`) — done 2026-09-09, build 11 (1.0.0, commit `5040104`); confirmed `processingState=VALID` via the App Store Connect API. See *Runbook A2*.
-- [x] 11. Store listing **prepared** — copy, keywords and 6.9" (1320×2868) screenshots in `docs/store-listing-copy.md` / `store-assets/`. Still to do: paste into App Store Connect, plus the **Apple privacy labels** (see *Privacy disclosures*).
-- [ ] 12. Reviewer notes + demo access — draft in `docs/store-listing-copy.md`. **Decide the demo-account answer first**: magic-link sign-in is something a reviewer cannot complete.
-- [~] 13. **TestFlight** build, smoke test on a real iPhone — build 11 installed and partly exercised. **Sign in with Apple verified working on a real device, 2026-09-11**, closing a risk open since the entitlement was added: it had only ever run in a simulator, and App Review exercises it. That also rules it out as the cause of the 2.1(a) beta rejection — see *Beta App Review* in `docs/store-listing-copy.md`. Still outstanding: share-in (known broken in build 11) and a full pass on the fixes in M147-M150.
-- [ ] 14. Submit for App Store review
+**Still to do, in this order**
+- [x] 13. **App Privacy labels** — published 2026-09-18: six types, all *linked*, none used for tracking; the product page shows only "Data Linked to You". Two traps hit on the way: "used for tracking" was first answered Yes (it would have required an App Tracking Transparency prompt the app does not have), and User ID appeared under both *linked* and *not linked* because the linked question is asked per purpose. You do this in the browser; the API has no endpoint for it. Sidebar, under *General* → **App Privacy** → next to *Data Types* click **Edit** (**Get Started** the first time) → tick the types → **Save** → then a **Set Up** button appears next to each ticked type, where you answer purpose, "linked to the user's identity" and "used for tracking". Exact answers: *Privacy disclosures → Apple App Privacy labels* below.
+- [ ] 14. **Build 16, iPhone-only** (`supportsTablet: false`). With iPad on, App Review demands iPad screenshots and tests on an iPad, and iPad support can never be removed from later versions. Build and upload per *Runbook A2*; wait for `processingState=VALID`.
+- [x] 15. **Screenshots** — done 2026-09-18: five 6.9" (1320×2868) images replaced the 2026-08-09 set on the 1.0 listing, all processed (`COMPLETE`) and in order. Order follows onboarding: catalogue scale → learning path → skill page → Watched → Watch later. Sources in `store-assets/ios/`, composed by `python3 scripts/make-store-assets.py ios` into `store-assets/ios-listing/`. (API)
+- [ ] 16. **Attach build 16** — **Distribution** tab → iOS App → **1.0 Prepare for Submission** → *Build* section → remove build 15, add 16.
+- [x] 17. **Release timing** — set to **Manual** on 2026-09-18 (API confirms `releaseType=MANUAL`). No date is involved: after approval the version waits in *Pending Developer Release* until someone presses **Release This Version**. Section **App Store Version Release** on the version page. Three options: *Manually release this version* · *Automatically release this version after App Review approval* (currently selected) · *Automatically release this version after App Review approval, no earlier than* a date. Choose manual to launch both stores the same day.
+- [ ] 18. **Add for Review** → **Submit for Review**, top right of the same page. **Not** the TestFlight tab: its "Submit for Review" only sends a build to *Beta* App Review.
+- [ ] 19. After approval, if manual: **Release This Version** on the same page.
 
 ---
 
@@ -167,15 +181,19 @@ needs a registered legal entity and a D-U-N-S number, which is weeks of bureaucr
 
 ## Status at a glance
 
+As of 2026-09-18.
+
 | Area | State |
 |---|---|
-| Android preview APK | ✅ built, exercised on a real Pixel 6a |
-| Android production AAB | ✅ built (versionCode 2), manifest verified, and the minified code now actually run via a bundletool universal APK. Still needs the Play-delivered artifact on real hardware |
-| iOS Simulator | ✅ builds, runs, full UI pass — no bugs found |
-| iOS real device / TestFlight | ❌ needs the Apple Developer account |
-| Sign in with Apple | ❌ UI ready; backend needs the paid account |
-| Store listing copy + images | ✅ written and generated — `docs/store-listing-copy.md`, `store-assets/` |
-| Store paperwork (console entry, declarations, privacy labels) | ❌ blocked on both developer accounts |
+| Android closed testing | ✅ live; AABs uploaded by hand; latest built versionCode 9 |
+| Android production | ❌ needs 12 testers × 14 continuous days, then the production-access questionnaire |
+| Android developer verification | ⚠️ due **2026-09-30** — signing key not registered yet |
+| Android Data safety | ⚠️ filled in, but two answers are now out of date (app interactions, device IDs) |
+| iOS TestFlight | ✅ build 15 approved for external testing, 2026-09-15 |
+| iOS App Store | ⏳ everything set except privacy labels, build 16 and new screenshots |
+| Sign in with Apple | ✅ verified on a real iPhone, 2026-09-11 |
+| Store listing copy | ✅ in both consoles |
+| Screenshots | ⏳ new set drafted, awaiting approval |
 
 ## App identity (permanent after publish)
 
@@ -742,24 +760,55 @@ Metro must be running (`npx expo start`). Use `xcodebuild` directly — **not** 
 excludes transfers to *"service providers"* from "sharing" [V]. All collected types are **Optional**:
 browsing the catalogue collects none of them, and the first save / watched / vote / suggest action
 creates a Supabase anonymous Auth user. Adding email, Google or Apple later upgrades that same user.
-Purposes: **App functionality** (+ Account management where relevant). None for analytics,
-advertising, or personalisation.
+Purposes: **App functionality** (+ Account management where relevant), and — since September 2026 —
+**Analytics** for the first-party product events (M137, `app_events`) and the install ID (0063,
+`app_installs`). None for advertising or personalisation. ⚠️ An earlier version of this sheet said
+"none for analytics"; that stopped being true when the product events shipped.
 
 | Data type | Collected | Notes |
 |---|---|---|
 | Personal info → **Name** | **YES** | OAuth `full_name` → `contributor_profiles.display_name`, world-readable, slugified into a public URL after account upgrade |
 | Personal info → **Email address** | **YES** | magic-link + OAuth email in `auth.users` after account upgrade |
-| Personal info → **User IDs** | **YES** | Supabase `auth.uid()`; anonymous users get one before email/social upgrade, and contributor profiles also expose a public `slug` |
+| Personal info → **User IDs** | **YES** | Supabase `auth.uid()`; anonymous users get one before email/social upgrade, and contributor profiles also expose a public `slug`. Purposes: App functionality **and Analytics** — every product event is keyed by it |
 | App activity → **Other user-generated content** | **YES** | [V] *"user bios, notes, or open-ended responses"* — matches `public_note`, `bio`, submitted URL |
 | App activity → **Other actions** | **YES** | [V] *"gameplay, likes, and dialog options"* — saved / watched / votes |
-| App activity → **App interactions** | **No** | [V] definition targets *"page visits, taps"*; zero passive telemetry, no analytics SDK |
-| App activity → **In-app search history** | **No** | search is a local `useMemo` filter over a cached array — **verified, no server search** |
+| App activity → **App interactions** | **YES** (changed 2026-09) | [V] definition targets *"page visits, taps"*. Since M137 the app records first-party events in `app_events`: app opens, onboarding started/finished/skipped, sports picked (a count), and taps on save / watched / vote / open / share-in, with coarse properties only — source platform, vote direction. No resource IDs, no search text, no third-party SDK. Purpose: **Analytics**. Required (not optional): collected automatically once the user has an account |
+| App activity → **In-app search history** | **No** | search is a local `useMemo` filter over a cached array — **verified, no server search**. `search_performed` is declared in `apps/mobile/lib/analytics.ts` but never fired (checked 2026-09-18). If it is ever wired up with the query text, this becomes **Yes** |
 | Health and fitness → **Fitness info** | **No** | judgement call, defensible — we store *which tutorial was opened*, never a workout, rep, distance or biometric. Keep consistent with the Health declaration below. |
 | Web browsing → **Web browsing history** | **No** | ⚠️ the weakest "No" on this sheet — we store which of *our own* catalogue pages were opened, not browsing across the web. Defensible, not airtight. |
 | Location → Approximate / Precise | **No** | IPs are received but never resolved to location |
-| Device or other IDs | **No** | no ad ID, no IMEI/MAC/Widevine/Firebase-installation ID |
+| Device or other IDs | **YES** (changed 2026-09, build 16) | A random UUID minted on first launch and kept in local storage (`install_id`, 0063): not the advertising ID, not IMEI/MAC/Widevine, and it does not survive a reinstall. It is still an **app-installation identifier** — the same kind of thing as the Firebase installation ID that Google names as an example — and events carry it next to the user ID. Purpose: **Analytics**. Required. Before build 16 this was No |
 | App info → Crash logs / Diagnostics / Other | **No** | no Sentry/Crashlytics/Bugsnag |
 | Financial info · Messages · Photos/videos · Audio · Files · Calendar · Contacts · Installed apps · Address · Phone · Race · Beliefs · Sexual orientation | **No** | no permission, no code path |
+
+### Apple App Privacy labels — where to click, and the exact answers
+
+**Where:** App Store Connect → Apps → Subskills → left sidebar, under *General* → **App Privacy**.
+Next to *Data Types* click **Edit** (**Get Started** the first time). The first question is "Do you or
+your third-party partners collect data from this app?" → **Yes**. Then a list of categories with
+checkboxes appears — tick exactly the types in the table and **Save**. Each ticked type then shows a
+**Set Up** button; open each one and answer three things: the purposes, *"Is this data linked to the
+user's identity?"*, and *"Is this data used for tracking purposes?"* When all are set up, **Publish**
+at the top of the App Privacy page. The labels apply to the app as a whole, not to a version, so they
+must be true for build 16 — which is the first build that counts installs.
+
+| Category → data type | Purposes | Linked to user | Tracking | Why |
+|---|---|---|---|---|
+| Contact Info → **Name** | App Functionality | Yes | No | Google/Apple full name → public display name, only after an optional sign-in |
+| Contact Info → **Email Address** | App Functionality | Yes | No | magic link / Google / Apple sign-in, optional |
+| User Content → **Other User Content** | App Functionality | Yes | No | suggested links and their notes |
+| Identifiers → **User ID** | App Functionality, Analytics | Yes | No | the Supabase account ID; product events are keyed by it |
+| Identifiers → **Device ID** | Analytics | Yes | No | the random install UUID (not the IDFA, not the IDFV); linked because events carry it alongside the user ID |
+| Usage Data → **Product Interaction** | Analytics | Yes | No | app opens, onboarding progress, save / watched / vote / open / share-in taps |
+
+**Leave everything else unticked**: Location, Health & Fitness, Financial Info, Contacts, Sensitive
+Info, Browsing History, Search History, Purchases, Diagnostics, Surroundings, Body, Other Data — no
+code path collects them, and the answers must stay consistent with the Google Data safety sheet above.
+
+**"Tracking" is No for every type.** In Apple's sense tracking means linking this data with other
+companies' data for advertising, or sharing it with a data broker. Neither happens — Supabase is a
+processor — so no App Tracking Transparency prompt is needed, and the listing shows *Data Linked to
+You* but no *Data Used to Track You*.
 
 ### Health declaration — REQUIRED, and previously missing from this doc
 
