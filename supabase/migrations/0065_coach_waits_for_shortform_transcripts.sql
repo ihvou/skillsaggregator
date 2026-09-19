@@ -1,4 +1,11 @@
--- 0058: give short-form a chance to be transcribed before the coach judges it.
+-- 0065: give short-form a chance to be transcribed before the coach judges it.
+--
+-- Committed on 2026-09-09 as a SECOND 0058, beside 0058_app_events. Two files
+-- cannot share a version: `supabase db start` stopped on a duplicate key in
+-- schema_migrations, which is why CI's database job failed from then on. Hosted
+-- had applied it by hand but could only record one 0058 (app_events). The body is
+-- unchanged. It replaces get_unscored_for_coach wholesale, and nothing after it
+-- touches that function, so running last yields the same final definition.
 --
 -- THE RACE. Transcripts for TikTok and Instagram are produced out of band by
 -- scripts/fetch-shortform-transcripts.mjs, the same shape as the YouTube
