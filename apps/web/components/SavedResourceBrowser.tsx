@@ -133,7 +133,9 @@ export function SavedResourceBrowser() {
     }
 
     let cancelled = false;
-    async function loadProgress() {
+    // An arrow, not a function declaration: declarations are hoisted, so TypeScript
+    // drops the `!supabase` narrowing above inside them and the build fails.
+    const loadProgress = async () => {
       try {
         const { data, error: progressError } = await supabase.rpc("get_user_skill_progress", {
           p_skill_ids: skillIds,
@@ -160,7 +162,7 @@ export function SavedResourceBrowser() {
         });
         setProgressBySkill(new Map());
       }
-    }
+    };
 
     void loadProgress();
 
