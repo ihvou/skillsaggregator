@@ -60,6 +60,15 @@ const PROVIDERS = {
   serper: {
     env: "SERPER_API_KEY",
     endpoint: "https://google.serper.dev/search",
+    // The free tier rejects num > 10 with HTTP 400 "Query pattern not allowed
+    // for free accounts" — a message that points at the query, not the count,
+    // which is how it first looked like the site: operator was banned. It is not:
+    // site: works fine at num <= 10. Measured 2026-09-20.
+    //
+    // 10 is enough. Verified on muay-thai/roundhouse-kick and golf/chipping:
+    // 9-10 usable post URLs per platform against maxPerPlatform of 6, which is
+    // the same yield Tavily gives from 20 results.
+    maxResultsPerQuery: 10,
     async call(query, { apiKey, endpoint, count, timeoutMs }) {
       const response = await fetch(endpoint, {
         method: "POST",
@@ -241,7 +250,9 @@ async function runSearch(query) {
   return provider.call(query, {
     apiKey,
     endpoint: process.env.COLLECT_SEARCH_ENDPOINT ?? provider.endpoint,
-    count: config.resultsPerQuery,
+    // Clamped per provider: asking for more than a provider allows is a hard
+    // error on Serper's free tier, not a silently truncated list.
+    count: Math.min(config.resultsPerQuery, provider.maxResultsPerQuery ?? config.resultsPerQuery),
     timeoutMs: config.timeoutMs,
   });
 }
