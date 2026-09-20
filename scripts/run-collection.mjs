@@ -3726,9 +3726,31 @@ async function processShortFormCollection(selectedSkills, summary) {
 
     await finishAgentRun(runId, { suggestionsCreated: stats.submitted });
     if (activeRunState) activeRunState.finalized = true;
-    const item = { source: "shortform", status: "completed", ...stats };
+
+    // A DEAD SEARCH PROVIDER LOOKS EXACTLY LIKE A QUIET NIGHT. discoverShortForm
+    // catches its own errors per platform so one bad query cannot kill the run,
+    // which means an exhausted quota or a revoked key produces zero candidates
+    // for every skill and still reports "completed". Tavily's free tier is 1,000
+    // queries a month against ~90 a night, so this is not hypothetical — it runs
+    // out roughly every three weeks and the next morning looks normal.
+    //
+    // Searching skills and finding NOTHING at all is not a content outcome, it is
+    // a broken dependency. Say so at error level and put it in the summary.
+    const searchProducedNothing = stats.skills_searched > 0 && stats.candidates_seen === 0;
+    const status = searchProducedNothing ? "failed_search_returned_nothing" : "completed";
+    if (searchProducedNothing) {
+      log("error", "shortform_search_returned_nothing",
+        "Every sub-skill searched returned zero candidates — the provider is almost certainly out of quota or rejecting the key", {
+          provider: shortFormSearchProvider()?.name ?? null,
+          skills_searched: stats.skills_searched,
+          search_errors: stats.errors,
+          check: "https://api.tavily.com/usage",
+        });
+    }
+    const item = { source: "shortform", status, ...stats };
     summary.push(item);
-    log("info", "shortform_collection_completed", "Short-form collection completed", item);
+    log(searchProducedNothing ? "error" : "info", "shortform_collection_completed",
+      "Short-form collection completed", item);
     await flushAgentRunEvents();
     return item;
   } catch (error) {
