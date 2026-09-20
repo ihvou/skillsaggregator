@@ -3506,7 +3506,44 @@ async function processShortFormCollection(selectedSkills, summary) {
     return { status: "skipped_no_search_key" };
   }
 
-  const skills = selectedSkills.slice(0, config.shortFormSkillsPerRun);
+  // PICK BY SHORT-FORM COVERAGE, not by the YouTube rotation.
+  //
+  // selectedSkills arrives ordered by FEWEST TOTAL published links, which is the
+  // right question for YouTube and the wrong one here: a sub-skill with 30
+  // YouTube links and no clips at all sorts to the back, while one with 8 YouTube
+  // links and 6 clips sorts to the front and gets searched again. Measured on
+  // 2026-09-20: of the 86 sub-skills searched in three nights, 83 already had
+  // short-form. Coverage stalled at 301 of 554 while ~97% of the search spend
+  // went to skills that were already done — and search is the metered resource,
+  // so that is what emptied the Tavily quota.
+  //
+  // Re-sorting costs one query and no extra credits. Rotation order is kept as
+  // the tie-break, so among equally-uncovered skills the scarcest still wins.
+  const shortFormCounts = new Map();
+  try {
+    const rows = await dbQuery(
+      `select r.skill_id, count(*)::int
+         from public.link_skill_relations r
+         join public.links l on l.id = r.link_id
+        where r.is_active and r.published
+          and (lower(l.url) like '%tiktok.com%' or lower(l.url) like '%instagram.com%')
+        group by r.skill_id`,
+    );
+    for (const [skillId, count] of rows) shortFormCounts.set(skillId, Number(count));
+  } catch (error) {
+    log("warn", "shortform_coverage_lookup_failed", errorMessage(error));
+  }
+  const rotationIndex = new Map(selectedSkills.map((skill, index) => [skill.id, index]));
+  const skills = [...selectedSkills]
+    .sort((a, b) =>
+      (shortFormCounts.get(a.id) ?? 0) - (shortFormCounts.get(b.id) ?? 0)
+      || rotationIndex.get(a.id) - rotationIndex.get(b.id))
+    .slice(0, config.shortFormSkillsPerRun);
+  log("info", "shortform_skills_selected", "Selected sub-skills by short-form coverage", {
+    selected: skills.length,
+    with_no_shortform: skills.filter((skill) => !shortFormCounts.get(skill.id)).length,
+    catalogue_uncovered: selectedSkills.filter((skill) => !shortFormCounts.get(skill.id)).length,
+  });
   if (!skills.length) {
     log("info", "shortform_no_skills", "No skills selected for short-form collection");
     return { status: "skipped_no_skills" };
