@@ -12,6 +12,17 @@
       "autoPort": true
     },
     {
+      "name": "web-prod",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--workspace",
+        "apps/web",
+        "run",
+        "start"
+      ],
+      "port": 3000
+    },
+    {
       "name": "metro",
       "runtimeExecutable": "npx",
       "runtimeArgs": [
