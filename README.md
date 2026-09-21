@@ -24,10 +24,12 @@ automatically before each nightly collection; take one by hand with:
 npm run db:backup:hosted
 ```
 
-~3.5 minutes, ~74 MB, into `.collection/backups/hosted/` (7 daily + 4 weekly).
+Each dump (~86 MB, 3½–11 minutes) is verified end to end and retried if the
+connection drops; it lands in `.collection/backups/hosted/` (7 daily + 4 weekly).
 Restores — including single-table recovery, which Supabase's own whole-project
 restore cannot do — go through `npm run db:restore:hosted`, which plans by
-default and writes only with `--confirm`.
+default, refuses a dump whose tables no longer match the live schema, runs as
+one transaction, and writes only with `--confirm`.
 
 **Full runbook: [docs/db-backup-restore.md](docs/db-backup-restore.md).**
 
