@@ -19,6 +19,9 @@ supabase/.temp
 # but recreates itself on every install, so we keep it untracked.
 /tsconfig.json
 .env.hosted
+# Dated copies of it (.env.hosted.bak-20260921005025 turned up untracked, NOT
+# ignored): same service-role key and database password, and this repo is public.
+.env*.bak*
 .vercel
 
 # macOS Finder view state. Recreated in any directory Finder opens; nothing to do
