@@ -26,7 +26,9 @@ export function SkillSearch({
           placeholder={placeholder}
           type="search"
           autoComplete="off"
-          className="min-w-0 flex-1 bg-transparent text-base font-semibold text-ink outline-none placeholder:text-faint"
+          // Chrome draws its own clear button inside type="search", right next to
+          // the one below it, so a filled box showed two X's.
+          className="min-w-0 flex-1 bg-transparent text-base font-semibold text-ink outline-none placeholder:text-faint [&::-webkit-search-cancel-button]:appearance-none"
         />
         {value ? (
           <button

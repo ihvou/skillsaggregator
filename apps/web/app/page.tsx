@@ -46,7 +46,16 @@ function homeJsonLd() {
 }
 
 export default async function HomePage() {
-  const sections = await getDiscoverSections(12);
+  // No cap. At 12 per category the page carried 264 of the 554 published
+  // sub-skills, so 290 of them — every category holds more than 12 — were
+  // missing from the rails AND from the search below them, which filters the
+  // sections it is given. "Vibora" is a real padel sub-skill with 32 published
+  // tutorials and the home page could not find it. Mobile dropped the same cap
+  // in dd8852b (M148); this is the web half of it, M169.
+  //
+  // The rails are horizontally scrollable, the tiles are next/image and load
+  // lazily, and this runs once an hour at revalidate, not per request.
+  const sections = await getDiscoverSections();
 
   return (
     <>
