@@ -96,7 +96,11 @@ const existingRows = await dbQuery(
 );
 const existing = new Map(existingRows.map(([identifier, name]) => [identifier, name]));
 
-const ACTIVE_CUTOFF = "2026-02-12";
+// Same liveness gate as the source migrations (0047/0056): active within 180 days of today.
+// Computed, not hard-coded — a fixed date silently drifts and starts passing dormant channels.
+const ACTIVE_DAYS = Number(process.env.IMPORT_ACTIVE_DAYS ?? 180);
+const ACTIVE_CUTOFF = new Date(Date.now() - ACTIVE_DAYS * 86_400_000).toISOString().slice(0, 10);
+const TODAY = new Date().toISOString().slice(0, 10);
 const accepted = [], rejected = [];
 
 for (const r of rows) {
@@ -161,7 +165,8 @@ if (!accepted.length) {
 
 const values = accepted.map((a) => {
   const evidence = JSON.stringify({
-    source: "channel-research-2026-08-12",
+    source: `channel-research-${TODAY}`,
+    active_cutoff: ACTIVE_CUTOFF,
     confidence: a.confidence,
     last_upload: a.last_upload || null,
     subscribers: a.subs ? Number(a.subs) : null,
