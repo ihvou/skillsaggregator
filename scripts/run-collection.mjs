@@ -97,6 +97,7 @@ import {
   discoverShortForm,
   activeProvider as shortFormSearchProvider,
   isSearchConfigured as isShortFormSearchConfigured,
+  remainingSearchCredits,
 } from "./_lib/short-form-search.mjs";
 import {
   ensureWhisperModel,
@@ -3569,7 +3570,22 @@ async function processShortFormCollection(selectedSkills, summary) {
   };
 
   try {
+    // Warn while there is still time to act. The failed_search_returned_nothing
+    // guard only fires once every query is already failing; this fires the night
+    // before. Two queries per sub-skill, so a night costs ~2 x skills.
+    const creditsLeft = await remainingSearchCredits();
+    const creditsTonight = skills.length * 2;
+    if (creditsLeft !== null && creditsLeft < creditsTonight * 3) {
+      log("warn", "shortform_search_credits_low",
+        `Search credits running low: ${creditsLeft} left, ~${creditsTonight} per night`, {
+          provider: shortFormSearchProvider()?.name ?? null,
+          credits_left: creditsLeft,
+          nights_left: Math.floor(creditsLeft / creditsTonight),
+        });
+    }
+
     log("info", "shortform_collection_started", "Starting short-form collection", {
+      search_credits_left: creditsLeft,
       run_id: runId,
       search_provider: shortFormSearchProvider()?.name ?? null,
       skills: skills.length,

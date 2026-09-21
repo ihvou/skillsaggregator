@@ -69,6 +69,17 @@ const PROVIDERS = {
     // 9-10 usable post URLs per platform against maxPerPlatform of 6, which is
     // the same yield Tavily gives from 20 results.
     maxResultsPerQuery: 10,
+    // Serper reports the remaining balance directly; Tavily needs its own
+    // endpoint. Both are wired so a run can warn BEFORE the quota is gone,
+    // rather than only shouting once every query has started failing.
+    async remainingCredits({ apiKey, timeoutMs }) {
+      const r = await fetch("https://google.serper.dev/account", {
+        headers: { "X-API-KEY": apiKey }, signal: AbortSignal.timeout(timeoutMs),
+      });
+      if (!r.ok) return null;
+      const body = await r.json();
+      return Number.isFinite(body?.balance) ? body.balance : null;
+    },
     async call(query, { apiKey, endpoint, count, timeoutMs }) {
       const response = await fetch(endpoint, {
         method: "POST",
@@ -84,6 +95,15 @@ const PROVIDERS = {
   tavily: {
     env: "TAVILY_API_KEY",
     endpoint: "https://api.tavily.com/search",
+    async remainingCredits({ apiKey, timeoutMs }) {
+      const r = await fetch("https://api.tavily.com/usage", {
+        headers: { authorization: `Bearer ${apiKey}` }, signal: AbortSignal.timeout(timeoutMs),
+      });
+      if (!r.ok) return null;
+      const body = await r.json();
+      const used = body?.key?.usage, limit = body?.key?.limit;
+      return Number.isFinite(used) && Number.isFinite(limit) ? limit - used : null;
+    },
     async call(query, { apiKey, endpoint, count, timeoutMs }) {
       const response = await fetch(endpoint, {
         method: "POST",
@@ -230,6 +250,23 @@ export function shortFormQuery(skill, platform = null) {
       ? "site:instagram.com"
       : "(site:tiktok.com OR site:instagram.com)";
   return `${category}${skill.name} technique ${site}`;
+}
+
+/**
+ * Credits left with the active provider, or null when the provider cannot say.
+ *
+ * Never throws: a balance lookup failing must not stop a collection run, since
+ * the credits themselves may be perfectly fine.
+ */
+export async function remainingSearchCredits() {
+  const provider = activeProvider();
+  const apiKey = provider && process.env[provider.env];
+  if (!provider?.remainingCredits || !apiKey) return null;
+  try {
+    return await provider.remainingCredits({ apiKey, timeoutMs: config.timeoutMs });
+  } catch {
+    return null;
+  }
 }
 
 export function isSearchConfigured() {
