@@ -1,5 +1,6 @@
 export * from "./catalog";
 export * from "./dedupe";
+export * from "./outbound";
 export * from "./prompts";
 export * from "./resource-utils";
 export * from "./schemas";
