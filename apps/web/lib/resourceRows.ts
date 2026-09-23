@@ -1,4 +1,10 @@
-import type { ContributorProfileSummary, LinkResource, SkillResource, SkillSummary } from "@skillsaggregator/shared";
+import {
+  encodeOutboundToken,
+  type ContributorProfileSummary,
+  type LinkResource,
+  type SkillResource,
+  type SkillSummary,
+} from "@skillsaggregator/shared";
 import { normalizeThumbnailUrl } from "./thumbnails";
 
 export const RESOURCE_LINK_SELECT =
@@ -134,13 +140,24 @@ export function shapeLinkWithContributor<TLink extends LinkRow>(link: TLink) {
       }
     : null;
   const url = link.url ?? link.canonical_url ?? "";
+  // Video addresses never reach the page: the card links to /go#<token> instead
+  // (packages/shared/src/outbound.ts). Blanked here, after the thumbnail below has
+  // been derived from the real URL, so neither the HTML nor the data React ships
+  // with it carries the address. `domain` stays: getLinkSource reads it for the
+  // source icon and the portrait layout, so fill it in where it was never stored.
+  const go = encodeOutboundToken(link.canonical_url || url);
+  const domain = link.domain || (/^https?:\/\/([^/?#:]+)/i.exec(url)?.[1] ?? "");
   return {
     ...link,
-    url,
-    canonical_url: link.canonical_url ?? url,
-    domain: link.domain ?? "",
+    url: go ? "" : url,
+    canonical_url: go ? "" : link.canonical_url ?? url,
+    go,
+    domain,
     title: link.title ?? null,
-    description: link.description ?? null,
+    // Neither is shown on the web. The description is the platform's own text and
+    // creator_url a channel address, so both stay out of the page like the URL.
+    description: null,
+    creator_url: null,
     thumbnail_url: normalizeThumbnailUrl(
       link.thumbnail_storage_path ?? link.thumbnail_url ?? null,
       link.canonical_url ?? url,

@@ -41,8 +41,11 @@ export interface SkillSummary {
 
 export interface LinkResource {
   id: string;
+  /** Blank on public pages: the server swaps it for `go` before the page is sent. */
   url: string;
   canonical_url: string;
+  /** `/go#…` token for the video (see outbound.ts). Set on public pages instead of the URLs. */
+  go?: string | null;
   domain: string;
   title: string | null;
   description: string | null;
@@ -81,11 +84,24 @@ export interface SkillResource {
   combined_score?: number | null;
   rank_key?: number | null;
   coach_take?: string | null;
+  /**
+   * Newest first. Absent when the page didn't load comments (the library, or the
+   * comments table not yet there); the card then shows `coach_take` as the Reviewer's.
+   */
+  comments?: ResourceComment[];
   created_at?: string | null;
   link: LinkResource;
   skill?: Pick<SkillSummary, "id" | "slug" | "name" | "category_slug"> & {
     category_name?: string | null;
   };
+}
+
+export interface ResourceComment {
+  id: string;
+  /** "Moderator" or "Reviewer" for the coach's two; a username once people can post (M170). */
+  author: string;
+  body: string;
+  created_at: string | null;
 }
 
 export interface ContributorProfileSummary {

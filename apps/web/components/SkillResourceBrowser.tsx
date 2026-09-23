@@ -83,7 +83,11 @@ export function SkillResourceBrowser({ category, skill, resources, summarySlot }
         <section className="mx-auto mt-6 max-w-5xl px-4">{summarySlot}</section>
       ) : null}
 
-      <section className="mx-auto mt-10 max-w-5xl px-4">
+      {/* data-nosnippet: search snippets for this page come from the part above
+          (title, description, what coaches agree on, common mistakes), never from
+          a creator's video title. The list is still indexed; it just isn't quoted,
+          and Bing keeps it out of its AI answers too. */}
+      <section className="mx-auto mt-10 max-w-5xl px-4" data-nosnippet="">
         {filteredResources.length === 0 ? (
           <p className="text-sm text-muted">
             No matches for this filter. Open the menu (...) to change sort or level.

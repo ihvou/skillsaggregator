@@ -8,6 +8,7 @@ import {
   sortResources,
   type CategorySummary,
   type ContributorProfileSummary,
+  type ResourceComment,
   type SkillResource,
   type SkillSummary,
 } from "@skillsaggregator/shared";
@@ -19,6 +20,7 @@ import {
   shapeJoinedRelationResource,
   shapeLinkWithContributor,
   shapeRelationResource,
+  unwrapRow,
 } from "./resourceRows";
 import { getPublicSupabase, getServiceSupabase } from "./supabase";
 import { normalizeThumbnailUrl } from "./thumbnails";
@@ -242,6 +244,10 @@ export async function getSkillPage(categorySlug: string, skillSlug: string) {
     });
     return resource ? [resource] : [];
   });
+  const comments = await fetchRelationComments(
+    supabase,
+    shapedResources.map((resource) => resource.id),
+  );
 
   return {
     category,
@@ -257,7 +263,7 @@ export async function getSkillPage(categorySlug: string, skillSlug: string) {
       learning_order: skillRow.learning_order ?? null,
       updated_at: skillRow.updated_at,
     } satisfies SkillSummary,
-    resources: shapedResources,
+    resources: withComments(shapedResources, comments),
     summary: (summaryRow
       ? {
           consensus: Array.isArray(summaryRow.consensus) ? summaryRow.consensus : [],
@@ -299,6 +305,58 @@ export interface CategoryBrowserData {
 const RELATION_PAGE_SIZE = 1000;
 
 type PublicSupabaseClient = NonNullable<ReturnType<typeof getPublicSupabase>>;
+
+type CommentRow = {
+  id: string;
+  link_skill_relation_id: string;
+  body: string;
+  created_at: string | null;
+  author: { display_name: string | null } | Array<{ display_name: string | null }> | null;
+};
+
+/**
+ * Each relation's comments, newest first: the coach's Moderator and Reviewer (0067),
+ * and later what people post (M170). A separate query rather than an embed, so a
+ * failure here costs the comments and not the page: null tells the card to fall
+ * back to coach_take, which is also what happens if the web deploy reaches
+ * production before 0067 does.
+ */
+async function fetchRelationComments(
+  supabase: PublicSupabaseClient,
+  relationIds: string[],
+): Promise<Map<string, ResourceComment[]> | null> {
+  if (relationIds.length === 0) return new Map();
+  const { data, error } = await supabase
+    .from("relation_comments")
+    .select("id, link_skill_relation_id, body, created_at, author:internal_users(display_name)")
+    .in("link_skill_relation_id", relationIds)
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: true });
+  if (error) {
+    console.warn("relation_comments_load_failed", error.message);
+    return null;
+  }
+  const byRelation = new Map<string, ResourceComment[]>();
+  for (const row of (data ?? []) as CommentRow[]) {
+    const comments = byRelation.get(row.link_skill_relation_id) ?? [];
+    comments.push({
+      id: row.id,
+      author: unwrapRow(row.author)?.display_name ?? "Member",
+      body: row.body,
+      created_at: row.created_at,
+    });
+    byRelation.set(row.link_skill_relation_id, comments);
+  }
+  return byRelation;
+}
+
+function withComments(resources: SkillResource[], comments: Map<string, ResourceComment[]> | null) {
+  if (!comments) return resources;
+  return resources.map((resource) => ({
+    ...resource,
+    comments: comments.get(resource.link_skill_relation_id ?? resource.id) ?? [],
+  }));
+}
 
 async function fetchActiveSkillRelations(
   supabase: PublicSupabaseClient,
@@ -650,8 +708,12 @@ export async function getContributorProfileBySlug(slug: string): Promise<{
     const resource = shapeJoinedRelationResource(relation);
     return resource ? [resource] : [];
   });
+  const comments = await fetchRelationComments(
+    supabase,
+    resources.map((resource) => resource.id),
+  );
 
-  return { profile, resources };
+  return { profile, resources: withComments(resources, comments) };
 }
 
 export async function getPendingSuggestions(): Promise<AdminSuggestion[]> {

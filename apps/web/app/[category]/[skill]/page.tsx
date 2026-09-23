@@ -60,31 +60,10 @@ export async function generateMetadata({
   };
 }
 
-function resourceItemListJsonLd(
-  resources: Awaited<ReturnType<typeof getSkillPage>>["resources"],
-  pageUrl: string,
-  skillName: string,
-  categoryName: string,
-) {
-  return {
-    "@context": "https://schema.org",
-    "@type": "ItemList",
-    name: `${skillName} ${categoryName} tutorials`,
-    url: pageUrl,
-    itemListElement: resources.map((resource, index) => {
-      const url = resource.link.canonical_url || resource.link.url;
-      return {
-        "@type": "ListItem",
-        position: index + 1,
-        name: resource.link.title ?? `${skillName} tutorial`,
-        url,
-        ...(resource.public_note ?? resource.link.description
-          ? { description: resource.public_note ?? resource.link.description }
-          : {}),
-      };
-    }),
-  };
-}
+// No ItemList of the videos. It printed every video's address in plain text, which
+// the /go links exist to keep off the page, and it earned nothing: Google's list
+// rich results need items on this site, and its descriptions were mostly the
+// "Auto-scored relevance=…" placeholder in public_note. The breadcrumbs stay.
 
 export default async function SkillPage({
   params,
@@ -99,7 +78,6 @@ export default async function SkillPage({
 
   return (
     <>
-      <JsonLd data={resourceItemListJsonLd(resources, pageUrl, skill.name, category.name)} />
       <JsonLd
         data={{
           "@context": "https://schema.org",

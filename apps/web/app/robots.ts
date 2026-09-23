@@ -16,10 +16,20 @@ export default function robots(): MetadataRoute.Robots {
     // such URLs already recorded under "Blocked by robots.txt" from the old rule
     // (crawled 2026-06-18..28); without this line they would come back allowed.
     // The bare /suggest page stays crawlable — only the parameterised variants go.
+    //
+    // `/support?` is the same shape: every video card linked a report form at
+    // `/support?resource=…&link=…&title=…`, one indexable URL per video (~18K). The
+    // link now renders only inside the card's menu, so no new ones appear; this
+    // keeps out the ones crawlers already found. The bare /support page stays.
+    //
+    // `/go$` is the page that forwards an encoded video link (OutboundLink). The
+    // token is after `#`, which crawlers drop, so it is one URL with nothing to
+    // index. The `$` matters: robots rules are prefixes, and a bare `/go` would
+    // also block /golf and every golf page.
     rules: [{
       userAgent: "*",
       allow: "/",
-      disallow: ["/*?*skills=", "/*?*level=", "/*?*sort=", "/suggest?"],
+      disallow: ["/*?*skills=", "/*?*level=", "/*?*sort=", "/suggest?", "/support?", "/go$"],
     }],
     // Both formats, same URL set. The plain-text one is listed because Search
     // Console has reported "Sitemap could not be read" for the XML since

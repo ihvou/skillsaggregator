@@ -7,15 +7,23 @@ import {
   BookmarkCheck,
   Camera,
   CircleCheck,
-  Flag,
   Globe,
+  MessageCircle,
   Music2,
   PlaySquare,
   ThumbsDown,
   ThumbsUp,
   UserRound,
 } from "lucide-react";
-import { formatAggregateScore, getLinkSource, type SkillResource } from "@skillsaggregator/shared";
+import {
+  formatAggregateScore,
+  getLinkSource,
+  type ResourceComment,
+  type SkillResource,
+} from "@skillsaggregator/shared";
+import { CommentAvatar, CommentsDialog } from "@/components/CommentsDialog";
+import { OutboundLink } from "@/components/OutboundLink";
+import { ResourceActionMenu } from "@/components/ResourceActionMenu";
 import { useResourceActions } from "@/lib/useResourceActions";
 
 interface ResourceCardProps {
@@ -60,10 +68,26 @@ function CatalogStatusChip({ resource }: { resource: SkillResource }) {
 }
 
 /**
+ * The comments to show: what the page loaded, newest first, or, where it loaded
+ * none (the library, or before 0067 reaches the database), the coach's take as
+ * the Reviewer's comment, which is what 0067 turns it into.
+ */
+function cardComments(resource: SkillResource): ResourceComment[] {
+  if (resource.comments) return resource.comments;
+  return resource.coach_take
+    ? [{ id: `${resource.id}-take`, author: "Reviewer", body: resource.coach_take, created_at: null }]
+    : [];
+}
+
+/**
  * Web counterpart to the mobile ResourceCard row.
- *  - 16/9 thumbnail (left, click → opens link)
- *  - Source + level pill (top), bold 2-line title (clickable),
- *    level badge + watched/saved/vote actions.
+ *  - 16/9 thumbnail (left, click → opens the video through /go)
+ *  - Source + level pill (top), bold 2-line title (clickable). The title is link
+ *    text, not a heading: headings are the page's own structure, not 30 creators'
+ *    titles.
+ *  - The two newest comments, two lines each; the count opens them in full.
+ *  - Save / watched / vote inline, and every action named in words, plus Report,
+ *    in the "⋯" menu.
  *  - State (save / watched / vote) is authenticated and stored server-side.
  */
 export function ResourceCard({
@@ -105,9 +129,13 @@ export function ResourceCard({
   // This is the seatbelt: any image that fails to load falls back to the empty
   // state, which is a plain bgGroup rectangle and reads as deliberate.
   const [thumbnailFailed, setThumbnailFailed] = useState(false);
+  const [commentsOpen, setCommentsOpen] = useState(false);
   const thumbnail = thumbnailFailed ? null : resource.link.thumbnail_url;
   const portrait = isPortraitResource(resource);
   const url = resource.link.url;
+  const go = resource.link.go ?? null;
+  const title = resource.link.title ?? "Untitled video";
+  const comments = cardComments(resource);
   const contributor = resource.link.contributor_profile;
 
   function onUpvote() {
@@ -132,17 +160,17 @@ export function ResourceCard({
   });
   if (resource.link.title) reportParams.set("title", resource.link.title);
   const reportHref = `/support?${reportParams.toString()}`;
+  const commentCountLabel = comments.length === 1 ? "1 comment" : `${comments.length} comments`;
 
   return (
     // Stacked (thumbnail above text) below `sm` — a fixed-width thumb in a row
     // leaves too little room for the title/actions on phone screens.
     <article className="flex flex-col gap-3 sm:flex-row sm:items-stretch sm:gap-4">
-      <a
+      <OutboundLink
+        go={go}
         href={url}
-        target="_blank"
-        rel="noreferrer"
-        aria-label={resource.link.title ?? "Open resource"}
-        className="focus-ring relative aspect-video w-full shrink-0 overflow-hidden rounded-[14px] bg-bgGroup shadow-thumb transition hover:opacity-90 sm:w-[240px]"
+        aria-label={title}
+        className="focus-ring relative aspect-video w-full shrink-0 overflow-hidden rounded-[14px] bg-bgGroup shadow-thumb transition hover:opacity-90 sm:w-[240px] sm:self-start"
       >
         {thumbnail ? (
           <>
@@ -168,9 +196,9 @@ export function ResourceCard({
             />
           </>
         ) : null}
-      </a>
+      </OutboundLink>
 
-      <div className="flex min-w-0 flex-1 flex-col justify-between gap-2 sm:gap-0 sm:py-1">
+      <div className="flex min-w-0 flex-1 flex-col gap-2 sm:py-1">
         <div className="flex items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-2">
             <SourceIcon resource={resource} />
@@ -185,25 +213,33 @@ export function ResourceCard({
           </div>
         </div>
 
-        <a
-          href={url}
-          target="_blank"
-          rel="noreferrer"
-          className="focus-ring block transition hover:opacity-90"
-        >
-          <h3 className="line-clamp-2 text-lg font-bold leading-snug text-ink md:text-xl">
-            {resource.link.title ?? url}
-          </h3>
-        </a>
+        <OutboundLink go={go} href={url} className="focus-ring block transition hover:opacity-90">
+          <span className="line-clamp-2 text-lg font-bold leading-snug text-ink md:text-xl">{title}</span>
+        </OutboundLink>
 
-        {resource.coach_take ? (
-          <p className="line-clamp-2 text-sm leading-snug text-muted">
-            <span className="font-bold text-ink">Coach&apos;s take:</span> {resource.coach_take}
-          </p>
-        ) : null}
+        {comments.slice(0, 2).map((comment) => (
+          <div key={comment.id} className="flex items-start gap-2">
+            <CommentAvatar author={comment.author} />
+            <p className="line-clamp-2 text-sm leading-snug text-[#3a393f]">
+              <span className="font-bold text-ink">{comment.author}</span> {comment.body}
+            </p>
+          </div>
+        ))}
 
-        <div className="flex items-center justify-between gap-3 text-sm">
+        <div className="mt-auto flex items-center justify-between gap-3 pt-1 text-sm">
           <div className="flex min-w-0 items-center gap-2">
+            {comments.length > 0 ? (
+              <button
+                type="button"
+                onClick={() => setCommentsOpen(true)}
+                aria-label={`Show ${commentCountLabel}`}
+                aria-haspopup="dialog"
+                className="focus-ring inline-flex h-7 items-center gap-1.5 rounded-md pr-1 font-semibold text-[#5f5e63] transition hover:bg-bgGroup hover:text-ink"
+              >
+                <MessageCircle className="h-[18px] w-[18px]" />
+                {comments.length}
+              </button>
+            ) : null}
             {contributor ? (
               <a
                 href={`/contributors/${contributor.slug}`}
@@ -215,14 +251,19 @@ export function ResourceCard({
             ) : null}
           </div>
           <div className="flex items-center gap-3">
-            <a
-              href={reportHref}
-              aria-label="Report resource"
-              title="Report resource"
-              className="focus-ring inline-flex h-7 w-7 items-center justify-center rounded-md text-muted transition hover:bg-bgGroup hover:text-ink"
+            <button
+              type="button"
+              onClick={() => void onToggleSaved()}
+              aria-label={isSaved ? "Remove from Watch later" : "Add to Watch later"}
+              aria-pressed={isSaved}
+              className="focus-ring inline-flex h-7 w-7 items-center justify-center rounded-md transition hover:bg-bgGroup"
             >
-              <Flag className="h-4 w-4" />
-            </a>
+              <SavedIcon
+                className={`h-5 w-5 ${isSaved ? "text-accent" : "text-muted"}`}
+                fill={isSaved ? "currentColor" : "transparent"}
+                strokeWidth={2}
+              />
+            </button>
             <button
               type="button"
               onClick={() => void onToggleWatched()}
@@ -234,19 +275,6 @@ export function ResourceCard({
                 className={`h-5 w-5 ${isWatched ? "text-accent" : "text-muted"}`}
                 fill={isWatched ? "currentColor" : "transparent"}
                 stroke={isWatched ? "#ffffff" : "currentColor"}
-                strokeWidth={2}
-              />
-            </button>
-            <button
-              type="button"
-              onClick={() => void onToggleSaved()}
-              aria-label={isSaved ? "Remove from Watch later" : "Add to Watch later"}
-              aria-pressed={isSaved}
-              className="focus-ring inline-flex h-7 w-7 items-center justify-center rounded-md transition hover:bg-bgGroup"
-            >
-              <SavedIcon
-                className={`h-5 w-5 ${isSaved ? "text-accent" : "text-muted"}`}
-                fill={isSaved ? "currentColor" : "transparent"}
                 strokeWidth={2}
               />
             </button>
@@ -295,10 +323,23 @@ export function ResourceCard({
                 />
               </button>
             </div>
+            <ResourceActionMenu
+              isSaved={isSaved}
+              isWatched={isWatched}
+              vote={vote}
+              onToggleSaved={() => void onToggleSaved()}
+              onToggleWatched={() => void onToggleWatched()}
+              onUpvote={onUpvote}
+              onDownvote={onDownvote}
+              reportHref={reportHref}
+            />
           </div>
         </div>
         {error ? <p className="text-xs font-bold text-red-600">{error}</p> : null}
       </div>
+      {commentsOpen ? (
+        <CommentsDialog title={title} comments={comments} onClose={() => setCommentsOpen(false)} />
+      ) : null}
     </article>
   );
 }

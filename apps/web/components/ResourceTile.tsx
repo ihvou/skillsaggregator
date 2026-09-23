@@ -1,6 +1,7 @@
 import Image from "next/image";
 import { Camera, Globe, Music2, PlaySquare } from "lucide-react";
 import { getLinkSource, type SkillResource } from "@skillsaggregator/shared";
+import { OutboundLink } from "@/components/OutboundLink";
 
 interface ResourceTileProps {
   resource: SkillResource;
@@ -24,16 +25,15 @@ function SourceIcon({ resource }: { resource: SkillResource }) {
 /**
  * Pure-thumbnail tile for the Category page horizontal scroll rail.
  * 16/9 native YouTube proportions, same radius/shadow as the Skill-screen
- * card thumbnail. Click opens the link in a new tab.
+ * card thumbnail. Click opens the video in a new tab through /go (OutboundLink).
  */
 export function ResourceTile({ resource, width = 280 }: ResourceTileProps) {
   const portrait = isPortraitResource(resource);
   const height = Math.round((width * 9) / 16);
   return (
-    <a
+    <OutboundLink
+      go={resource.link.go ?? null}
       href={resource.link.url}
-      target="_blank"
-      rel="noreferrer"
       className="focus-ring group block shrink-0 transition hover:opacity-90"
       style={{ width }}
       aria-label={resource.link.title ?? "Open resource"}
@@ -67,6 +67,6 @@ export function ResourceTile({ resource, width = 280 }: ResourceTileProps) {
           <SourceIcon resource={resource} />
         </span>
       </div>
-    </a>
+    </OutboundLink>
   );
 }
