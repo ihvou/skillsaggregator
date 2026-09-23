@@ -78,6 +78,13 @@ Browsing needs no account. Saving, marking watched, voting or suggesting creates
 
 ## App Store
 
+**Live since 2026-09-24** — version 1.0.0, build 16, approved and released the same
+day: <https://apps.apple.com/app/id6810049311>. The id-only URL redirects to the
+visitor's storefront and is what `apps/web/components/AppDownloadButtons.tsx` links
+to. Metadata below is now the *published* listing: changing the description,
+keywords or screenshots requires a new version, and only promotional text can be
+edited in place.
+
 **App name** [9/30]
 ```
 Subskills
