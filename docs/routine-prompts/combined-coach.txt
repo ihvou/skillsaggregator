@@ -75,6 +75,13 @@ without one the signal is thin (title/caption + engagement) — be calibrated, n
 NO AI throat-clearing or hedging). Two per axis: ===
 - comment_internal: your full candid reasoning for THAT axis.
 - comment_public: a single-line coach's take for THAT axis.
+Three of the four are PUBLISHED on the site as comments on the video: the RELEVANCE comment_internal
+as the Moderator's comment (what it covers, and how squarely it is on this sub-skill), and the VALUE
+comment_public as the Reviewer's (your take on how well it teaches; the RELEVANCE comment_public
+stands in when it is empty). Write all three for a visitor who sees only this one video: NEVER
+mention other videos in the batch or queue ("this batch", "the other post", "the most useful in the
+batch"), the transcript or its absence, scores, weights, or this review process. Only the VALUE
+comment_internal stays internal.
 
 === STEP 3 — store BOTH votes + the DIFFICULTY tag (three curls per row) ===
   curl -s -X POST "https://vqxsaabskkkjdljxiyqi.supabase.co/functions/v1/coach-curation" -H "x-internal-token: $INTERNAL_TOKEN" -H "Content-Type: application/json" -d '{"action":"vote","relation_id":"<RELATION_ID>","coach_role":"relevance","weight":1.4,"comment_internal":"...","comment_public":"..."}'
