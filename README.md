@@ -1,12 +1,101 @@
-# Skills Aggregator
+# Subskills — free sport and training tutorials, sorted by sub-skill
 
-An MVP learning-resource aggregator for sport and training skills. It includes:
+**[subskills.xyz](https://subskills.xyz)** · **[iPhone app](https://apps.apple.com/app/id6810049311)** · Android in closed testing
+
+Subskills is a free catalogue of sport tutorials organised by the individual
+technique you are trying to learn, not by sport. Padel is not one "padel
+lessons" playlist here: it is a page for the
+[vibora](https://subskills.xyz/padel/vibora), another for the
+[bandeja](https://subskills.xyz/padel/bandeja), another for the
+[chiquita](https://subskills.xyz/padel/chiquita) — each holding the free videos
+that teach that one shot, and nothing else.
+
+**18,500+ free video tutorials · 550+ sub-skills · 22 sports.** Every video is
+free where its creator published it — YouTube (15,800+), TikTok (1,600+) and
+Instagram (1,200+). Subskills links out and credits the channel; it never
+re-hosts, mirrors or paywalls anything, and browsing needs no account.
+
+## Why sub-skills instead of playlists
+
+Type "padel vibora" into a video site and you get an hour of general padel
+coaching, a highlight reel and three videos in a language you do not speak. The
+technique you actually wanted is a few minutes buried in one of them. Sorting by
+sub-skill is the whole product: pick the move, see only tutorials about that
+move, and see them ranked rather than listed.
+
+That granularity is also how people search once they are past beginner —
+"backhand clear", "kick serve", "flip turn", "triangle choke" — and those are
+the pages this catalogue is built out of.
+
+## Sports and skills covered
+
+22 sports, 554 published sub-skill pages:
+
+[Badminton](https://subskills.xyz/badminton) (32) ·
+[Boxing](https://subskills.xyz/boxing) (23) ·
+[Brazilian jiu-jitsu](https://subskills.xyz/bjj) (39) ·
+[Chess](https://subskills.xyz/chess) (30) ·
+[Climbing](https://subskills.xyz/climbing) (24) ·
+[Cycling](https://subskills.xyz/cycling) (25) ·
+[Golf](https://subskills.xyz/golf) (27) ·
+[Gym — men](https://subskills.xyz/gym-men) (28) ·
+[Gym — women](https://subskills.xyz/gym-women) (24) ·
+[Muay Thai](https://subskills.xyz/muay-thai) (32) ·
+[Padel](https://subskills.xyz/padel) (24) ·
+[Pickleball](https://subskills.xyz/pickleball) (21) ·
+[Pilates](https://subskills.xyz/pilates) (21) ·
+[Running](https://subskills.xyz/running) (27) ·
+[Skiing](https://subskills.xyz/skiing) (21) ·
+[Snowboarding](https://subskills.xyz/snowboarding) (20) ·
+[Soccer](https://subskills.xyz/soccer) (21) ·
+[Surfing](https://subskills.xyz/surfing) (24) ·
+[Swimming](https://subskills.xyz/swimming) (22) ·
+[Table tennis](https://subskills.xyz/table-tennis) (24) ·
+[Tennis](https://subskills.xyz/tennis) (23) ·
+[Yoga](https://subskills.xyz/yoga) (22)
+
+Sample pages: [tennis kick serve](https://subskills.xyz/tennis/kick-serve) ·
+[BJJ triangle choke](https://subskills.xyz/bjj/triangle-choke) ·
+[swimming flip turn](https://subskills.xyz/swimming/flip-turn) ·
+[badminton backhand clear](https://subskills.xyz/badminton/backhand-clear)
+
+## How a tutorial gets onto a page
+
+1. **Collected nightly** per sub-skill, from channels that have proved
+   themselves in that sport plus open search for the gaps.
+2. **Transcribed** — 18,095 of the 18,787 published videos carry a transcript —
+   so judging is based on what a video teaches rather than on its title.
+3. **Reviewed** — an AI coach scores each video against that specific
+   sub-skill, and viewers can vote it up or down.
+4. **Published** only once enough independent reviews agree it teaches that
+   sub-skill. Everything else stays out of the catalogue.
+
+Anyone can [suggest a link](https://subskills.xyz/suggest); suggestions go
+through the same review before they appear.
+
+## Where to use it
+
+- **Web:** [subskills.xyz](https://subskills.xyz) — every sub-skill page is
+  public, no sign-up, no app required.
+- **iPhone:** [App Store](https://apps.apple.com/app/id6810049311) —
+  browse by sport, save tutorials for later, mark what you have watched, and
+  share a video into the app from YouTube or TikTok to keep it.
+- **Android:** in closed testing.
+
+Signing in is only needed to save and track videos, and in the app saving works
+straight away without creating an account.
+
+## What's in this repo
+
+The code behind all of the above:
 
 - Supabase schema, RLS, multi-sport seed taxonomy, local collection, cron cleanup, and Edge Functions.
 - Next.js public SEO pages and an admin moderation queue.
 - Expo mobile app with browsing, level filters, saved resources, and completed state.
 - Public link suggestions with contributor attribution across web and mobile.
 - Shared Zod schemas, prompt templates, and tests for the suggestion pipeline.
+
+Everything below is for working on the repo rather than using the product.
 
 ## ⚠️ Destructive operations — read before applying migrations
 
