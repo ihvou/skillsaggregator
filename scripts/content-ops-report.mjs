@@ -8,6 +8,12 @@
 //                            cells are cumulative link counts to that date
 //      skill-coverage.md   - the same data transposed and trimmed to the
 //                            recent window, so it stays readable in git
+//   3. channels.md/.csv    - every trusted_sources row and what it produced
+//   4. funnel.md           - product funnel: installs -> acted -> activated ->
+//                            returned, from app_installs and app_events. The one
+//                            report about PEOPLE rather than content; it lives
+//                            here because it shares the psql plumbing and the
+//                            nightly regeneration.
 //
 // Everything is derived, never appended, so a missed day self-heals on the
 // next run. The only non-DB input is the no-transcript count, which the
@@ -222,6 +228,59 @@ const channelsSql = `
   left join public.categories cat on cat.id = ts.category_id
   left join reach r on r.channel_id = ts.identifier
   order by coalesce(cat.slug, '(none)'), lower(coalesce(ts.display_name, ts.identifier))`;
+
+// --- Report 4: product funnel ---------------------------------------------
+//
+// Two eras, and they cannot be merged. app_installs only exists from 2026-09-18,
+// so cohorts before it have no install denominator and every rate there is a
+// share of "users we happened to see", not of installs.
+//
+// `first_seen_at` is stamped by the SERVER when the ping lands; app_events
+// `occurred_at` is stamped by the CLIENT when the event happens. So an event
+// routinely predates its own install row by the length of a round-trip, and for a
+// device that already had the app the gap is days. Comparison is therefore by
+// DATE, not timestamp, and time-to-activate ignores anything negative.
+const funnelOverallSql = `
+  select
+    count(*)                                                                as installed,
+    count(u.first_event_at)                                                 as acted,
+    count(u.activated_at)                                                   as activated,
+    count(*) filter (where u.retained_at is not null and u.activated_at is not null) as returned,
+    count(u.onboarding_started_at)                                          as onboarding_started,
+    count(u.finished_after_starting_at)                                     as onboarding_finished,
+    count(u.onboarding_completed_at)                                        as onboarding_completed,
+    count(*) filter (where u.first_event_at::date < i.first_seen_at::date)  as pre_existing,
+    min(i.first_seen_at)::date::text                                        as tracking_since,
+    coalesce(round(extract(epoch from percentile_cont(0.5) within group (
+      order by case when u.activated_at >= i.first_seen_at then u.activated_at - i.first_seen_at end
+    )) / 3600.0, 1)::text, '')                                              as median_hours_to_activate
+  from public.app_installs i
+  left join public.analytics_user_funnel u on u.install_id = i.install_id`;
+
+const funnelCohortSql = `
+  select cohort_date::text,
+         installs::text, first_actors::text, installs_that_acted::text,
+         onboarding_started::text, onboarding_finished::text,
+         activated::text, retained::text,
+         coalesce(pct_acted_of_installs::text, ''),
+         coalesce(pct_activated::text, ''),
+         coalesce(pct_retained::text, '')
+  from public.analytics_funnel_by_cohort
+  order by cohort_date desc`;
+
+const funnelPlatformSql = `
+  select coalesce(platform, '(unknown)'), coalesce(app_version, '(unknown)'),
+         count(*)::text, min(first_seen_at)::date::text, max(first_seen_at)::date::text
+  from public.app_installs
+  group by 1, 2 order by 3 desc, 1, 2`;
+
+const funnelEventsSql = `
+  select event, count(*)::text, count(distinct user_id)::text,
+         min(occurred_at)::date::text, max(occurred_at)::date::text
+  from public.app_events
+  group by 1
+  -- Order by the number, not by its ::text form, or 9 sorts above 67.
+  order by count(*) desc, event`;
 
 const summarySql = `
   select c.slug || '/' || s.slug,
@@ -588,6 +647,125 @@ function renderChannelsMd(channels, generatedAt) {
   ].join("\n");
 }
 
+function renderFunnelMd({ overall, cohorts, platforms, events, generatedAt }) {
+  const n = (value) => num(value);
+  const pct = (part, whole) => (whole ? `${(100 * part / whole).toFixed(1)}%` : "–");
+
+  const installed = n(overall.installed);
+  const acted = n(overall.acted);
+  const activated = n(overall.activated);
+  const returned = n(overall.returned);
+
+  // Only these four nest cleanly, so only these get a "% of prior" column.
+  // Onboarding is deliberately NOT on the spine: it is optional — onboarding_skipped
+  // is a real event — so putting it between install and activation is what made the
+  // original view report 200% conversion.
+  const spine = [
+    ["Installed (first launch)", installed, "100.0%", "–"],
+    ["Opened, produced an event", acted, pct(acted, installed), pct(acted, installed)],
+    ["Activated (saved / watched / voted / suggested)", activated, pct(activated, installed), pct(activated, acted)],
+    ["Came back a later day", returned, pct(returned, installed), pct(returned, activated)],
+  ];
+
+  const trackingSince = overall.tracking_since || "–";
+  const preExisting = n(overall.pre_existing);
+  const median = overall.median_hours_to_activate;
+
+  const cohortRows = cohorts.map((row) => [
+    row.cohort_date,
+    n(row.installs) || "–",
+    n(row.installs_that_acted) || "–",
+    n(row.first_actors),
+    n(row.onboarding_finished),
+    n(row.activated),
+    n(row.retained),
+    row.pct_acted_of_installs ? `${row.pct_acted_of_installs}%` : "–",
+    row.pct_activated ? `${row.pct_activated}%` : "–",
+  ]);
+
+  const totalEvents = events.reduce((sum, row) => sum + n(row.count), 0);
+
+  return [
+    "# Product Funnel",
+    "",
+    `Generated ${generatedAt} · timezone \`${config.reportTz}\` · install tracking since ${trackingSince}`,
+    "",
+    `## Funnel, all tracked installs`,
+    "",
+    mdTable(
+      ["Stage", "Users", "% of installs", "% of prior"],
+      spine,
+      ["l", "r", "r", "r"],
+    ),
+    "",
+    median
+      ? `Median time from install to activation: **${
+          Number(median) < 1 ? `${Math.round(Number(median) * 60)} min` : `${median} h`
+        }** (installs that activated after their install row).`
+      : "No install has activated after its install row yet, so there is no time-to-activation figure.",
+    "",
+    "## Onboarding, among tracked installs",
+    "",
+    "Not a funnel stage — it is optional, and skipping it does not stop activation. Counting only",
+    "`onboarding_completed` as \"onboarded\" is what made the original view report 200% conversion.",
+    "Scoped to the tracked installs above, so it will not match the event counts further down, which",
+    "cover every user since 2026-09-08.",
+    "",
+    mdTable(
+      ["Started", "Finished (completed or skipped)", "Completed"],
+      [[n(overall.onboarding_started), n(overall.onboarding_finished), n(overall.onboarding_completed)]],
+      ["r", "r", "r"],
+    ),
+    "",
+    "## Daily cohorts",
+    "",
+    "`Installs` and `Acted` are blank before install tracking existed — those days genuinely have no",
+    "install denominator. `Users seen` is the older measure and covers the whole history.",
+    "",
+    mdTable(
+      ["Date", "Installs", "Acted", "Users seen", "Onboarded", "Activated", "Returned", "% acted", "% activated"],
+      cohortRows,
+      ["l", "r", "r", "r", "r", "r", "r", "r", "r"],
+    ),
+    "",
+    "## Platform and build",
+    "",
+    mdTable(
+      ["Platform", "Version", "Installs", "First", "Last"],
+      platforms.map((row) => [row.platform, row.app_version, n(row.installs), row.first, row.last]),
+      ["l", "l", "r", "l", "l"],
+    ),
+    "",
+    `## Event volume (${totalEvents} events)`,
+    "",
+    mdTable(
+      ["Event", "Events", "Users", "First", "Last"],
+      events.map((row) => [row.event, n(row.count), n(row.users), row.first, row.last]),
+      ["l", "r", "r", "l", "l"],
+    ),
+    "",
+    "## Reading notes",
+    "",
+    "- **Installs are first launches, not App Store installs.** The id is a random uuid in local",
+    "  storage — no IDFV, no advertising id — so a reinstall counts again and a delete is invisible.",
+    "  Apple's own install numbers come from App Store Connect and will not match.",
+    `- **${preExisting} install${preExisting === 1 ? " is" : "s are"} a pre-existing device**, not a new user: the install row is written the`,
+    "  first time a build carrying the tracking code runs, so a phone that already had the app appears",
+    "  as an install on the update date with weeks of history behind it. Those inflate installs and",
+    "  depress the conversion rates below them.",
+    "- **An event can predate its own install row.** `occurred_at` is stamped by the client when the",
+    "  event happens; `first_seen_at` is stamped by the server when the ping lands. Comparisons here",
+    "  are by date for that reason, and time-to-activation ignores negative gaps.",
+    "- **Events arrive late.** Anything fired before an identity exists is queued on the device and",
+    "  flushed when one is created — observed up to ~17 h later. The newest rows keep filling in.",
+    "- **iOS only, app only.** There is no web instrumentation at all, so none of this covers",
+    "  subskills.xyz; Android has shipped no tracked build yet.",
+    "- **Retention is calendar-day**: an `app_open` on a later date than the first event, not a 24 h",
+    "  window, so a report reads the same as the dashboards people are used to.",
+    "",
+  ].join("\n");
+}
+
 function renderReport2Csv({ dates, skillKeys, cumulative }) {
   // `total` sits up front so the catalog-wide curve is readable without building
   // a formula across 249 columns. Sub-skill columns are already sorted A-Z.
@@ -783,7 +961,7 @@ function renderReport2Md({ dates, skills, cumulative, cumulativeShort, summaries
 
 async function main() {
   const tz = config.reportTz;
-  const [collectedRows, ingestedRows, scoredRows, publishedRows, skillRows, perSkillRows, shortRows, summaryRows, channelRows, logStats] =
+  const [collectedRows, ingestedRows, scoredRows, publishedRows, skillRows, perSkillRows, shortRows, summaryRows, channelRows, funnelOverallRows, funnelCohortRows, funnelPlatformRows, funnelEventRows, logStats] =
     await Promise.all([
       dbRows(collectedSql, [tz]),
       dbRows(ingestedSql, [tz]),
@@ -794,6 +972,10 @@ async function main() {
       dbRows(perSkillSql(config.metric, { shortOnly: true }), [tz]),
       dbRows(summarySql, [config.summaryGrowth, config.summaryMinVideos]),
       dbRows(channelsSql),
+      dbRows(funnelOverallSql),
+      dbRows(funnelCohortSql),
+      dbRows(funnelPlatformSql),
+      dbRows(funnelEventsSql),
       loadNoTranscriptCounts(),
     ]);
 
@@ -812,6 +994,26 @@ async function main() {
     key,
     { status, videos: num(videos), source_count: num(sourceCount) },
   ]));
+
+  const [ov = []] = funnelOverallRows;
+  const overall = {
+    installed: ov[0], acted: ov[1], activated: ov[2], returned: ov[3],
+    onboarding_started: ov[4], onboarding_finished: ov[5], onboarding_completed: ov[6],
+    pre_existing: ov[7], tracking_since: ov[8], median_hours_to_activate: ov[9],
+  };
+  const cohorts = funnelCohortRows.map((
+    [cohort_date, installs, first_actors, installs_that_acted, onboarding_started,
+     onboarding_finished, activated, retained, pct_acted_of_installs, pct_activated, pct_retained],
+  ) => ({
+    cohort_date, installs, first_actors, installs_that_acted, onboarding_started,
+    onboarding_finished, activated, retained, pct_acted_of_installs, pct_activated, pct_retained,
+  }));
+  const platforms = funnelPlatformRows.map(([platform, app_version, installs, first, last]) => ({
+    platform, app_version, installs, first, last,
+  }));
+  const eventVolume = funnelEventRows.map(([event, count, users, first, last]) => ({
+    event, count, users, first, last,
+  }));
 
   const channels = channelRows.map((
     [sourceType, name, identifier, assigned, isActive, origin, subscribers, lastUpload, collected, published, categories],
@@ -885,6 +1087,7 @@ async function main() {
     ops: join(config.reportsDir, "content-ops.md"),
     csv: join(config.reportsDir, "skill-coverage.csv"),
     coverage: join(config.reportsDir, "skill-coverage.md"),
+    funnel: join(config.reportsDir, "funnel.md"),
     channels: join(config.reportsDir, "channels.md"),
     channelsCsv: join(config.reportsDir, "channels.csv"),
   };
@@ -894,6 +1097,7 @@ async function main() {
     writeFile(paths.coverage, report2),
     writeFile(paths.channels, renderChannelsMd(channels, generatedAt)),
     writeFile(paths.channelsCsv, renderChannelsCsv(channels)),
+    writeFile(paths.funnel, renderFunnelMd({ overall, cohorts, platforms, events: eventVolume, generatedAt })),
   ]);
 
   console.log(

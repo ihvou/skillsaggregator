@@ -298,6 +298,10 @@ npm run report:content-ops
   and trimmed to a recent window so it stays readable; its `All sub-skills` row reconciles exactly
   with the Published total in `content-ops.md`.
 
+- `.collection/reports/funnel.md` — the product funnel from `app_installs` and `app_events`:
+  installs → opened → activated → returned, daily cohorts, onboarding, platform/build split and
+  event volume. The one report about people rather than content. Installs are **first launches**,
+  not App Store installs, and the report states why — see its Reading notes.
 - `.collection/reports/channels.md` — every `trusted_sources` row grouped by assigned category,
   with subscribers, how many links we collected and published from it, and which categories its
   content actually reached. `channels.csv` is the flat version with full URLs and identifiers.
