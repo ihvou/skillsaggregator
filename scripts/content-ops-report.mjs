@@ -254,23 +254,60 @@ const funnelOverallSql = `
     -- bounce on first open, or a launch that was never an App Store install at
     -- all — a reinstall, TestFlight, or a build run from Xcode.
     count(*) filter (where u.first_event_at is null)                        as silent,
-    min(i.first_seen_at)::date::text                                        as tracking_since,
+    (min(i.first_seen_at) at time zone $1)::date::text                      as tracking_since,
     coalesce(round(extract(epoch from percentile_cont(0.5) within group (
       order by case when u.activated_at >= i.first_seen_at then u.activated_at - i.first_seen_at end
     )) / 3600.0, 1)::text, '')                                              as median_hours_to_activate
   from public.app_installs i
   left join public.analytics_user_funnel u on u.install_id = i.install_id`;
 
+// Deliberately NOT reading public.analytics_funnel_by_cohort. That view buckets by
+// bare ::date, which is UTC, while every other section of every report groups by
+// the local reporting timezone — and the gap is not cosmetic: all five installs so
+// far landed between 17:54 and 19:51 UTC, which is the NEXT day in Asia/Makassar.
+// The view said 09-18 and 09-23; locally they are 09-19 and 09-24. The view keeps
+// UTC because it is the BI-facing object and moving it would silently shift
+// anyone's existing numbers; the report converts instead.
+//
+// Rates are computed in JS, not here, so that a zero-filled day renders as "–"
+// rather than a fabricated 0%.
 const funnelCohortSql = `
-  select cohort_date::text,
-         installs::text, first_actors::text, installs_that_acted::text,
-         onboarding_started::text, onboarding_finished::text,
-         activated::text, retained::text,
-         coalesce(pct_acted_of_installs::text, ''),
-         coalesce(pct_activated::text, ''),
-         coalesce(pct_retained::text, '')
-  from public.analytics_funnel_by_cohort
-  order by cohort_date desc`;
+  with inst as (
+    select install_id,
+           (first_seen_at at time zone $1)::date as d,
+           exists (
+             select 1 from public.app_events e where e.install_id = app_installs.install_id
+           ) as acted
+    from public.app_installs
+  ),
+  usr as (
+    select coalesce(i.d, (u.first_event_at at time zone $1)::date) as d,
+           u.onboarding_finished_at, u.activated_at, u.retained_at
+    from public.analytics_user_funnel u
+    left join inst i on i.install_id = u.install_id
+  ),
+  i_agg as (
+    select d, count(*) as installs, count(*) filter (where acted) as installs_that_acted
+    from inst group by d
+  ),
+  u_agg as (
+    select d,
+           count(*) as first_actors,
+           count(onboarding_finished_at) as onboarding_finished,
+           count(activated_at) as activated,
+           count(retained_at) as retained
+    from usr group by d
+  )
+  select coalesce(i_agg.d, u_agg.d)::text,
+         coalesce(i_agg.installs, 0)::text,
+         coalesce(i_agg.installs_that_acted, 0)::text,
+         coalesce(u_agg.first_actors, 0)::text,
+         coalesce(u_agg.onboarding_finished, 0)::text,
+         coalesce(u_agg.activated, 0)::text,
+         coalesce(u_agg.retained, 0)::text
+  from i_agg
+  full outer join u_agg on u_agg.d = i_agg.d
+  order by 1 desc`;
 
 const funnelPlatformSql = `
   select coalesce(platform, '(unknown)'),
@@ -682,17 +719,41 @@ function renderFunnelMd({ overall, cohorts, platforms, events, generatedAt }) {
   const preExisting = n(overall.pre_existing);
   const median = overall.median_hours_to_activate;
 
-  const cohortRows = cohorts.map((row) => [
-    row.cohort_date,
-    n(row.installs) || "–",
-    n(row.installs_that_acted) || "–",
-    n(row.first_actors),
-    n(row.onboarding_finished),
-    n(row.activated),
-    n(row.retained),
-    row.pct_acted_of_installs ? `${row.pct_acted_of_installs}%` : "–",
-    row.pct_activated ? `${row.pct_activated}%` : "–",
-  ]);
+  // Fill the calendar to today. Without this a day where nothing happened has no
+  // row at all, so "nobody installed on the 24th" is indistinguishable from "the
+  // report is stale" — which is exactly how it read.
+  const byDate = new Map(cohorts.map((row) => [row.cohort_date, row]));
+  const today = new Intl.DateTimeFormat("en-CA", {
+    timeZone: config.reportTz, year: "numeric", month: "2-digit", day: "2-digit",
+  }).format(new Date());
+  const allDates = [];
+  if (cohorts.length) {
+    const earliest = cohorts.map((row) => row.cohort_date).sort()[0];
+    const cursor = new Date(`${earliest}T00:00:00Z`);
+    const end = new Date(`${today}T00:00:00Z`);
+    while (cursor <= end) {
+      allDates.push(cursor.toISOString().slice(0, 10));
+      cursor.setUTCDate(cursor.getUTCDate() + 1);
+    }
+  }
+
+  const cohortRows = allDates.reverse().map((date) => {
+    const row = byDate.get(date);
+    if (!row) return [date, 0, 0, 0, 0, 0, 0, "–", "–"];
+    const installs = n(row.installs);
+    const actors = n(row.first_actors);
+    return [
+      date,
+      installs,
+      n(row.installs_that_acted),
+      actors,
+      n(row.onboarding_finished),
+      n(row.activated),
+      n(row.retained),
+      installs ? pct(n(row.installs_that_acted), installs) : "–",
+      actors ? pct(n(row.activated), actors) : "–",
+    ];
+  });
 
   const totalEvents = events.reduce((sum, row) => sum + n(row.count), 0);
 
@@ -730,8 +791,13 @@ function renderFunnelMd({ overall, cohorts, platforms, events, generatedAt }) {
     "",
     "## Daily cohorts",
     "",
-    "`Installs` and `Acted` are blank before install tracking existed — those days genuinely have no",
-    "install denominator. `Users seen` is the older measure and covers the whole history.",
+    `Dates are **local** (\`${config.reportTz}\`), not UTC. That matters more than it sounds: every`,
+    "install so far landed between 17:54 and 19:51 UTC, which is the following day here. The",
+    "`analytics_funnel_by_cohort` view buckets by UTC and will disagree by a day.",
+    "",
+    "Every day is listed through today, so a row of zeros means nothing happened that day rather",
+    "than the report being stale. `Installs` is 0 before install tracking existed — those days have",
+    "no install denominator, which is why their rates read `–`. `Users seen` covers the whole history.",
     "",
     mdTable(
       ["Date", "Installs", "Acted", "Users seen", "Onboarded", "Activated", "Returned", "% acted", "% activated"],
@@ -998,8 +1064,8 @@ async function main() {
       dbRows(perSkillSql(config.metric, { shortOnly: true }), [tz]),
       dbRows(summarySql, [config.summaryGrowth, config.summaryMinVideos]),
       dbRows(channelsSql),
-      dbRows(funnelOverallSql),
-      dbRows(funnelCohortSql),
+      dbRows(funnelOverallSql, [tz]),
+      dbRows(funnelCohortSql, [tz]),
       dbRows(funnelPlatformSql),
       dbRows(funnelEventsSql),
       loadNoTranscriptCounts(),
@@ -1028,11 +1094,9 @@ async function main() {
     pre_existing: ov[7], silent: ov[8], tracking_since: ov[9], median_hours_to_activate: ov[10],
   };
   const cohorts = funnelCohortRows.map((
-    [cohort_date, installs, first_actors, installs_that_acted, onboarding_started,
-     onboarding_finished, activated, retained, pct_acted_of_installs, pct_activated, pct_retained],
+    [cohort_date, installs, installs_that_acted, first_actors, onboarding_finished, activated, retained],
   ) => ({
-    cohort_date, installs, first_actors, installs_that_acted, onboarding_started,
-    onboarding_finished, activated, retained, pct_acted_of_installs, pct_activated, pct_retained,
+    cohort_date, installs, installs_that_acted, first_actors, onboarding_finished, activated, retained,
   }));
   const platforms = funnelPlatformRows.map(
     ([platform, app_version, release_type, installs, silent, first, last]) => ({
