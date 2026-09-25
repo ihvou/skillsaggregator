@@ -250,6 +250,10 @@ const funnelOverallSql = `
     count(u.finished_after_starting_at)                                     as onboarding_finished,
     count(u.onboarding_completed_at)                                        as onboarding_completed,
     count(*) filter (where u.first_event_at::date < i.first_seen_at::date)  as pre_existing,
+    -- Pinged the install endpoint and then produced nothing, ever. Either a real
+    -- bounce on first open, or a launch that was never an App Store install at
+    -- all — a reinstall, TestFlight, or a build run from Xcode.
+    count(*) filter (where u.first_event_at is null)                        as silent,
     min(i.first_seen_at)::date::text                                        as tracking_since,
     coalesce(round(extract(epoch from percentile_cont(0.5) within group (
       order by case when u.activated_at >= i.first_seen_at then u.activated_at - i.first_seen_at end
@@ -269,10 +273,17 @@ const funnelCohortSql = `
   order by cohort_date desc`;
 
 const funnelPlatformSql = `
-  select coalesce(platform, '(unknown)'), coalesce(app_version, '(unknown)'),
-         count(*)::text, min(first_seen_at)::date::text, max(first_seen_at)::date::text
+  select coalesce(platform, '(unknown)'),
+         coalesce(app_version, '(unknown)'),
+         -- Null for anything installed before release_type shipped (2026-09-25).
+         coalesce(release_type, '(not recorded)'),
+         count(*)::text,
+         count(*) filter (
+           where not exists (select 1 from public.app_events e where e.install_id = app_installs.install_id)
+         )::text,
+         min(first_seen_at)::date::text, max(first_seen_at)::date::text
   from public.app_installs
-  group by 1, 2 order by 3 desc, 1, 2`;
+  group by 1, 2, 3 order by count(*) desc, 1, 2, 3`;
 
 const funnelEventsSql = `
   select event, count(*)::text, count(distinct user_id)::text,
@@ -728,12 +739,20 @@ function renderFunnelMd({ overall, cohorts, platforms, events, generatedAt }) {
       ["l", "r", "r", "r", "r", "r", "r", "r", "r"],
     ),
     "",
-    "## Platform and build",
+    "## Platform, build and distribution",
+    "",
+    "`Release` is how the build was distributed. **`app_store` covers TestFlight too** — both ship",
+    "without an embedded provisioning profile, which is all expo-application can read — so this",
+    "separates our own launches from real ones without making the total match Apple's.",
+    "`Silent` counts installs that pinged and then produced no event at all.",
     "",
     mdTable(
-      ["Platform", "Version", "Installs", "First", "Last"],
-      platforms.map((row) => [row.platform, row.app_version, n(row.installs), row.first, row.last]),
-      ["l", "l", "r", "l", "l"],
+      ["Platform", "Version", "Release", "Installs", "Silent", "First", "Last"],
+      platforms.map((row) => [
+        row.platform, row.app_version, row.release_type,
+        n(row.installs), n(row.silent) || "–", row.first, row.last,
+      ]),
+      ["l", "l", "l", "r", "r", "l", "l"],
     ),
     "",
     `## Event volume (${totalEvents} events)`,
@@ -746,9 +765,16 @@ function renderFunnelMd({ overall, cohorts, platforms, events, generatedAt }) {
     "",
     "## Reading notes",
     "",
-    "- **Installs are first launches, not App Store installs.** The id is a random uuid in local",
-    "  storage — no IDFV, no advertising id — so a reinstall counts again and a delete is invisible.",
-    "  Apple's own install numbers come from App Store Connect and will not match.",
+    "- **This number will never equal App Store Connect, and is not meant to.** It counts first",
+    "  launches of a build carrying the tracking code, from any source: App Store, TestFlight,",
+    "  a reinstall, or a build run from Xcode. Apple's *first-time downloads* counts App Store",
+    "  acquisitions only, files reinstalls separately under Redownloads, and excludes TestFlight",
+    "  entirely. On 2026-09-23 this read 2 against Apple's 1 for exactly that reason. Apple also",
+    "  suppresses small values as \"Not Enough Data\", which is not the same as zero — so a",
+    "  redownload can be real and still invisible there.",
+    `- **${n(overall.silent)} of ${installed} installs produced no event at all.** A ping and then nothing: either a`,
+    "  genuine bounce on first open, or a launch that was never a store install. The `Release`",
+    "  column above is the way to tell those apart going forward.",
     `- **${preExisting} install${preExisting === 1 ? " is" : "s are"} a pre-existing device**, not a new user: the install row is written the`,
     "  first time a build carrying the tracking code runs, so a phone that already had the app appears",
     "  as an install on the update date with weeks of history behind it. Those inflate installs and",
@@ -999,7 +1025,7 @@ async function main() {
   const overall = {
     installed: ov[0], acted: ov[1], activated: ov[2], returned: ov[3],
     onboarding_started: ov[4], onboarding_finished: ov[5], onboarding_completed: ov[6],
-    pre_existing: ov[7], tracking_since: ov[8], median_hours_to_activate: ov[9],
+    pre_existing: ov[7], silent: ov[8], tracking_since: ov[9], median_hours_to_activate: ov[10],
   };
   const cohorts = funnelCohortRows.map((
     [cohort_date, installs, first_actors, installs_that_acted, onboarding_started,
@@ -1008,9 +1034,11 @@ async function main() {
     cohort_date, installs, first_actors, installs_that_acted, onboarding_started,
     onboarding_finished, activated, retained, pct_acted_of_installs, pct_activated, pct_retained,
   }));
-  const platforms = funnelPlatformRows.map(([platform, app_version, installs, first, last]) => ({
-    platform, app_version, installs, first, last,
-  }));
+  const platforms = funnelPlatformRows.map(
+    ([platform, app_version, release_type, installs, silent, first, last]) => ({
+      platform, app_version, release_type, installs, silent, first, last,
+    }),
+  );
   const eventVolume = funnelEventRows.map(([event, count, users, first, last]) => ({
     event, count, users, first, last,
   }));

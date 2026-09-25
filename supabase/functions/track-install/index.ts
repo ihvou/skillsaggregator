@@ -37,10 +37,24 @@ const RATE_LIMIT_WINDOW_SECONDS = 3600;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const PLATFORMS = new Set(["ios", "android", "web"]);
 
+// How the build was distributed. `app_store` covers TestFlight too: both ship
+// without an embedded provisioning profile, which is all expo-application can
+// read. Enough to separate our own launches from real ones, not enough to match
+// App Store Connect exactly.
+const RELEASE_TYPES = new Set([
+  "app_store",
+  "ad_hoc",
+  "enterprise",
+  "development",
+  "simulator",
+  "unknown",
+]);
+
 type Payload = {
   install_id?: unknown;
   platform?: unknown;
   app_version?: unknown;
+  release_type?: unknown;
 };
 
 function clientIp(request: Request) {
@@ -72,6 +86,9 @@ Deno.serve(async (request) => {
     const appVersion = typeof body.app_version === "string" && body.app_version.length <= 32
       ? body.app_version
       : null;
+    const releaseType = typeof body.release_type === "string" && RELEASE_TYPES.has(body.release_type)
+      ? body.release_type
+      : null;
 
     const supabase = getServiceClient();
 
@@ -99,7 +116,7 @@ Deno.serve(async (request) => {
     const { data: insertedRows, error } = await supabase
       .from("app_installs")
       .upsert(
-        { install_id: installId, platform, app_version: appVersion },
+        { install_id: installId, platform, app_version: appVersion, release_type: releaseType },
         { onConflict: "install_id", ignoreDuplicates: true },
       )
       .select("install_id");
@@ -121,7 +138,12 @@ Deno.serve(async (request) => {
       stored = Boolean(existing);
     }
 
-    console.info("track_install_recorded", { platform, app_version: appVersion, inserted });
+    console.info("track_install_recorded", {
+      platform,
+      app_version: appVersion,
+      release_type: releaseType,
+      inserted,
+    });
     return jsonResponse({ ok: true, stored, inserted }, 200, request);
   } catch (error) {
     console.error("track_install_failed", {

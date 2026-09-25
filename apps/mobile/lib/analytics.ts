@@ -1,5 +1,6 @@
 import { Platform } from "react-native";
 import Constants from "expo-constants";
+import * as Application from "expo-application";
 import {
   getFlag,
   getOrCreateInstallId,
@@ -64,6 +65,36 @@ function appVersion() {
 
 function platform() {
   return Platform.OS === "ios" ? "ios" : Platform.OS === "android" ? "android" : "web";
+}
+
+/**
+ * How this build was distributed, so install counts can be read against App Store
+ * Connect instead of silently disagreeing with it.
+ *
+ * IMPORTANT: this does NOT identify TestFlight. expo-application derives the type
+ * from `embedded.mobileprovision`, and App Store and TestFlight builds both ship
+ * without one, so both come back as `app_store`. What it does separate is our own
+ * launches — simulator, Xcode, ad hoc — which is where the noise was: three
+ * installs nine minutes apart on 2026-09-18, two with no events at all.
+ *
+ * iOS only. Android has no equivalent and returns null rather than a guess.
+ */
+async function releaseType(): Promise<string | null> {
+  if (Platform.OS !== "ios") return null;
+  try {
+    const type = await Application.getIosApplicationReleaseTypeAsync();
+    switch (type) {
+      case Application.ApplicationReleaseType.APP_STORE: return "app_store";
+      case Application.ApplicationReleaseType.AD_HOC: return "ad_hoc";
+      case Application.ApplicationReleaseType.ENTERPRISE: return "enterprise";
+      case Application.ApplicationReleaseType.DEVELOPMENT: return "development";
+      case Application.ApplicationReleaseType.SIMULATOR: return "simulator";
+      default: return "unknown";
+    }
+  } catch {
+    // Never let a metadata lookup stop the install from being recorded.
+    return null;
+  }
 }
 
 /**
@@ -187,7 +218,12 @@ export function trackInstall() {
       const response = await fetch(`${supabaseUrl}/functions/v1/track-install`, {
         method: "POST",
         headers: { "Content-Type": "application/json", apikey: anonKey },
-        body: JSON.stringify({ install_id: id, platform: platform(), app_version: appVersion() }),
+        body: JSON.stringify({
+          install_id: id,
+          platform: platform(),
+          app_version: appVersion(),
+          release_type: await releaseType(),
+        }),
       });
       const body = (await response.json().catch(() => null)) as
         | { stored?: boolean; recorded?: boolean }

@@ -371,9 +371,17 @@ npm run collect:local
 
 ## Content operations reports
 
-`scripts/nightly-collect.sh` regenerates two reports after every run — including failed runs, so a
-dead night shows up as a zero row rather than a gap. Both rebuild from scratch, so a missed day
-self-heals on the next run:
+Reports regenerate on **two** independent schedules, because one was not reliable enough:
+
+- as a post-step in `scripts/nightly-collect.sh`, after every run including failed ones, so a dead
+  night shows up as a zero row rather than a gap;
+- and as a dedicated launchd job, `com.skillsaggregator.reports`, at **10:00 daily** via
+  `scripts/reports-cron.sh`. The nightly path is coupled to a six-hour collection run reaching its
+  end with a live network — on 2026-08-19 the network died at 07:32 and took the report step with
+  it, leaving everything two days stale. The standalone job needs no Chrome, yt-dlp or collection,
+  runs in ~10 s, and retries five times at five-minute intervals.
+
+Everything rebuilds from scratch, so running twice a day costs nothing and a missed day self-heals:
 
 ```bash
 npm run report:content-ops
