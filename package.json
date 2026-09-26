@@ -50,6 +50,7 @@
     "cheerio": "1.0.0",
     "expo-router": "~6.0.24",
     "playwright": "^1.59.1",
+    "sharp": "^0.34.5",
     "web-streams-polyfill": "~3.3.3"
   },
   "overrides": {

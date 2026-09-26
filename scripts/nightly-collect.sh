@@ -170,6 +170,22 @@ if [ "${COLLECT_SKIP_SHORTFORM_REPAIR:-0}" != "1" ]; then
   fi
 fi
 
+# Rehost the web's video thumbnails on R2 (img.subskills.xyz) for every link that
+# has none yet: tonight's new links, and anything an earlier run missed. After the
+# short-form repair, because it reads the TikTok/Instagram copies that step stores.
+# Like the repair, it runs even when collection failed, and never changes the exit
+# code. Without the R2 settings in .env.hosted it logs a warning and exits 0.
+if [ "${COLLECT_SKIP_THUMBNAIL_REHOST:-0}" != "1" ]; then
+  echo "[$(date +%Y-%m-%dT%H:%M:%S%z)] thumbnail rehost starting" | tee -a "$log_file"
+  set +e
+  node scripts/rehost-thumbnails.mjs --limit "${COLLECT_THUMBNAIL_REHOST_LIMIT:-3000}" 2>&1 | tee -a "$log_file"
+  rehost_exit_code="${PIPESTATUS[0]}"
+  set -e
+  if [ "$rehost_exit_code" -ne 0 ]; then
+    echo "[$(date +%Y-%m-%dT%H:%M:%S%z)] WARNING: thumbnail rehost failed with ${rehost_exit_code}; preserving collection exit code ${exit_code}" | tee -a "$log_file"
+  fi
+fi
+
 # Content-ops reports rebuild from scratch, so this runs even when collection
 # failed: a dead night has to show up as a zero row rather than as a gap. Never
 # let a reporting failure change the collection exit code.
