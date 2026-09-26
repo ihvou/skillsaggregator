@@ -318,14 +318,39 @@ function learningPathStageForSkill(skill: SkillSummary): LearningPathStage["valu
   return "advanced";
 }
 
-function compareLearningPathEntries(a: LearningPathEntry, b: LearningPathEntry) {
-  const difficultyA = a.skill.subskill_difficulty ?? Number.MAX_SAFE_INTEGER;
-  const difficultyB = b.skill.subskill_difficulty ?? Number.MAX_SAFE_INTEGER;
+/**
+ * A category's sub-skills in learning-path order: easiest first, then the curated
+ * learning order, then by name. The category page's Learning path tab and a skill
+ * page's previous/next links both follow it.
+ */
+export function compareSkillsByLearningPath(
+  a: Pick<SkillSummary, "subskill_difficulty" | "learning_order" | "name">,
+  b: Pick<SkillSummary, "subskill_difficulty" | "learning_order" | "name">,
+) {
+  const difficultyA = a.subskill_difficulty ?? Number.MAX_SAFE_INTEGER;
+  const difficultyB = b.subskill_difficulty ?? Number.MAX_SAFE_INTEGER;
   if (difficultyA !== difficultyB) return difficultyA - difficultyB;
-  const orderA = a.skill.learning_order ?? Number.MAX_SAFE_INTEGER;
-  const orderB = b.skill.learning_order ?? Number.MAX_SAFE_INTEGER;
+  const orderA = a.learning_order ?? Number.MAX_SAFE_INTEGER;
+  const orderB = b.learning_order ?? Number.MAX_SAFE_INTEGER;
   if (orderA !== orderB) return orderA - orderB;
-  return a.skill.name.localeCompare(b.skill.name);
+  return a.name.localeCompare(b.name);
+}
+
+/**
+ * The sub-skills either side of `current` in learning-path order. `skills` is the
+ * category's linkable (published) sub-skills; `current` takes its place in the
+ * order even when it isn't among them.
+ */
+export function adjacentSkillsInLearningPath<
+  T extends Pick<SkillSummary, "id" | "subskill_difficulty" | "learning_order" | "name">,
+>(skills: T[], current: T): { previous: T | null; next: T | null } {
+  const ordered = [...skills.filter((skill) => skill.id !== current.id), current].sort(compareSkillsByLearningPath);
+  const index = ordered.findIndex((skill) => skill.id === current.id);
+  return { previous: ordered[index - 1] ?? null, next: ordered[index + 1] ?? null };
+}
+
+function compareLearningPathEntries(a: LearningPathEntry, b: LearningPathEntry) {
+  return compareSkillsByLearningPath(a.skill, b.skill);
 }
 
 export function filterLearningPathStages(
