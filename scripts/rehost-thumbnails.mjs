@@ -121,7 +121,13 @@ async function fetchImage(url) {
   if (!response.ok) return { failure: `http_${response.status}` };
   const type = response.headers.get("content-type") ?? "";
   if (!type.toLowerCase().startsWith("image/")) return { failure: "not_an_image" };
-  const buffer = Buffer.from(await response.arrayBuffer());
+  // The timeout covers reading the body too, and a slow one ends here, not the run.
+  let buffer;
+  try {
+    buffer = Buffer.from(await response.arrayBuffer());
+  } catch (error) {
+    return { failure: `read_error:${error?.name ?? "error"}` };
+  }
   if (buffer.length > MAX_SOURCE_BYTES) return { failure: "source_too_large" };
   return { buffer };
 }
@@ -247,7 +253,9 @@ async function main() {
         // One bad upload is retried next run; a streak means the credentials, the
         // bucket or the database is wrong, and carrying on would only repeat it.
         consecutiveWriteFailures += 1;
-        if (consecutiveWriteFailures >= 10) throw new Error(`aborting after 10 failed writes in a row; last: ${reason}`);
+        if (consecutiveWriteFailures >= 10) {
+          throw Object.assign(new Error(`aborting after 10 failed writes in a row; last: ${reason}`), { fatal: true });
+        }
         return;
       }
     }
@@ -288,7 +296,17 @@ async function main() {
       for (;;) {
         const link = await take();
         if (!link) return;
-        await processLink(link);
+        // Anything unexpected about one link is that link's failure, retried next
+        // run. Only the write-failure streak above stops the run.
+        try {
+          await processLink(link);
+        } catch (error) {
+          if (error?.fatal) throw error;
+          const reason = `unexpected:${String(error?.message ?? error).slice(0, 80)}`;
+          stats.failed += 1;
+          failures.unexpected = (failures.unexpected ?? 0) + 1;
+          log("rehost_failed", { link_id: link.id, reason });
+        }
       }
     }),
   );
