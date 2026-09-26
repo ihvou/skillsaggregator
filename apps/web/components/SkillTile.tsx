@@ -7,6 +7,8 @@ interface SkillTileProps {
   thumbnailUrl: string | null;
   /** Pixel width override. Default matches the shared 16/9 thumbnail size. */
   width?: number;
+  /** Fill the parent's width instead, keeping 16/9. */
+  fluid?: boolean;
 }
 
 /**
@@ -15,24 +17,24 @@ interface SkillTileProps {
  *  - Dark scrim + centered white skill name overlay
  *  - Native 16/9 proportions (same as ResourceCard / ResourceTile)
  */
-export function SkillTile({ skill, thumbnailUrl, width = 280 }: SkillTileProps) {
+export function SkillTile({ skill, thumbnailUrl, width = 280, fluid = false }: SkillTileProps) {
   const height = Math.round((width * 9) / 16);
   return (
     <Link
       href={`/${skill.category_slug}/${skill.slug}`}
-      className="focus-ring group block shrink-0 transition hover:opacity-90"
-      style={{ width }}
+      className={`focus-ring group block shrink-0 transition hover:opacity-90${fluid ? " w-full" : ""}`}
+      style={fluid ? undefined : { width }}
     >
       <div
-        className="relative overflow-hidden rounded-[14px] bg-bgGroup shadow-thumb"
-        style={{ width, height }}
+        className={`relative overflow-hidden rounded-[14px] bg-bgGroup shadow-thumb${fluid ? " aspect-video w-full" : ""}`}
+        style={fluid ? undefined : { width, height }}
       >
         {thumbnailUrl ? (
           <Image
             src={thumbnailUrl}
             alt={skill.name}
             fill
-            sizes={`${width}px`}
+            sizes={fluid ? "(max-width: 639px) 50vw, 320px" : `${width}px`}
             className="object-cover"
           />
         ) : null}

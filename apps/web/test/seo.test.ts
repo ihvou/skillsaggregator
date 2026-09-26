@@ -35,6 +35,19 @@ describe("outbound video links", () => {
     expect(link.url).toBe("");
   });
 
+  it("shows the rehosted thumbnail and keeps storage keys that name the video off the page", () => {
+    const link = shapeLinkWithContributor<LinkRow>({
+      id: "l4",
+      url: "https://www.tiktok.com/@coach/video/7300000000000000001",
+      domain: "tiktok.com",
+      thumbnail_storage_path: "thumbnails/tiktok/7300000000000000001.jpg",
+      web_thumbnail_key: "v1/0123456789abcdef0123456789abcdef.webp",
+    });
+    expect(link.thumbnail_url).toBe("https://img.subskills.xyz/v1/0123456789abcdef0123456789abcdef.webp");
+    expect(link.thumbnail_storage_path).toBeNull();
+    expect(JSON.stringify(link)).not.toContain("7300000000000000001");
+  });
+
   it("leaves links that aren't videos alone", () => {
     const link = shapeLinkWithContributor<LinkRow>({ id: "l3", url: "https://example.com/article", domain: "example.com" });
     expect(link.url).toBe("https://example.com/article");

@@ -16,6 +16,8 @@ const nextConfig: NextConfig = {
     // would trade a modest LCP win for the same bot-amplification cost risk.
     unoptimized: true,
     remotePatterns: [
+      // Our own rehosted video thumbnails (Cloudflare R2; see lib/thumbnails.ts).
+      { protocol: "https", hostname: "img.subskills.xyz" },
       { protocol: "https", hostname: "i.ytimg.com" },
       { protocol: "https", hostname: "*.ytimg.com" },
       { protocol: "https", hostname: "img.youtube.com" },

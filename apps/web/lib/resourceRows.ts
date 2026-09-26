@@ -5,10 +5,10 @@ import {
   type SkillResource,
   type SkillSummary,
 } from "@skillsaggregator/shared";
-import { normalizeThumbnailUrl } from "./thumbnails";
+import { normalizeThumbnailUrl, webThumbnailUrl } from "./thumbnails";
 
 export const RESOURCE_LINK_SELECT =
-  "id, url, canonical_url, domain, title, description, thumbnail_url, thumbnail_storage_path, duration_seconds, like_count, comment_count, share_count, favorite_count, creator_handle, creator_url, scoring_strategy, content_type, created_at, contributor_profile:contributor_profiles(id, slug, display_name, avatar_url, accepted_count)";
+  "id, url, canonical_url, domain, title, description, thumbnail_url, thumbnail_storage_path, web_thumbnail_key, duration_seconds, like_count, comment_count, share_count, favorite_count, creator_handle, creator_url, scoring_strategy, content_type, created_at, contributor_profile:contributor_profiles(id, slug, display_name, avatar_url, accepted_count)";
 export const RELATION_VOTE_SELECT = "upvote_count, downvote_count, vote_score, value_score, curator_score, curator_reviews, user_score, combined_score, rank_key, coach_take";
 export const SAVED_RELATION_SELECT = `id, public_note, skill_level, ${RELATION_VOTE_SELECT}, created_at, link_id, links!inner(${RESOURCE_LINK_SELECT}), skills!inner(id, slug, name, categories!inner(slug, name))`;
 
@@ -44,6 +44,7 @@ export interface LinkRow {
   description?: string | null;
   thumbnail_url?: string | null;
   thumbnail_storage_path?: string | null;
+  web_thumbnail_key?: string | null;
   duration_seconds?: number | null;
   like_count?: number | null;
   comment_count?: number | null;
@@ -102,6 +103,7 @@ export interface LibraryResourceRow extends RelationVoteRow {
   description?: string | null;
   thumbnail_url?: string | null;
   thumbnail_storage_path?: string | null;
+  web_thumbnail_key?: string | null;
   duration_seconds?: number | null;
   like_count?: number | null;
   comment_count?: number | null;
@@ -158,11 +160,19 @@ export function shapeLinkWithContributor<TLink extends LinkRow>(link: TLink) {
     // creator_url a channel address, so both stay out of the page like the URL.
     description: null,
     creator_url: null,
-    thumbnail_url: normalizeThumbnailUrl(
-      link.thumbnail_storage_path ?? link.thumbnail_url ?? null,
-      link.canonical_url ?? url,
-      link.thumbnail_storage_path ? link.thumbnail_url ?? null : null,
-    ),
+    // Our own copy when the link has one (0068): the platform's addresses name the
+    // video, which is what the /go links keep off the page. Until the nightly
+    // rehost reaches a new link, its original thumbnail stands in.
+    thumbnail_url:
+      webThumbnailUrl(link.web_thumbnail_key) ??
+      normalizeThumbnailUrl(
+        link.thumbnail_storage_path ?? link.thumbnail_url ?? null,
+        link.canonical_url ?? url,
+        link.thumbnail_storage_path ? link.thumbnail_url ?? null : null,
+      ),
+    // The storage key names the video too (thumbnails/tiktok/<video id>.jpg), and
+    // it was only ever an input to thumbnail_url above.
+    thumbnail_storage_path: go ? null : link.thumbnail_storage_path ?? null,
     ...(link.scoring_strategy === "transcript_llm" || link.scoring_strategy === "engagement_authority"
       ? { scoring_strategy: link.scoring_strategy }
       : {}),
@@ -293,6 +303,7 @@ export function shapeLibraryResource(row: LibraryResourceRow): SkillResource | n
       description: row.description ?? null,
       thumbnail_url: row.thumbnail_url ?? null,
       thumbnail_storage_path: row.thumbnail_storage_path ?? null,
+      web_thumbnail_key: row.web_thumbnail_key ?? null,
       duration_seconds: row.duration_seconds ?? null,
       like_count: row.like_count ?? null,
       comment_count: row.comment_count ?? null,

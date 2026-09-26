@@ -7,6 +7,14 @@ test("skill page renders its breadcrumbs json-ld and the resources area", async 
   await expect(page.locator('script[type="application/ld+json"]')).toHaveCount(1);
 });
 
+// The previous/next links can't be checked here: the demo catalog publishes one
+// sub-skill per category, so no page has a neighbour. adjacentSkillsInLearningPath
+// is unit-tested in packages/shared instead.
+test("skill page puts a short description on the category line", async ({ page }) => {
+  await page.goto("/badminton/forehand-smash");
+  await expect(page.locator("main header p").first()).toHaveText(/^Badminton · Generate steep power/);
+});
+
 test("skill page never prints a video's address and links videos through /go", async ({ page }) => {
   const response = await page.goto("/badminton/forehand-smash");
   // The HTML as sent, including the data React ships with it, not the live DOM.

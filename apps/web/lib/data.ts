@@ -1,6 +1,7 @@
 import {
   badmintonCategory,
   badmintonSkills,
+  adjacentSkillsInLearningPath,
   buildSkillResourceSections,
   fallbackCategories,
   fallbackResources,
@@ -23,7 +24,7 @@ import {
   unwrapRow,
 } from "./resourceRows";
 import { getPublicSupabase, getServiceSupabase } from "./supabase";
-import { normalizeThumbnailUrl } from "./thumbnails";
+import { normalizeThumbnailUrl, webThumbnailUrl } from "./thumbnails";
 
 export interface CatalogData {
   category: CategorySummary | null;
@@ -185,11 +186,12 @@ export async function getSkillPage(categorySlug: string, skillSlug: string) {
       // The offline fallback has no summaries — it exists for when Supabase is
       // unreachable, and a stale hard-coded summary would be worse than none.
       summary: null as SkillTechniqueSummary | null,
-      relatedSkills: skill
-        ? filterPublicSkills(withFallbackResourceCounts(skills), true)
-            .filter((item) => item.slug !== skillSlug)
-            .slice(0, 4)
-        : [],
+      adjacentSkills: skill
+        ? withThumbnails(
+            adjacentSkillsInLearningPath(filterPublicSkills(withFallbackResourceCounts(skills), true), skill),
+            (neighbour) => fallbackSkillThumbnail(neighbour.slug),
+          )
+        : NO_ADJACENT_SKILLS,
     };
   }
 
@@ -201,9 +203,9 @@ export async function getSkillPage(categorySlug: string, skillSlug: string) {
     .eq("is_active", true)
     .single();
 
-  if (!skillRow) return { category: null, skill: null, resources: [], summary: null, relatedSkills: [] };
+  if (!skillRow) return { category: null, skill: null, resources: [], summary: null, adjacentSkills: NO_ADJACENT_SKILLS };
   const category = Array.isArray(skillRow.categories) ? skillRow.categories[0] : skillRow.categories;
-  if (!category) return { category: null, skill: null, resources: [], summary: null, relatedSkills: [] };
+  if (!category) return { category: null, skill: null, resources: [], summary: null, adjacentSkills: NO_ADJACENT_SKILLS };
 
   const { data: resources } = await supabase
     .from("link_skill_relations")
@@ -226,14 +228,6 @@ export async function getSkillPage(categorySlug: string, skillSlug: string) {
     .eq("skill_id", skillRow.id)
     .maybeSingle();
 
-  const { data: siblings } = await supabase
-    .from("skills")
-    .select("id, category_id, slug, name, description, subskill_difficulty, learning_order, updated_at")
-    .eq("category_id", skillRow.category_id)
-    .eq("is_active", true)
-    .neq("id", skillRow.id)
-    .limit(4);
-
   const shapedResources = ((resources ?? []) as RelationWithSkillId[]).flatMap((relation) => {
     const resource = shapeRelationResource(relation, {
       id: skillRow.id,
@@ -249,20 +243,31 @@ export async function getSkillPage(categorySlug: string, skillSlug: string) {
     shapedResources.map((resource) => resource.id),
   );
 
+  const skillSummary = {
+    id: skillRow.id,
+    category_id: skillRow.category_id,
+    category_slug: category.slug,
+    slug: skillRow.slug,
+    name: skillRow.name,
+    description: skillRow.description,
+    resource_count: shapedResources.length,
+    subskill_difficulty: skillRow.subskill_difficulty ?? null,
+    learning_order: skillRow.learning_order ?? null,
+    updated_at: skillRow.updated_at,
+  } satisfies SkillSummary;
+
+  const { skills: publishedSkills } = await getCatalog(category.slug, { publicOnly: true });
+  // The links under the video list: this sub-skill's neighbours in the category's
+  // learning path (the order of its Learning path tab), published ones only.
+  const neighbours = adjacentSkillsInLearningPath(publishedSkills, skillSummary);
+  const neighbourThumbnails = await fetchLatestSkillThumbnails(
+    supabase,
+    [neighbours.previous, neighbours.next].flatMap((neighbour) => (neighbour ? [neighbour.id] : [])),
+  );
+
   return {
     category,
-    skill: {
-      id: skillRow.id,
-      category_id: skillRow.category_id,
-      category_slug: category.slug,
-      slug: skillRow.slug,
-      name: skillRow.name,
-      description: skillRow.description,
-      resource_count: shapedResources.length,
-      subskill_difficulty: skillRow.subskill_difficulty ?? null,
-      learning_order: skillRow.learning_order ?? null,
-      updated_at: skillRow.updated_at,
-    } satisfies SkillSummary,
+    skill: skillSummary,
     resources: withComments(shapedResources, comments),
     summary: (summaryRow
       ? {
@@ -273,12 +278,38 @@ export async function getSkillPage(categorySlug: string, skillSlug: string) {
           generated_at: summaryRow.generated_at,
         }
       : null) as SkillTechniqueSummary | null,
-    relatedSkills: (siblings ?? []).map((skill) => ({
-      ...skill,
-      category_slug: category.slug,
-      resource_count: 0,
-    })),
+    adjacentSkills: withThumbnails(neighbours, (neighbour) => neighbourThumbnails.get(neighbour.id) ?? null),
   };
+}
+
+export interface AdjacentSkill {
+  skill: SkillSummary;
+  thumbnail_url: string | null;
+}
+
+export interface AdjacentSkills {
+  previous: AdjacentSkill | null;
+  next: AdjacentSkill | null;
+}
+
+const NO_ADJACENT_SKILLS: AdjacentSkills = { previous: null, next: null };
+
+function withThumbnails(
+  neighbours: { previous: SkillSummary | null; next: SkillSummary | null },
+  thumbnailFor: (skill: SkillSummary) => string | null,
+): AdjacentSkills {
+  return {
+    previous: neighbours.previous ? { skill: neighbours.previous, thumbnail_url: thumbnailFor(neighbours.previous) } : null,
+    next: neighbours.next ? { skill: neighbours.next, thumbnail_url: thumbnailFor(neighbours.next) } : null,
+  };
+}
+
+function fallbackSkillThumbnail(skillSlug: string) {
+  return (
+    (fallbackResources[skillSlug] ?? [])
+      .map((resource) => normalizeThumbnailUrl(resource.link.thumbnail_url, resource.link.canonical_url))
+      .find(Boolean) ?? null
+  );
 }
 
 export interface DiscoverSkillTile {
@@ -432,13 +463,31 @@ async function fetchLatestSkillThumbnails(
   const result = new Map<string, string | null>();
   if (skillIds.length === 0) return result;
 
-  const { data, error } = await supabase.rpc("get_latest_skill_thumbnails", {
+  // Our own rehosted copies first (0068). The app's function below fills in any
+  // skill without one yet, and all of them if 0068 isn't applied.
+  const { data: webRows, error: webError } = await supabase.rpc("get_latest_skill_web_thumbnails", {
     p_skill_ids: skillIds,
+  });
+  if (webError) {
+    console.warn("latest_skill_web_thumbnails_load_failed", {
+      message: webError.message,
+      skillCount: skillIds.length,
+    });
+  }
+  for (const row of (webRows ?? []) as Array<{ skill_id: string; web_thumbnail_key: string | null }>) {
+    const url = webThumbnailUrl(row.web_thumbnail_key);
+    if (url) result.set(row.skill_id, url);
+  }
+  const missing = skillIds.filter((id) => !result.has(id));
+  if (missing.length === 0) return result;
+
+  const { data, error } = await supabase.rpc("get_latest_skill_thumbnails", {
+    p_skill_ids: missing,
   });
   if (error) {
     console.warn("latest_skill_thumbnails_load_failed", {
       message: error.message,
-      skillCount: skillIds.length,
+      skillCount: missing.length,
     });
     return result;
   }

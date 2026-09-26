@@ -4,6 +4,7 @@ import {
   makeCanonical,
   makeSkillMetaDescription,
 } from "@skillsaggregator/shared";
+import { AdjacentSkillLinks } from "@/components/AdjacentSkillLinks";
 import { JsonLd } from "@/components/JsonLd";
 import { SkillResourceBrowser } from "@/components/SkillResourceBrowser";
 import { SkillTechniqueSummary } from "@/components/SkillTechniqueSummary";
@@ -71,7 +72,7 @@ export default async function SkillPage({
   params: Promise<{ category: string; skill: string }>;
 }) {
   const { category: categorySlug, skill: skillSlug } = await params;
-  const { category, skill, resources, summary } = await getSkillPage(categorySlug, skillSlug);
+  const { category, skill, resources, summary, adjacentSkills } = await getSkillPage(categorySlug, skillSlug);
   if (!category || !skill) notFound();
 
   const pageUrl = makeCanonical(getBaseUrl(), category.slug, skill.slug);
@@ -99,6 +100,7 @@ export default async function SkillPage({
         skill={skill}
         resources={resources}
         summarySlot={summary ? <SkillTechniqueSummary summary={summary} skillName={skill.name} /> : null}
+        footerSlot={<AdjacentSkillLinks previous={adjacentSkills.previous} next={adjacentSkills.next} />}
       />
     </>
   );

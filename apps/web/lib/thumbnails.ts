@@ -1,5 +1,18 @@
 const SUPABASE_STORAGE_MARKER = "/storage/v1/object/public/";
 
+/**
+ * The web's own copies of video thumbnails, on Cloudflare R2 behind our domain
+ * (scripts/rehost-thumbnails.mjs, links.web_thumbnail_key). They are named by a
+ * hash of the image, so unlike the platform addresses they don't name the video.
+ */
+export const WEB_THUMBNAIL_BASE_URL = "https://img.subskills.xyz";
+const WEB_THUMBNAIL_HOST = new URL(WEB_THUMBNAIL_BASE_URL).hostname;
+
+export function webThumbnailUrl(key: string | null | undefined): string | null {
+  const trimmed = key?.trim().replace(/^\/+/, "");
+  return trimmed ? `${WEB_THUMBNAIL_BASE_URL}/${trimmed}` : null;
+}
+
 function cleanHost(hostname: string) {
   return hostname.replace(/^www\./, "").toLowerCase();
 }
@@ -35,6 +48,7 @@ function isAllowedAbsoluteThumbnail(parsed: URL) {
   const host = cleanHost(parsed.hostname);
   if (parsed.protocol === "https:") {
     return (
+      host === WEB_THUMBNAIL_HOST ||
       host === "i.ytimg.com" ||
       host.endsWith(".ytimg.com") ||
       host === "img.youtube.com" ||

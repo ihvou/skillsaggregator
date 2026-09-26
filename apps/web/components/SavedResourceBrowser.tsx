@@ -14,6 +14,28 @@ import {
 } from "@/lib/resourceRows";
 
 type LibraryView = "saved" | "watched";
+
+// get_user_library_resources is shared with the app, which has no use for the web's
+// rehosted thumbnails, so their keys come from links directly. In batches: the ids
+// travel in the URL. On any error the cards keep their original thumbnails.
+async function loadWebThumbnailKeys(linkIds: Array<string | null | undefined>) {
+  const keys = new Map<string, string>();
+  const supabase = getBrowserSupabase();
+  const ids = [...new Set(linkIds.filter((id): id is string => Boolean(id)))];
+  if (!supabase) return keys;
+  for (let start = 0; start < ids.length; start += 100) {
+    const { data, error } = await supabase
+      .from("links")
+      .select("id, web_thumbnail_key")
+      .in("id", ids.slice(start, start + 100))
+      .not("web_thumbnail_key", "is", null);
+    if (error) return keys;
+    for (const row of (data ?? []) as Array<{ id: string; web_thumbnail_key: string | null }>) {
+      if (row.web_thumbnail_key) keys.set(row.id, row.web_thumbnail_key);
+    }
+  }
+  return keys;
+}
 type UserSkillProgress = {
   skill_id: string;
   total_count: number;
@@ -86,8 +108,10 @@ export function SavedResourceBrowser() {
       return;
     }
 
-    setResources(((data ?? []) as LibraryResourceRow[]).flatMap((row) => {
-      const resource = shapeLibraryResource(row);
+    const rows = (data ?? []) as LibraryResourceRow[];
+    const webThumbnailKeys = await loadWebThumbnailKeys(rows.map((row) => row.link_id));
+    setResources(rows.flatMap((row) => {
+      const resource = shapeLibraryResource({ ...row, web_thumbnail_key: webThumbnailKeys.get(row.link_id) ?? null });
       return resource ? [resource] : [];
     }));
     loadedKeyRef.current = idsKey;
